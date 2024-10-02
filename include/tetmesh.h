@@ -1785,10 +1785,11 @@ public:
 
 		const pointType* v[4] = { t->v0()->getPoint(), t->v1()->getPoint(), t->v2()->getPoint(), t->v3()->getPoint() };
 		const double shortest_edge_sqlen = getTetShortestEdgeSqLength(v);
-		const double shortest_sqheight = getTetShortestHeightSqLength(v);
+		//const double shortest_sqheight = getTetShortestHeightSqLength(v);
 		const double sqrad = circumsphere_ludecomp(v[0], v[1], v[2], v[3], ccc);
-		if (100 * shortest_sqheight < shortest_edge_sqlen) return sqrad / shortest_sqheight; // Sliver
-		else return sqrad / shortest_edge_sqlen;
+		//if (100 * shortest_sqheight < shortest_edge_sqlen) return sqrad / shortest_sqheight; // Sliver
+		//else 
+			return sqrad / shortest_edge_sqlen;
 	}
 
 	static void setTetCost(Tetrahedron* t) {
