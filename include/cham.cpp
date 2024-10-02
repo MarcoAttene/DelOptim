@@ -229,7 +229,7 @@ void PLCc::initialize(){
         #ifdef TEST_CHAMFERING
         if( e.inc_face.size()&1 ) exit( (int) EXIT_t::open_input );
         #else 
-        ip_error("Input surface does not enclose a volume\n");
+        if( e.inc_face.size()&1 ) ip_error("Input surface does not enclose a volume\n");
         #endif
     }
 
