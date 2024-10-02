@@ -3,7 +3,7 @@
 #endif
 
 #define EXIT_ON_THRESHOLD_NUMVERTICES //if (V.size() > 100000) { std::cout << "Limit num vertices reached!\nEXITING\n"; exit(11); }
-#define EXIT_ON_THRESHOLD_TIME //if (V.size() > 100000) { std::cout << "Limit num vertices reached!\nEXITING\n"; exit(11); }
+#define EXIT_ON_THRESHOLD_TIME
 
 #define USE_CHAMFERING // unused
 #define TEST_CHAMFERING // enables returns different from 0 to monitor failures (see cham.h)
@@ -109,12 +109,13 @@ int main(int argc, char* argv[])
 #ifndef DEBUG
 	if (argc < 2) {
 		std::cout << "Mesher - Create a well-shaped tetrahedral mesh out of a triangulated OFF file.\n";
-		std::cout << "USAGE: ./delmesher [-v] filename.off\n";
+		std::cout << "USAGE: ./delmesher [-v][-t60] filename.off\n";
 		std::cout << "OUTPUT:\n";
 		std::cout << "plcfaces.off, mesh.tet\n";
 		std::cout << "OPTIONS:\n";
-		std::cout << "\t-v -> verbose mode\n";
-		std::cout << "\t-l -> logging mode\n";
+		std::cout << "\t[-v] -> verbose mode\n";
+		std::cout << "\t[-l] -> logging mode\n";
+		std::cout << "\t[-t max time in minutes] -> time out mode";
 		std::cout << std::endl;
 		return 0;
 }
@@ -128,8 +129,10 @@ int main(int argc, char* argv[])
 
 	std::string options = "";
 
+	uint64_t time_out=0;
 	for (int i = 1; i < argc; i++)
 		if (argv[i][0] == '-') {
+			if(argv[i][1]=='t'){ time_out = atoi(argv[++i]); continue; }
 			for (int j = 1; j < strlen(argv[i]); j++) options += argv[i][j];
 		}
 		else memcpy(filename, argv[i], strlen(argv[i])+1);
@@ -156,6 +159,13 @@ int main(int argc, char* argv[])
 
 	Tetrahedrization mesh;
 	std::chrono::steady_clock::time_point time_point = std::chrono::steady_clock::now();
+
+	if(time_out > 0){ 
+		time_out *= 60000;
+		mesh.set_optimization_time_out(time_point, time_out); 
+	}
+		
+		
 
 	// Copy the DT to the new structure
 	double closest_pts_dist = mesh.initFromVerticesAndTets(tin.vertices, tin.tet_node);

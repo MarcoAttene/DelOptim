@@ -1211,6 +1211,11 @@ int vOrient3D(const TetVertex* v1, const TetVertex* v2, const TetVertex* v3, con
 
 class Tetrahedrization
 {
+// TMP: only for testing purposes, related to #define EXIT_ON_THRESHOLD_TIME
+public:
+	std::chrono::steady_clock::time_point init_time; 
+	uint64_t critical_time; // millisecond
+// end TMP
 protected:
 	// Vertices, edges, faces and tets
 	TetVertices V;
@@ -1228,11 +1233,14 @@ protected:
 
 	// This is true only if faces in G have a local 2D Delaunay triangulation
 	bool facesAreDelaunized;
+	bool facesAreRecovered;
 
 public:
 	double sqAlpha = 0;
 
-	Tetrahedrization() : facesAreDelaunized(false) {}
+	Tetrahedrization() : facesAreDelaunized(false), facesAreRecovered(false), critical_time(0) {}
+	
+	void set_optimization_time_out(std::chrono::steady_clock::time_point _init_time, uint64_t _critical_time){init_time = _init_time, critical_time = _critical_time;}
 
 	size_t num_vertices() { return V.size(); } const
 	size_t num_tetrahedra() { return T.size(); } const
@@ -1578,6 +1586,7 @@ public:
 
 		bool ret = recoverAllDirtyTriangles(true);
 		removeUnlinkedElements();
+		facesAreRecovered = true;
 		return ret;
 	}
 
@@ -2095,6 +2104,24 @@ public:
 	// -----------------------------------
 
 	void insertExistingVertex(TetVertex* vm, Tetrahedron *st) {
+		
+		if(critical_time > 0){
+			std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+			uint64_t duration_sec = std::chrono::duration_cast<std::chrono::milliseconds>(now - init_time).count();
+			if(duration_sec > critical_time){ 
+				saveTET("part_mesh.tet"); 
+				savePLCFaces("part_PLCfaces.off");
+				// -- report -- 
+				FILE* fp;
+				if ((fp = fopen("time_out_rep.txt", "w")) == NULL){ std::cerr<<"cannot open the file\n"; exit(11); }
+				fprintf(fp, "Feces are delaunaized (%u)\nFaces are recovered (%u)\n", (uint32_t) facesAreDelaunized, (uint32_t) facesAreRecovered);
+				fclose(fp);
+				// --
+				std::cerr<<"\nPROGRAM ABORTED: time out ("<< critical_time/1000 <<" sec) reached.\n"; 
+				exit(124);
+			}
+		}
+		
 		EXIT_ON_THRESHOLD_NUMVERTICES;
 		TETMESH_STATIC Tetrahedra cavity;
 		Tetrahedron *t0 = searchTet(vm->getPoint(), st);
@@ -2191,14 +2218,16 @@ public:
 		FILE* fp;
 		if ((fp = fopen(filename, "w")) == NULL) return false;
 
-		fprintf(fp, "%zu vertices\n%zu tets\n", V.size(), T.size());
+		idx = 0;
+		for (Tetrahedron* t : T) if(t->isLinked()) idx++;
+		fprintf(fp, "%zu vertices\n%llu tets\n", V.size(), idx);
 		double x, y, z;
 		for (TetVertex* v : V) {
 			const pointType* p = v->getPoint();
 			p->getApproxXYZCoordinates(x, y, z);
 			fprintf(fp, "%f %f %f\n", x, y, z);
 		}
-		for (Tetrahedron* t : T) {
+		for (Tetrahedron* t : T) if(t->isLinked()){
 			size_t i1 = (size_t)t->v0()->getInfo();
 			size_t i2 = (size_t)t->v1()->getInfo();
 			size_t i3 = (size_t)t->v2()->getInfo();
