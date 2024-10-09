@@ -4,7 +4,9 @@
 
 #define EXIT_ON_THRESHOLD_NUMVERTICES //if (V.size() > 100000) { std::cout << "Limit num vertices reached!\nEXITING\n"; exit(11); }
 
-#define USE_TETGEN
+// #define USE_TETGEN
+
+#define DISP_PROGRESS
 
 #include <iostream>
 #include <fstream>
@@ -26,6 +28,11 @@ using namespace std;
 #endif
 
 #include "cham.h"
+
+void force_exit(const char* message){
+	printf("ERROR: %s\nPROGRAM TERMINATED.\n", message);
+	exit(1);
+}
 
 // Export the data structure to optimizer
 void chamferPLC(inputPLC& _plc,
@@ -116,6 +123,7 @@ int main(int argc, char* argv[])
 		std::cout << "\t[-v] -> verbose mode\n";
 		std::cout << "\t[-l] -> logging mode\n";
 		std::cout << "\t[-t max time in minutes] -> time out mode";
+		std::cout << "\t[-m max allocatable memory in Mb] -> memory out mode";
 		std::cout << std::endl;
 		return 0;
 	}
@@ -130,9 +138,11 @@ int main(int argc, char* argv[])
 	std::string options = "";
 
 	uint64_t time_out = 0;
+	uint64_t mem_out = 0;
 	for (int i = 1; i < argc; i++)
 		if (argv[i][0] == '-') {
 			if (argv[i][1] == 't') { time_out = atoi(argv[++i]); continue; }
+			else if (argv[i][1] == 'm') { mem_out = atoi(argv[++i]); continue; }
 			for (int j = 1; j < strlen(argv[i]); j++) options += argv[i][j];
 		}
 		else memcpy(filename, argv[i], strlen(argv[i]) + 1);

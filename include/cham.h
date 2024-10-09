@@ -664,7 +664,8 @@ public:
                     else if(vertices[v[i]]->isExplicit3D()) std::cout<<"EXP3D\n";
                     else std::cout<<"OTHER\n";
                 }
-                ip_error("[check_bridge] ERROR invalid bridge vertices\n");
+                // ip_error("[check_bridge] ERROR invalid bridge vertices\n");
+                std::cout<<"[check_bridge] ERROR invalid bridge vertices\n"; exit(1);
            }
     }
 

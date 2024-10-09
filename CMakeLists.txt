@@ -10,6 +10,10 @@ set(ENABLE_AVX2 True)
 
 #####################
 
+# use gcc and g++ instead of clang
+#set(CMAKE_C_COMPILER "gcc-12")
+#set(CMAKE_CXX_COMPILER "g++-12")
+
 # Use CMake -DLGPL=ON if you opt for the LGPL license
 option(LGPL "LGPL" OFF)
 

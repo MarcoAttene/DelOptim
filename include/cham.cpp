@@ -1646,7 +1646,7 @@ void PLCc::chamfered_plc_simplification(){
 
             if(simpL && simpR){
                 uint32_t fi = edges[b.ec].inc_face[0];
-                edges.push_back( CHAMedge(v1,v2,fi) );
+                edges.push_back( CHAMedge(v1,v2,fi) ); mark_edges.push_back(0);
                 size_t new_fbnd_size = faces[fi].bounding_edges.size()-2 ;
                 faces[ fi ].make_last(b.er);
                 if(faces[fi].bounding_edges[ new_fbnd_size ] != b.ec) faces[ fi ].make_last(b.el);
@@ -1673,7 +1673,7 @@ void PLCc::chamfered_plc_simplification(){
                 if(!isAcuteAngle(vertices[v1],vertices[c],vertices[v2]) &&
                    !isAcuteAngle(vertices[ext_ep],vertices[new_ep],vertices[c]) ){
 
-                    edges.push_back( CHAMedge(new_ep,c,fi) );
+                    edges.push_back( CHAMedge(new_ep,c,fi) ); mark_edges.push_back(0);
                     faces[ fi ].make_last(be_rem);
                     size_t new_fbnd_size = faces[fi].bounding_edges.size()-1;
                     if( faces[fi].bounding_edges[ new_fbnd_size-1 ] != b.ec){ 
@@ -1707,7 +1707,7 @@ void PLCc::chamfered_plc_simplification(){
 
                 if(!isAcuteAngle(vertices[v0], vertices[v1], vertices[v2])){
                     uint32_t fi = edges[b.ec].inc_face[0];
-                    edges.push_back( CHAMedge(v1,v2,fi) );
+                    edges.push_back( CHAMedge(v1,v2,fi) ); mark_edges.push_back(0);
                     faces[ fi ].make_last(be);
                     size_t new_fbnd_size = faces[fi].bounding_edges.size()-1 ;
                     if( faces[fi].bounding_edges[ new_fbnd_size-1 ] != b.ec){ 
