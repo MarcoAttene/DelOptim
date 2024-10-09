@@ -1,4 +1,3 @@
-#include "cham.h"
 #include <iostream>
 #include <fstream>
 #include <random>
@@ -229,7 +228,7 @@ void PLCc::initialize(){
         #ifdef TEST_CHAMFERING
         if( e.inc_face.size()&1 ) exit( (int) EXIT_t::open_input );
         #else 
-        if( e.inc_face.size()&1 ) ip_error("Input surface does not enclose a volume\n");
+        if (e.inc_face.size() & 1) ip_error("Input surface does not enclose a volume\n");
         #endif
     }
 
@@ -619,7 +618,7 @@ bool get_bpt_coeff(double& xi0, double& eta0, double& xi1, double& eta1,
         // BPTs may stay otside triangles
         double psi_lim_0 = (1.0-t0) / ( (teta-1.0)*t0 + teta*t1 );
         double psi_lim_1 = (1.0-t1) / ( (teta-1.0)*t1 + teta*t0 );
-        psi_lim = 0.5 * std::min(psi_lim_0, psi_lim_1);
+        psi_lim = 0.5 * min(psi_lim_0, psi_lim_1);
         if( psi > psi_lim ) psi = psi_lim; // at least one BPT is outside the triangle
     }
     
@@ -753,9 +752,9 @@ void PLCc::chamfer_edge_ep(const size_t ei, double d, const uint32_t ep_i){
     uint32_t new_ei = (uint32_t) edges.size()-1;
     for(uint32_t fi : edges[ei].inc_face){
 
-        faces[fi].make_last(ei); // <e0,Pt> is the last on face boundary.
+        faces[fi].make_last((uint32_t)ei); // <e0,Pt> is the last on face boundary.
         if(edges[ faces[fi].bounding_edges.front() ].hasVertex(e0)){
-            faces[fi].make_first(ei);
+            faces[fi].make_first((uint32_t)ei);
         }
         faces[fi].bounding_edges.push_back( new_ei );
 
@@ -1559,7 +1558,7 @@ void PLCc::chamfered_plc_simplification(){
                 else if( vertices[ e0 ]->isBPT() && vertices[ e1 ]->isBPT() ) b.ec = ei;
                 else if( vertices[ e0 ]->isBPT() && vertices[ e1 ]->isLNC() ) b.er = ei;
                 else ip_error("[chamfered_plc_simplification] invalid bridge-edge\n");
-                b.shortest_e_sq = std::min( eEdgeSqLen(ei), b.shortest_e_sq );
+                b.shortest_e_sq = min( eEdgeSqLen(ei), b.shortest_e_sq );
                 i++;
             }while(edges[ fbnd[i] ].loc_face_bridge_id == edges[ fbnd[i-1] ].loc_face_bridge_id);
             if(edges[ fbnd[i] ].loc_face_bridge_id!=NO_BRIDGE) i--;
@@ -1651,7 +1650,7 @@ void PLCc::chamfered_plc_simplification(){
                 size_t new_fbnd_size = faces[fi].bounding_edges.size()-2 ;
                 faces[ fi ].make_last(b.er);
                 if(faces[fi].bounding_edges[ new_fbnd_size ] != b.ec) faces[ fi ].make_last(b.el);
-                faces[fi].bounding_edges[ new_fbnd_size-1 ] = edges.size()-1; 
+                faces[fi].bounding_edges[ new_fbnd_size-1 ] = (uint32_t)edges.size()-1; 
                 faces[fi].bounding_edges.resize(new_fbnd_size);
                 edges[b.el].isolate();
                 edges[b.ec].isolate();
@@ -1681,7 +1680,7 @@ void PLCc::chamfered_plc_simplification(){
                         faces[ fi ].make_last(b.ec);
                         assert(faces[fi].bounding_edges[ new_fbnd_size-1 ] == be_rem);
                     }
-                    faces[fi].bounding_edges[ new_fbnd_size-1 ] = edges.size()-1; 
+                    faces[fi].bounding_edges[ new_fbnd_size-1 ] = (uint32_t)edges.size()-1; 
                     faces[fi].bounding_edges.resize(new_fbnd_size);
                     edges[b.ec].isolate();
                     edges[be_rem].isolate();
@@ -1715,7 +1714,7 @@ void PLCc::chamfered_plc_simplification(){
                         faces[ fi ].make_last(b.ec);
                         assert(faces[fi].bounding_edges[ new_fbnd_size-1 ] == be);
                     }
-                    faces[fi].bounding_edges[ new_fbnd_size-1 ] = edges.size()-1; 
+                    faces[fi].bounding_edges[ new_fbnd_size-1 ] = (uint32_t)edges.size()-1; 
                     faces[fi].bounding_edges.resize(new_fbnd_size);
                     edges[b.ec].isolate();
                     edges[be].isolate();
@@ -1842,8 +1841,8 @@ void PLCc::hear_clipping(uint32_t fi, std::vector<uint32_t>& out_tri_fv_list) co
             // std::cout<<"detraching triangle <"<<fv[jl]<<","<<fv[jc]<<","<<fv[jr]<<">\n";
 
             out_tri_fv_list.insert(out_tri_fv_list.end(), {fv[jl],fv[jc],fv[jr]} );
-            std::remove(fv.begin(),fv.end(),fv[jc]);
-            fv.resize( fv.size()-1 );
+            fv.erase(std::remove(fv.begin(),fv.end(),fv[jc]));
+            //fv.resize( fv.size()-1 );
             fv_last = fv.size()-1;
 
             jc = 0;
@@ -1871,7 +1870,7 @@ void PLCc::get_triangles(std::vector<uint32_t>& tri_fv) const {
              // DEBUG
             // std::cout<<"HEAR CLIPPING\n";
 
-            hear_clipping(fi, tri_fv);
+            hear_clipping((uint32_t)fi, tri_fv);
         }
 
     }

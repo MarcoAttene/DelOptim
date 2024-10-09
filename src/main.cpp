@@ -3,16 +3,17 @@
 #endif
 
 #define EXIT_ON_THRESHOLD_NUMVERTICES //if (V.size() > 100000) { std::cout << "Limit num vertices reached!\nEXITING\n"; exit(11); }
-#define EXIT_ON_THRESHOLD_TIME
 
-#define USE_CHAMFERING // unused
-#define TEST_CHAMFERING // enables returns different from 0 to monitor failures (see cham.h)
+//#define USE_TETGEN
 
 #include <iostream>
 #include <fstream>
 #include "cdt.h"
 #include "inputPLC.h"
 #include "tetmesh.h"
+#ifdef USE_TETGEN
+#include "tetgen_interface.cpp"
+#endif
 #include <chrono>
 #include "logger.h"
 
@@ -27,26 +28,26 @@ using namespace std;
 #include "cham.h"
 
 // Export the data structure to optimizer
-void chamferPLC(inputPLC& _plc, 
-				double _epsilon, 
-				std::vector<genericPoint*>& _vertices, 
-				std::vector<std::vector<uint32_t>>& _faces, 
-				bool simplify_cham_plc, bool verbose) {
+void chamferPLC(inputPLC& _plc,
+	double _epsilon,
+	std::vector<genericPoint*>& _vertices,
+	std::vector<std::vector<uint32_t>>& _faces,
+	bool simplify_cham_plc, bool verbose) {
 	PLCc* cut_plc = new PLCc(_plc, _epsilon, verbose);
 
-	if(simplify_cham_plc){ 
+	if (simplify_cham_plc) {
 		uint32_t num_edges = cut_plc->edges.size();
-        cut_plc->chamfered_plc_simplification();
+		cut_plc->chamfered_plc_simplification();
 		// assert( cut_plc->checkup() );
 		// assert( cut_plc->check_acuteness() );
-        if(verbose) std::cout<<"Chamfered PLC simplication COMPLETED: "<< num_edges - cut_plc->edges.size() <<" edges removed.\n\n";
-    }
+		if (verbose) std::cout << "Chamfered PLC simplication COMPLETED: " << num_edges - cut_plc->edges.size() << " edges removed.\n\n";
+	}
 
 	std::vector<uint32_t> used_vertex(cut_plc->vertices.size(), UINT32_MAX);
 
 	std::vector<uint32_t> out_tri;
 	cut_plc->get_triangles(out_tri);
-	if(verbose) std::cout<<"Chamfered PLC triangulation COMPLETED\n\n";
+	if (verbose) std::cout << "Chamfered PLC triangulation COMPLETED\n\n";
 
 	for (size_t i = 0; i < out_tri.size(); i++)	used_vertex[out_tri[i]] = 1;
 
@@ -100,7 +101,6 @@ bool isTetInternal(Tetrahedron* t, TetMesh* cdt) {
 }
 
 
-
 int main(int argc, char* argv[])
 {
 	initFPU();
@@ -118,10 +118,10 @@ int main(int argc, char* argv[])
 		std::cout << "\t[-t max time in minutes] -> time out mode";
 		std::cout << std::endl;
 		return 0;
-}
+	}
 	else strcpy(filename, argv[1]);
 #else
-	strcpy(filename, "..\\Input_file\\acute\\93075.off");
+	strcpy(filename, "..\\Input_file\\acute\\cup_fixed_fixed.off");
 	//strcpy(filename, "..\\Input_file\\subdcube.off");
 	//char filename[2048] = "..\\Input_file\\twocubes.off";
 
@@ -129,18 +129,27 @@ int main(int argc, char* argv[])
 
 	std::string options = "";
 
-	uint64_t time_out=0;
+	uint64_t time_out = 0;
 	for (int i = 1; i < argc; i++)
 		if (argv[i][0] == '-') {
-			if(argv[i][1]=='t'){ time_out = atoi(argv[++i]); continue; }
+			if (argv[i][1] == 't') { time_out = atoi(argv[++i]); continue; }
 			for (int j = 1; j < strlen(argv[i]); j++) options += argv[i][j];
 		}
-		else memcpy(filename, argv[i], strlen(argv[i])+1);
+		else memcpy(filename, argv[i], strlen(argv[i]) + 1);
 
 	// Load a valid PLC from file
 	inputPLC plc;
 	plc.initFromFile(filename, options.find('v') != std::string::npos);
 	
+#ifdef USE_TETGEN
+	Tetrahedrization mesh;
+	mesh.initWithTetgen(plc.numVertices(), plc.coordinates.data(), plc.numTriangles(), plc.triangle_vertices.data(), true, false);
+	printf("Max energy: %f\n", mesh.maxEnergy());
+	printf("Min dihedral: %f\n", mesh.minDihedral());
+	printf("Min angle: %f\n", mesh.minTetAngle());
+	mesh.saveOFFBoundary("plcfaces.off");
+#else
+
 	TetMesh tin;
 
 	// Here we create a CDT of the input as it is and extract a chamfered version to be optimized
@@ -148,11 +157,13 @@ int main(int argc, char* argv[])
 	std::vector<genericPoint*> chamf_vertices;
 	std::vector<std::vector<uint32_t>> chamf_faces;
 	double epsilon = plc.bbDiag() / 1000.0;	// Use bounding-box-diagonal/1000 as chamfering distance
+
 	bool simplify_chamferd_plc = true; // try to remove uncessary edges while keeping non-acute angles
 
 	chamferPLC(plc, epsilon, chamf_vertices, chamf_faces, simplify_chamferd_plc, options.find('v') != std::string::npos);
 
 	tin.init_vertices(chamf_vertices);
+
 	std::cout << "Delaunizing vertices...\n";
 	tin.addBoundingBoxVertices();
 	tin.tetrahedrize();
@@ -160,12 +171,10 @@ int main(int argc, char* argv[])
 	Tetrahedrization mesh;
 	std::chrono::steady_clock::time_point time_point = std::chrono::steady_clock::now();
 
-	if(time_out > 0){ 
+	if (time_out > 0) {
 		time_out *= 60000;
-		mesh.set_optimization_time_out(time_point, time_out); 
+		mesh.set_optimization_time_out(time_point, time_out);
 	}
-		
-		
 
 	// Copy the DT to the new structure
 	double closest_pts_dist = mesh.initFromVerticesAndTets(tin.vertices, tin.tet_node);
@@ -191,50 +200,47 @@ int main(int argc, char* argv[])
 	std::cout << "Recovering faces...\n";
 	mesh.recoverAllFaces();
 
-
 	// Tet optimization
 	std::cout << "Optimizing tets...\n";
-	mesh.optimizeTets(2.0);
+	mesh.optimizeTets(2.0, false, false);
 
 	// Remove external tets after chamfering
 	for (Tetrahedron* t : mesh.tets()) t->is_internal = isTetInternal(t, cdt);
-	//
-	// Searching might be slow. If so, instead of picking tets in random order
-	// traverse mesh by adjacencies and remember the last tet to seed searchTetrahedron
 
 	std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
 	uint64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - time_point).count();
 	std::cout << "Elapsed time (ms): " << ms << "\n";
 
-	if(options.find('l') != std::string::npos){
+	if (options.find('l') != std::string::npos) {
 		// append a line to logfile.csv
 
 		// LOGfile
-		startLogging( filename );
-		logInteger( mesh.num_vertices() );
-		logInteger( mesh.num_tetrahedra() );
-		logInteger( ms );
-		logDouble( mesh.minEdgeLength() );
+		startLogging(filename);
+		logInteger(mesh.num_vertices());
+		logInteger(mesh.num_tetrahedra());
+		logInteger(ms);
+		logDouble(mesh.minEdgeLength());
 		double maxEneIN, maxEneEX;
 		mesh.maxTetEnergy(maxEneIN, maxEneEX);
 		logDouble(maxEneIN); logDouble(maxEneEX);
 		double minFAIN, maxFAIN, minFAEX, maxFAEX, minDAIN, maxDAIN, minDAEX, maxDAEX;
-		mesh.minMaxTetAngle(minFAIN,maxFAIN, minFAEX,maxFAEX, minDAIN,maxDAIN, minDAEX,maxDAEX);
+		mesh.minMaxTetAngle(minFAIN, maxFAIN, minFAEX, maxFAEX, minDAIN, maxDAIN, minDAEX, maxDAEX);
 		logDouble(minFAIN); logDouble(maxFAIN);
 		logDouble(minFAEX); logDouble(maxFAEX);
 		logDouble(minDAIN); logDouble(maxDAIN);
 		logDouble(minDAEX); logDouble(maxDAEX);
 		finishLogging();
 	}
-	else{
+	else {
 		mesh.printReport();
-		std::cout<<std::endl;
+		std::cout << std::endl;
 
-		mesh.saveOFFInterface("plcfaces.off");
-		mesh.saveTET("mesh.tet");
+		//mesh.saveOFFInterface("plcfaces.off");
+		//mesh.saveTET("mesh.tet");
 	}
 
-
+#endif
+	//mesh.saveTET("mesh.tet");
 
 	return 0;
 }

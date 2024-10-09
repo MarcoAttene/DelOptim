@@ -129,22 +129,12 @@ int vertex_compare(const void* void_v1, const void* void_v2)
         ((dz > 0) - (dz < 0)));
 }
 
-void incrOrdTriple(uint32_t* t){
-    if(t[0]>t[2]) std::swap(t[0],t[2]);
-    if(t[0]>t[1]) std::swap(t[0],t[1]);
-    // Now t0 is the minimum
-    if(t[1]>t[2]) std::swap(t[1],t[2]);
-}
-
 int triOrder(const void* t1, const void* t2) {
-    const uint32_t* pa = (uint32_t*)t1;
-    const uint32_t* pb = (uint32_t*)t2;
+    const uint32_t* a = (uint32_t*)t1;
+    const uint32_t* b = (uint32_t*)t2;
 
-    uint32_t a[] = {*pa, *(pa+1), *(pa+2)};
-    uint32_t b[] = {*pb, *(pb+1), *(pb+2)};
-
-    incrOrdTriple(a); incrOrdTriple(b);
-
+    // Here we should pre-order a[3] and b[3] to identify coincident triangles with different vertex ordering!!!
+    // To be done!
     if (a[0] < b[0]) return -1;
     if (a[0] > b[0]) return 1;
     if (a[1] < b[1]) return -1;
@@ -247,7 +237,7 @@ void read_nodes_and_constraints(double* coords_A, uint32_t npts_A, uint32_t* tri
     qsort((*tri_vertices_p), *ntri, sizeof(uint32_t) * 3, triOrder);
     *ntri -= num_duplicates;
 
-    if (verbose) std::cout << "Using " << *ntri << " non-degenerate unique constraints\n";
+    if (verbose) std::cout << "Using " << *ntri << " non-degenerate constraints\n";
 }
 
 class inputPLC {

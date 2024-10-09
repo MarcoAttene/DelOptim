@@ -31,7 +31,7 @@
 #define UNMARKBIT(m, twoPowBit) m &= (~((uint32_t)twoPowBit))
 #define ISMARKEDBIT(m, twoPowBit) m & ((uint32_t)twoPowBit) 
 
-// Uncommenting the following macro definition makes the code use modified parts of hxt_SeqDel (Copyright (C) 2018 Cï¿½lestin Marot).
+// Uncommenting the following macro definition makes the code use modified parts of hxt_SeqDel (Copyright (C) 2018 Célestin Marot).
 // hxt_SeqDel is a sequential Delaunay triangulator hosted at https://git.immc.ucl.ac.be/hextreme/hxt_seqdel as of 2020.
 // hxt_SeqDel is GPL licensed, meaning that if you uncomment the following line you accept the terms of the GPL license for
 // the whole CDT code.
@@ -484,9 +484,10 @@ public:
         return sq_dist_line(v1, v2);
     }
 
+
     // Left linear combination (*this)*(1-k) + v*k = (*this) + (v - (*this)) * k
-    inline vector3d leftLinComb(const vector3d& v, double k) const { 
-        return vector3d( c[0] + (v.c[0]-c[0]) * k, c[1] + (v.c[1]-c[1]) * k, c[2] + (v.c[2]-c[2]) * k); 
+    inline vector3d leftLinComb(const vector3d& v, double k) const {
+        return vector3d(c[0] + (v.c[0] - c[0]) * k, c[1] + (v.c[1] - c[1]) * k, c[2] + (v.c[2] - c[2]) * k);
     }
 
 };

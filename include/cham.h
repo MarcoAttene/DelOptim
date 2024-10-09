@@ -312,11 +312,15 @@ public:
     bool findIF_acute_edge(const CHAMedge& e) const;
     bool findIF_acute_vrt(const uint32_t vi, const std::vector<uint32_t>& vv_i, const std::vector<uint32_t>& vt_i) const;
 
+    double closest_vv_dist(const uint32_t vi, const std::vector<uint32_t>& vv_i) const;
+    double closest_vt_dist(const uint32_t vi, const std::vector<uint32_t>& vt_i) const;
+
     double get_vrt_ch_dist(uint32_t vi, const std::vector<uint32_t>& vv_i, const std::vector<uint32_t>& vt_i) const {
-        return (std::min( closest_vv_dist(vi, vv_i), closest_vt_dist(vi, vt_i) )) / 3;
+        auto a = closest_vv_dist(vi, vv_i);
+        auto b = closest_vt_dist(vi, vt_i);
+        auto c = min(a, b);
+        return c / 3;
     }
-    double closest_vv_dist(const uint32_t vi, const std::vector<uint32_t>& vv_i ) const;
-    double closest_vt_dist(const uint32_t vi, const std::vector<uint32_t>& vt_i ) const;
 
     // Input triangle chamfering (Fallback solution)
 

@@ -573,10 +573,11 @@ public:
 // For a regular tetrahedron returns 3.
 // For generic non-degenerate tetrahedra returns a value in the range [3, DBL_MAX]
 	double tetEnergy() const { return tetrahedronEnergy(v0(), v1(), v2(), v3()); }
-	void minMaxDihedral(double& min, double& max) const { 
-		const pointType* v[] = {v0()->getPoint(), v1()->getPoint(), v2()->getPoint(), v3()->getPoint()}; 
-		getMinMaxTetDihedralAngles(min,max,v); 
+	void minMaxDihedral(double& min, double& max) const {
+		const pointType* v[] = { v0()->getPoint(), v1()->getPoint(), v2()->getPoint(), v3()->getPoint() };
+		getMinMaxTetDihedralAngles(min, max, v);
 	}
+	double minDihedral() const { return (180/M_PI)*acos(minTetDihedralAngleCos(v0()->getPoint(), v1()->getPoint(), v2()->getPoint(), v3()->getPoint())); }
 };
 
 #ifdef USE_MEMORY_POOLS
@@ -899,32 +900,33 @@ public:
 					ref_t[1] = &v1->toExplicit3D();
 					ref_t[2] = &v2->toExplicit3D();
 				}
+
 				// start ADDED by Lorenzo 20/08/2024
-				else if(v0->isLNC() || v1->isLNC() || v2->isLNC()){
+				else if (v0->isLNC() || v1->isLNC() || v2->isLNC()) {
 
 					const explicitPoint3D* p[6];
-					size_t i=0;
-					if(v0->isLNC()){ p[i++] = &v0->toLNC().P(); p[i++] = &v0->toLNC().Q();}
-					else{ p[i++] = &v0->toExplicit3D(); }
-					if(v1->isLNC()){ p[i++] = &v1->toLNC().P(); p[i++] = &v1->toLNC().Q();}
-					else{ p[i++] = &v1->toExplicit3D(); }
-					if(v2->isLNC()){ p[i++] = &v2->toLNC().P(); p[i++] = &v2->toLNC().Q();}
-					else{ p[i++] = &v2->toExplicit3D(); }
-					for(size_t j=i; j<6; j++) p[j] = NULL;
+					size_t i = 0;
+					if (v0->isLNC()) { p[i++] = &v0->toLNC().P(); p[i++] = &v0->toLNC().Q(); }
+					else { p[i++] = &v0->toExplicit3D(); }
+					if (v1->isLNC()) { p[i++] = &v1->toLNC().P(); p[i++] = &v1->toLNC().Q(); }
+					else { p[i++] = &v1->toExplicit3D(); }
+					if (v2->isLNC()) { p[i++] = &v2->toLNC().P(); p[i++] = &v2->toLNC().Q(); }
+					else { p[i++] = &v2->toExplicit3D(); }
+					for (size_t j = i; j < 6; j++) p[j] = NULL;
 
-					size_t k=1;
-					for(size_t j=k; j<i; j++){ 
-						size_t l=0; for(; l<k; l++) if((p[j] == p[l])) break;
-						if(l==k){  if(j!=k){ std::swap(p[j],p[k]); }  k++;  }
-						if(k==3) break;
+					size_t k = 1;
+					for (size_t j = k; j < i; j++) {
+						size_t l = 0; for (; l < k; l++) if ((p[j] == p[l])) break;
+						if (l == k) { if (j != k) { std::swap(p[j], p[k]); }  k++; }
+						if (k == 3) break;
 					}
-					assert(k==3);
-					assert( !(p[0]==p[1]) && !(p[0]==p[2]) && !(p[2]==p[1]) );
+					assert(k == 3);
+					assert(!(p[0] == p[1]) && !(p[0] == p[2]) && !(p[2] == p[1]));
 
-					if( pointType::orient2Dyz(*p[0], *p[1], *p[2]) != pointType::orient2Dyz(*v0, *v1, *v2) ||
+					if (pointType::orient2Dyz(*p[0], *p[1], *p[2]) != pointType::orient2Dyz(*v0, *v1, *v2) ||
 						pointType::orient2Dzx(*p[0], *p[1], *p[2]) != pointType::orient2Dzx(*v0, *v1, *v2) ||
-						pointType::orient2Dxy(*p[0], *p[1], *p[2]) != pointType::orient2Dxy(*v0, *v1, *v2)   ){
-						std::swap(p[0],p[1]);
+						pointType::orient2Dxy(*p[0], *p[1], *p[2]) != pointType::orient2Dxy(*v0, *v1, *v2)) {
+						std::swap(p[0], p[1]);
 					}
 
 					ref_t[0] = p[0];
@@ -933,6 +935,7 @@ public:
 
 				}
 				// end ADDED by Lorenzo 20/08/2024
+
 				else continue;
 				break;
 			}
@@ -1211,11 +1214,14 @@ int vOrient3D(const TetVertex* v1, const TetVertex* v2, const TetVertex* v3, con
 
 class Tetrahedrization
 {
-// TMP: only for testing purposes, related to #define EXIT_ON_THRESHOLD_TIME
+	// TMP: only for testing purposes, related to #define EXIT_ON_THRESHOLD_TIME
 public:
-	std::chrono::steady_clock::time_point init_time; 
+	std::chrono::steady_clock::time_point init_time;
 	uint64_t critical_time; // millisecond
-// end TMP
+
+	void set_optimization_time_out(std::chrono::steady_clock::time_point _init_time, uint64_t _critical_time) { init_time = _init_time, critical_time = _critical_time; }
+	// end TMP
+
 protected:
 	// Vertices, edges, faces and tets
 	TetVertices V;
@@ -1236,11 +1242,8 @@ protected:
 	bool facesAreRecovered;
 
 public:
-	double sqAlpha = 0;
 
 	Tetrahedrization() : facesAreDelaunized(false), facesAreRecovered(false), critical_time(0) {}
-	
-	void set_optimization_time_out(std::chrono::steady_clock::time_point _init_time, uint64_t _critical_time){init_time = _init_time, critical_time = _critical_time;}
 
 	size_t num_vertices() { return V.size(); } const
 	size_t num_tetrahedra() { return T.size(); } const
@@ -1264,6 +1267,7 @@ public:
 
 		double ad, cp = DBL_MAX;
 		for (auto* e : E) if ((ad = euclideanDistance(e->v0(), e->v1())) < cp) cp = ad;
+
 		return cp / euclideanDistance(V.back(), V[V.size()-8]);
 	}
 
@@ -1438,15 +1442,6 @@ public:
 		for (Tetrahedron* t : tets) t->unmark<7>();
 		tets.clear();
 		return NULL;
-
-		//TETMESH_STATIC TetFaces vf;
-		//v0->VF(vf);
-		//for (TetFace* f : vf) if (f->hasVertex(v1) && f->hasVertex(v2)) {
-		//	vf.clear();
-		//	return f;
-		//}
-		//vf.clear();
-		//return NULL;
 	}
 
 	bool isEncroachedTriangle(DelTriangle* t) {
@@ -1454,23 +1449,6 @@ public:
 		TetFace* f = getTriangle(v0, v1, v2);
 		if (f == NULL) return true;
 		return f->isEncroached();
-
-		//TETMESH_STATIC TetFaces vf;
-		//vf.clear();
-
-		//t->v0()->VF(vf);
-		//for (TetFace* f : vf) if (f->hasVertex(t->v1()) && f->hasVertex(t->v2())) {
-		//	// A corresp. triangle in the mesh was found. Check whether its opposites encroach
-		//	const TetVertex* o1 = f->t1()->oppositeVertex(f);
-		//	if (vInDiametralSphere(o1, f->v0(), f->v1(), f->v2())) return 1;
-		//	if (f->t2() == NULL) return 0;
-		//	const TetVertex* o2 = f->t2()->oppositeVertex(f);
-		//	if (vInDiametralSphere(o2, f->v0(), f->v1(), f->v2())) return 1;
-		//	return 0;
-		//}
-
-		//// Missing face
-		//return 2;
 	}
 
 	void initVSrelation() {
@@ -1518,7 +1496,7 @@ public:
 
 			// Split if segment is not in mesh or if it is encroached
 			if (e == NULL || e->isEncroached()) {				
-				if (splitSegment(s)) rec = true;
+				splitSegment(s); rec = true;
 			}
 			else e->segment = s;
 		}
@@ -1559,13 +1537,11 @@ public:
 			dirty_Triangles.pop_back();
 			t->unsetDirty();
 			TetFace* h = getTriangle(t->v0(), t->v1(), t->v2());
-			if (h == NULL || h->isEncroached()) {
+			if (h == NULL  || h->isEncroached()) {
 				PLC_Face* f = (PLC_Face*)t->getInfo();
-				if (recoverDelaunayTriangle(f, t)) {
-					rec = true;
-					recoverAllDirtySegments();
-				}
-				else if (h!=NULL) h->deltri = t;
+				recoverDelaunayTriangle(f, t);
+				rec = true;
+				recoverAllDirtySegments();
 			}
 			else h->deltri = t;
 		}
@@ -1579,7 +1555,7 @@ public:
 		for (PLC_Face* f : G) {
 			for (DelTriangle* t : f->getTriangles()) if (t->is_internal) {
 				TetFace* h = getTriangle(t->v0(), t->v1(), t->v2());
-				if (h == NULL || h->isEncroached()) queueDirtyTriangle(t);
+				if (h == NULL  || h->isEncroached()) queueDirtyTriangle(t);
 				else h->deltri = t;
 			}
 		}
@@ -1596,7 +1572,7 @@ public:
 		for (PLC_Face* f : G) {
 			for (DelTriangle* t : f->getTriangles()) if (t->is_internal) {
 				TetFace* h = getTriangle(t->v0(), t->v1(), t->v2());
-				if (h == NULL) ip_error("Missing triangle!\n");
+				assert(h != NULL);
 				if (h->isEncroached()) et++;
 			}
 		}
@@ -1612,7 +1588,7 @@ public:
 		return true;
 	}
 
-	bool splitFace(PLC_Face* f, pointType* cc, TetVertex *start) {
+	void splitFace(PLC_Face* f, pointType* cc, TetVertex *start) {
 		assert(f->containsPoint(cc));
 		assert(!f->pointInBorder(cc));
 
@@ -1620,12 +1596,11 @@ public:
 		V.push_back(vm);
 
 		insertNewVertex(vm, start->getIncidentEdge()->getIncidentFace()->t1());
-		delaunizeFace(f, vm);
 
-		return true;
+		delaunizeFace(f, vm);
 	}
 
-	bool recoverDelaunayTriangle(PLC_Face* f, DelTriangle* t) {
+	void recoverDelaunayTriangle(PLC_Face* f, DelTriangle* t) {
 		const pointType* v0p = t->v0()->getPoint(), * v1p = t->v1()->getPoint(), * v2p = t->v2()->getPoint();
 		explicitPoint3D ccv;
 		computeCircumCenter(v0p, v1p, v2p, ccv);
@@ -1633,23 +1608,16 @@ public:
 		for (PLC_Segment* s : f->segments) {
 			// If cc encroaches upon one of the segments of f, split segment
 			if (s->isEncroachedBy(&ccv)) {
-				if (!splitSegment(s)) return false;
+				splitSegment(s);
 				// The triangle might not be deleted in this case. Need to check
 				const DelTriangles& T = f->getTriangles();
 				if (std::find(T.begin(), T.end(), t)!=T.end()) queueDirtyTriangle(t);
-				return true;
+				return;
 			}
 		}
 
-		//if (!f->containsPoint(cc)) {
-		//	delete cc;
-		//	return false;
-		//	saveOnePLCFace("face.off", f);
-		//	savePLCSegments("segments.wrl", f);
-		//	exit(0);
-		//}
 		implicitPoint3D_BPT* cc = convertToBPT(&ccv, f->ref_t[0], f->ref_t[1], f->ref_t[2]);
-		return splitFace(f, cc, t->v0());
+		splitFace(f, cc, t->v0());
 	}
 
 	void markInternalTets() {
@@ -1716,37 +1684,9 @@ public:
 		}
 
 		return ((*es) != NULL);
-
-
-
-		//for (PLC_Segment* s : S) if (s->isEncroachedBy(p)) { *es = s; return true; }
-		//return false;
 	}
 
 	bool encroachesPLCTriangle(const pointType* p, const Tetrahedra& cavity, PLC_Face** ef, DelTriangle** et) {
-
-		//TetFaces cfaces, ifaces;
-		//TetFace* f, *gf=NULL;
-		//for (Tetrahedron* t : cavity) {
-		//	f = t->f0(); if (f->deltri != NULL) { if (!f->isMarked<7>()) { f->mark<7>(); cfaces.push_back(f); } else { gf = f; break; } }
-		//	f = t->f1(); if (f->deltri != NULL) { if (!f->isMarked<7>()) { f->mark<7>(); cfaces.push_back(f); } else { gf = f; break; } }
-		//	f = t->f2(); if (f->deltri != NULL) { if (!f->isMarked<7>()) { f->mark<7>(); cfaces.push_back(f); } else { gf = f; break; } }
-		//	f = t->f3(); if (f->deltri != NULL) { if (!f->isMarked<7>()) { f->mark<7>(); cfaces.push_back(f); } else { gf = f; break; } }
-		//}
-		//for (TetFace* f : cfaces) f->unmark<7>();
-
-		//if (gf != NULL) {
-		//	*et = gf->deltri;
-		//	*ef = (PLC_Face*)gf->deltri->getInfo();
-		//	return true;
-		//}
-		//else {
-		//	for (auto f = G.end() - 6; f != G.end(); f++) {
-		//		DelTriangle* t = getEncroachedTriangleInFace(*f, p);
-		//		if (t != NULL) { *ef = *f; *et = t; return true; }
-		//	}
-		//	return false;
-		//}
 
 		TetFaces cfaces;
 		TetFace* f;
@@ -1780,22 +1720,35 @@ public:
 	}
 
 	// Calculate the cost and init tet's info field with an explicitPoint of its circumcenter
-	static double computeTetCost(Tetrahedron* t) {
+	static double computeTetCost(Tetrahedron* t, bool remove_slivers) {
 		double ccc[3];
 
 		const pointType* v[4] = { t->v0()->getPoint(), t->v1()->getPoint(), t->v2()->getPoint(), t->v3()->getPoint() };
 		const double shortest_edge_sqlen = getTetShortestEdgeSqLength(v);
-		//const double shortest_sqheight = getTetShortestHeightSqLength(v);
 		const double sqrad = circumsphere_ludecomp(v[0], v[1], v[2], v[3], ccc);
-		//if (100 * shortest_sqheight < shortest_edge_sqlen) return sqrad / shortest_sqheight; // Sliver
-		//else 
-			return sqrad / shortest_edge_sqlen;
+		const double cost = sqrad / shortest_edge_sqlen;
+
+		// The following two lines try to account for slivers.
+		// If set there is no longer a guarantee of termination, but it usually works well in practice
+		if (remove_slivers) {
+			const double shortest_sqheight = getTetShortestHeightSqLength(v);
+			if (cost < 4.0 && (52 * shortest_sqheight) < shortest_edge_sqlen) return DBL_MAX;
+		}
+
+		return cost;
 	}
 
-	static void setTetCost(Tetrahedron* t) {
-		const double ratio = computeTetCost(t);
+	static void setTetCost(Tetrahedron* t, bool remove_slivers) {
+		const double ratio = computeTetCost(t, remove_slivers);
 		const uint64_t tcui = *((uint64_t*)&ratio);
 		t->setInfo((void*)tcui);
+	}
+
+	static double setAndGetTetCost(Tetrahedron* t, bool remove_slivers) {
+		const double ratio = computeTetCost(t, remove_slivers);
+		const uint64_t tcui = *((uint64_t*)&ratio);
+		t->setInfo((void*)tcui);
+		return ratio;
 	}
 
 	static double getTetCost(Tetrahedron* t) {
@@ -1804,124 +1757,77 @@ public:
 		return cost;
 	}
 
-
-
-	//bool saveBadTets(const char* filename, bool sliver_removal, double threshold_ratio)
-	//{
-	//	size_t num_v = 0, num_t = 0;
-
-	//	for (TetVertex* v : V) v->setInfo(0);
-
-	//	for (Tetrahedron* t : T) if (getTetCost(t, sliver_removal) > threshold_ratio) t->mark<5>();
-
-	//	for (TetFace* f : F) if (getTetCost(f->t1(), sliver_removal) > threshold_ratio || (f->t2()!=NULL && getTetCost(f->t2(), sliver_removal) > threshold_ratio)) {
-	//		f->v0()->setInfo((void*)1);
-	//		f->v1()->setInfo((void*)1);
-	//		f->v2()->setInfo((void*)1);
-	//		num_t++;
-	//	}
-
-	//	for (TetVertex* v : V) if (v->getInfo()) {
-	//		num_v++;
-	//		v->setInfo((void*)(num_v));
-	//	}
-
-	//	FILE* fp;
-	//	if ((fp = fopen(filename, "w")) == NULL) return false;
-
-	//	fprintf(fp, "OFF\n");
-	//	fprintf(fp, "%zu %zu 0\n", num_v, num_t);
-
-	//	double x, y, z;
-	//	for (TetVertex* v : V) if (v->getInfo()) {
-	//		const pointType* p = v->getPoint();
-	//		p->getApproxXYZCoordinates(x, y, z);
-	//		fprintf(fp, "%f %f %f\n", x, y, z);
-	//	}
-
-	//	size_t i1, i2, i3;
-	//	for (TetFace* f : F) if (getTetCost(f->t1(), sliver_removal) > threshold_ratio || (f->t2() != NULL && getTetCost(f->t2(), sliver_removal) > threshold_ratio)) {
-	//		i1 = (size_t)f->v0()->getInfo();
-	//		i2 = (size_t)f->v1()->getInfo();
-	//		i3 = (size_t)f->v2()->getInfo();
-	//		fprintf(fp, "3 %zu %zu %zu\n", i1 - 1, i2 - 1, i3 - 1);
-	//	}
-
-	//	for (TetVertex* v : V) v->setInfo(0);
-
-	//	fclose(fp);
-	//	return true;
-	//}
-
-	bool optimizeOneTet(Tetrahedron* t) {
+	bool optimizeOneTet(Tetrahedron* t, double off_center_tr) {
 		PLC_Face* encroached_face;
 		DelTriangle* encroached_triangle;
-		PLC_Segment* es;
+		PLC_Segment* encroached_segment;
 		bool split = false;
-		const double prevSqAlhpa = sqAlpha;
 
 		double ccc[3];
 		const pointType* v[4] = { t->v0()->getPoint(), t->v1()->getPoint(), t->v2()->getPoint(), t->v3()->getPoint() };
-		getTetCircumSpherePrecise(v, ccc);
-		explicitPoint3D* cc = new explicitPoint3D(ccc[0], ccc[1], ccc[2]);
+		getTetCircumSpherePrecise(v, ccc, off_center_tr);
+		explicitPoint3D cc(ccc[0], ccc[1], ccc[2]);
 
 		TETMESH_STATIC Tetrahedra cavity;
-		TetVertex vm(cc);
+		TetVertex vm(&cc);
 		getCavity(&vm, cavity, t);
 
-		if (encroachesPLCSegment(cc, cavity, &es)) {
-			delete cc;
-			if (splitSegment(es)) {
-				sqAlpha = 0;
-				recoverAllDirtyTriangles();
-				sqAlpha = prevSqAlhpa;
-				split = true;
-			}
+		//   Check whether cc encroaches upon any segment
+		if (encroachesPLCSegment(&cc, cavity, &encroached_segment)) {
+			splitSegment(encroached_segment);
+			recoverAllDirtyTriangles();
+			split = true;	
 		}
-		else
-			//   Check whether cc encroaches upon any face triangle. 
-			if (encroachesPLCTriangle(cc, cavity, &encroached_face, &encroached_triangle)) {
-				delete cc;
-				if (recoverDelaunayTriangle(encroached_face, encroached_triangle)) {
-					split = true;
-					sqAlpha = 0;
-					recoverAllDirtyTriangles();
-					sqAlpha = prevSqAlhpa;
-				}
-			}
+		//   Check whether cc encroaches upon any face triangle
+		else if (encroachesPLCTriangle(&cc, cavity, &encroached_face, &encroached_triangle)) {
+			recoverDelaunayTriangle(encroached_face, encroached_triangle);
+			split = true;
+			recoverAllDirtyTriangles();
+		}
 		//   If cc does not encroach upon any triangle, just insert it in the mesh
-			else {
-				if (cavity.empty()) {
-					delete cc;
-				}
-				else {
-					EXIT_ON_THRESHOLD_NUMVERTICES;
-					if (searchTet(cc, t) != NULL) {
-						TetVertex* vm = new TetVertex(cc);
-						V.push_back(vm);
-						retetrahedrizeCavity(vm, cavity);
-						vm->setIncidentSegments(new PLC_Segments);
-						split = true;
-					}
-				}
-			}
+		else if (!cavity.empty()) {
+			EXIT_ON_THRESHOLD_NUMVERTICES;
+			TetVertex* vm = new TetVertex(new explicitPoint3D(cc));
+			V.push_back(vm);
+			retetrahedrizeCavity(vm, cavity);
+			vm->setIncidentSegments(new PLC_Segments);
+			split = true;
+		}
 
 		cavity.clear();
 		return split;
 	}
 
-	void optimizeTets(double threshold_ratio = 2.0) {
+	//////////////////////////
+	//
+	// Main optimization function
+	// Assumes that the tetmesh has no encroachment.
+	// 
+	// Parameters:
+	//	threshold_ratio: max ratio between circumsphere radius and shortest edge of a tet
+	//	remove_slivers: a heuristic is used to remove slivers during the optimization
+	//	use_offcenters: use off-centers instead of circumcenters (A. Ungor)
+	//
+	// The algorithm is guaranteed to terminate if 'remove_slivers' is not set. However,
+	// in practice it most often terminates even if 'remove_slivers' is true.
+	//
+	//////////////////////////
+	
+	void optimizeTets(double threshold_ratio = 2.0, bool remove_slivers =false, bool use_offcenters =true) {
 		threshold_ratio *= threshold_ratio; // Make it squared to account for squares everywhere
-
-		for (Tetrahedron* t : T) setTetCost(t);
-
 		bool split;
+		const double offcenter_tr = (use_offcenters) ? (threshold_ratio) : (0);
+
+		// Create a priority queue for tets
+		auto tcmp = [](Tetrahedron* left, Tetrahedron* right) { return getTetCost(left) < getTetCost(right); };
+		std::priority_queue < Tetrahedron*, Tetrahedra, decltype(tcmp)> queue;
+
+		// Pre-calculate a 'cost' for each tet
+		for (Tetrahedron* t : T) setTetCost(t, remove_slivers);
+
 		do {
-			removeUnlinkedElements();
 			split = false;
 
-			auto tcmp = [](Tetrahedron* left, Tetrahedron* right) { return getTetCost(left) < getTetCost(right); };
-			std::priority_queue < Tetrahedron*, Tetrahedra, decltype(tcmp)> queue;
 			for (Tetrahedron* t : T) if (getTetCost(t) > threshold_ratio) queue.push(t);
 			int cnt = 1000;
 			while (!queue.empty()) {
@@ -1935,13 +1841,13 @@ public:
 				if (!t->isLinked()) continue;
 				size_t tets_before = T.size();
 
-				if (optimizeOneTet(t)) split = true;
+				if (optimizeOneTet(t, offcenter_tr)) split = true;
 
 				for (size_t i = tets_before; i < T.size(); i++) if (T[i]->isLinked()) {
-					setTetCost(T[i]);
-					if (getTetCost(T[i]) > threshold_ratio) queue.push(T[i]);
+					if (setAndGetTetCost(T[i], remove_slivers) > threshold_ratio) queue.push(T[i]);
 				}
 			}
+			removeUnlinkedElements();
 			printf("\n");
 		} while (split);
 
@@ -1950,72 +1856,7 @@ public:
 		deleteVSRelation();
 
 		removeUnlinkedElements();
-
-		//saveBadTets("skin.off", sliver_removal, threshold_ratio);
 	}
-
-	// never called
-	// static void setTetCostAngle(Tetrahedron* t) {
-	// 	const double angle = ::minTetAngle(t->v0()->getPoint(), t->v1()->getPoint(), t->v2()->getPoint(), t->v3()->getPoint());
-	// 	const uint64_t tcui = *((uint64_t*)&angle);
-	// 	t->setInfo((void*)tcui);
-	// }
-
-	static double getTetCostAngle(Tetrahedron* t) {
-		const uint64_t tcui = (uint64_t)t->getInfo();
-		const double cost = *((double*)&tcui);
-		return cost;
-	}
-
-	// never called
-	// void optimizeTetsForAngle(const double min_angle = 20.0) {
-	// 	printf("Min angle before optimization: %f\n", minTetAngle());
-
-	// 	for (Tetrahedron* t : T) setTetCostAngle(t);
-
-	// 	bool split;
-	// 	do {
-	// 		removeUnlinkedElements();
-	// 		split = false;
-
-	// 		auto tcmp = [](Tetrahedron* left, Tetrahedron* right) { return getTetCostAngle(left) > getTetCostAngle(right); };
-	// 		std::priority_queue < Tetrahedron*, Tetrahedra, decltype(tcmp)> queue;
-	// 		for (Tetrahedron* t : T) if (getTetCostAngle(t) < min_angle) queue.push(t);
-	// 		int cnt = 1000;
-	// 		while (!queue.empty()) {
-	// 			Tetrahedron* t = queue.top();
-	// 			if (--cnt == 0) {
-	// 				printf("\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\rTo be checked: %zu               ", queue.size());
-	// 				cnt = 1000;
-	// 			}
-	// 			queue.pop();
-	// 			if (!t->isLinked()) continue;
-	// 			size_t tets_before = T.size();
-
-	// 			if (optimizeOneTet(t)) split = true;
-
-	// 			for (size_t i = tets_before; i < T.size(); i++) if (T[i]->isLinked()) {
-	// 				setTetCostAngle(T[i]);
-	// 				if (getTetCostAngle(T[i]) < min_angle) queue.push(T[i]);
-	// 			}
-	// 		}
-	// 		printf("\n");
-	// 	} while (split);
-
-	// 	for (Tetrahedron* t : T) t->setInfo(NULL);
-
-	// 	deleteVSRelation();
-
-	// 	removeUnlinkedElements();
-
-	// 	printf("Mesh has %zu vertices and %zu tetrahedra\n", V.size(), T.size());
-	// 	//saveBadTets("skin.off", sliver_removal, threshold_ratio);
-
-	// 	printf("Max energy: %f\n", maxEnergy());
-	// 	printf("Min dihedral: %f\n", minDihedral()); // REMOVED
-	// 	printf("Min face angle: %f\n", minFaceAngle());
-	// }
-
 
 	// REPORT AND STATS
 
@@ -2045,30 +1886,30 @@ public:
 	// 	return ma;
 	// }
 
-	double minEdgeLength() const{
+	double minEdgeLength() const {
 		double min = DBL_MAX, t_min;
-		for(Tetrahedron* t : T){
-			const pointType* v[] = {t->v0()->getPoint(), t->v1()->getPoint(), t->v2()->getPoint(), t->v3()->getPoint()};
-			if((t_min=getTetShortestEdgeSqLength(v)) < min) min = t_min;
+		for (Tetrahedron* t : T) {
+			const pointType* v[] = { t->v0()->getPoint(), t->v1()->getPoint(), t->v2()->getPoint(), t->v3()->getPoint() };
+			if ((t_min = getTetShortestEdgeSqLength(v)) < min) min = t_min;
 		}
 		return sqrt(min);
 	}
 
-	void minMaxTetAngle(double& minEE_IN, double& maxEE_IN, double& minEE_EX, double& maxEE_EX, double& minFF_IN, double& maxFF_IN, double& minFF_EX, double& maxFF_EX) const{
-		minEE_IN = DBL_MAX; minEE_EX = DBL_MAX; 
+	void minMaxTetAngle(double& minEE_IN, double& maxEE_IN, double& minEE_EX, double& maxEE_EX, double& minFF_IN, double& maxFF_IN, double& minFF_EX, double& maxFF_EX) const {
+		minEE_IN = DBL_MAX; minEE_EX = DBL_MAX;
 		maxEE_IN = 0.0; maxEE_EX = 0.0;
 
-		minFF_IN = DBL_MAX; minFF_EX = DBL_MAX; 
+		minFF_IN = DBL_MAX; minFF_EX = DBL_MAX;
 		maxFF_IN = 0.0; maxFF_EX = 0.0;
 
-		for(Tetrahedron* tet : T){
-			const pointType* v[] = {tet->v0()->getPoint(), tet->v1()->getPoint(), tet->v2()->getPoint(), tet->v3()->getPoint()};
+		for (Tetrahedron* tet : T) {
+			const pointType* v[] = { tet->v0()->getPoint(), tet->v1()->getPoint(), tet->v2()->getPoint(), tet->v3()->getPoint() };
 
-			if(tet->is_internal){
+			if (tet->is_internal) {
 				getMinMaxTetFaceAngles(minEE_IN, maxEE_IN, v);
 				getMinMaxTetDihedralAngles(minFF_IN, maxFF_IN, v);
 			}
-			else{
+			else {
 				getMinMaxTetFaceAngles(minEE_EX, maxEE_EX, v);
 				getMinMaxTetDihedralAngles(minFF_EX, maxFF_EX, v);
 			}
@@ -2078,11 +1919,11 @@ public:
 
 	void maxTetEnergy(double& maxIN, double& maxEX) const {
 		double m;
-		maxIN=0.0; maxEX=0.0;
-		for(Tetrahedron* t : T){
+		maxIN = 0.0; maxEX = 0.0;
+		for (Tetrahedron* t : T) {
 			m = t->tetEnergy();
-			if(t->is_internal){ if(m > maxIN) maxIN = m; }
-			else{ 			    if(m > maxEX) maxEX = m; }
+			if (t->is_internal) { if (m > maxIN) maxIN = m; }
+			else { if (m > maxEX) maxEX = m; }
 		}
 	}
 
@@ -2103,27 +1944,24 @@ public:
 		printf("Max face angle:\n\tInternal mesh: %f\n\tExternal mesh: %f\n", maxPlanIN, maxPlanEX);
 	}
 	// -----------------------------------
-
 	void insertExistingVertex(TetVertex* vm, Tetrahedron *st) {
-		
-		if(critical_time > 0){
+		if (critical_time > 0) {
 			std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
 			uint64_t duration_sec = std::chrono::duration_cast<std::chrono::milliseconds>(now - init_time).count();
-			if(duration_sec > critical_time){ 
-				saveTET("part_mesh.tet"); 
+			if (duration_sec > critical_time) {
+				saveTET("part_mesh.tet");
 				savePLCFaces("part_PLCfaces.off");
 				// -- report -- 
 				FILE* fp;
-				if ((fp = fopen("time_out_rep.txt", "w")) == NULL){ std::cerr<<"cannot open the file\n"; exit(11); }
-				fprintf(fp, "Feces are delaunaized (%u)\nFaces are recovered (%u)\n", (uint32_t) facesAreDelaunized, (uint32_t) facesAreRecovered);
+				if ((fp = fopen("time_out_rep.txt", "w")) == NULL) { std::cerr << "cannot open the file\n"; exit(11); }
+				fprintf(fp, "Feces are delaunaized (%u)\nFaces are recovered (%u)\n", (uint32_t)facesAreDelaunized, (uint32_t)facesAreRecovered);
 				fclose(fp);
 				// --
-				std::cerr<<"\nPROGRAM ABORTED: time out ("<< critical_time/1000 <<" sec) reached.\n"; 
+				std::cerr << "\nPROGRAM ABORTED: time out (" << critical_time / 1000 << " sec) reached.\n";
 				exit(124);
 			}
 		}
-		
-		EXIT_ON_THRESHOLD_NUMVERTICES;
+
 		TETMESH_STATIC Tetrahedra cavity;
 		Tetrahedron *t0 = searchTet(vm->getPoint(), st);
 		getCavity(vm, cavity, t0);
@@ -2132,17 +1970,7 @@ public:
 		cavity.clear();
 	}
 
-	bool hasUnexpectedEncroacheTriangle(DelTriangle *excluded=NULL) {
-		TetFace* hh;
-		for (PLC_Face* ff : G) for (DelTriangle* tt : ff->getTriangles())
-			if (tt != excluded && tt->is_internal && !tt->isDirty() && (hh = getTriangle(tt->v0(), tt->v1(), tt->v2())) == NULL || hh->isEncroached())
-			{
-				return true;
-			}
-		return false;
-	}
-
-	bool splitSegment(PLC_Segment* s, pointType* vmp) {
+	void splitSegment(PLC_Segment* s, pointType* vmp) {
 		TetVertex* vm = new TetVertex(vmp);
 		V.push_back(vm);
 
@@ -2162,34 +1990,27 @@ public:
 
 		if (facesAreDelaunized)
 			for (PLC_Face* fi : s->inc_PLCfaces) delaunizeFaceOnEdge(fi, vm, s->v0(), ns->v1());
-
-		return true;
 	}
 
-	bool splitSegment(PLC_Segment* s) {
+	void splitSegment(PLC_Segment* s) {
 		pointType* vmp;
 
 		const pointType* v0p = s->v0()->getPoint(), * v1p = s->v1()->getPoint();
 
 		vmp = createMidPoint(v0p, v1p);
 
-		//if (vmp->toLNC().T() < 1.0e-9) {
-		//	std::cout << *vmp << "\n";
-		//	savePLCFaces("plcfaces.off");
-		//	exit(0);
-		//}
 		if (vmp->isLNC() && (vmp->toLNC().T() <= 0.0 || vmp->toLNC().T() >= 1.0)) {
 
 			// DEBUG
-			double x0,y0,z0; v0p->getApproxXYZCoordinates(x0,y0,z0);
-			double x1,y1,z1; v1p->getApproxXYZCoordinates(x1,y1,z1);
-			std::cout<<"v0 = "<<vector3d(x0,y0,z0)<<" , v1 = "<<vector3d(x1,y1,z1)<< "\n";
-			std::cout<<"t="<<vmp->toLNC().T()<<"\n";
-			std::cout<<"of len = "<<sqrt(vector3d(x0,y0,z0).dist_sq(vector3d(x1,y1,z1)))<<"\n";
-			std::cout<<"on original < "<<vmp->toLNC().P()<<" , "<<vmp->toLNC().Q()<<" > \n";
-			double xp,yp,zp; (vmp->toLNC().P()).getApproxXYZCoordinates(xp,yp,zp);
-			double xq,yq,zq; (vmp->toLNC().Q()).getApproxXYZCoordinates(xq,yq,zq);
-			std::cout<<"original len = "<<sqrt(vector3d(xp,yp,zp).dist_sq(vector3d(xq,yq,zq)))<<"\n";
+			double x0, y0, z0; v0p->getApproxXYZCoordinates(x0, y0, z0);
+			double x1, y1, z1; v1p->getApproxXYZCoordinates(x1, y1, z1);
+			std::cout << "v0 = " << vector3d(x0, y0, z0) << " , v1 = " << vector3d(x1, y1, z1) << "\n";
+			std::cout << "t=" << vmp->toLNC().T() << "\n";
+			std::cout << "of len = " << sqrt(vector3d(x0, y0, z0).dist_sq(vector3d(x1, y1, z1))) << "\n";
+			std::cout << "on original < " << vmp->toLNC().P() << " , " << vmp->toLNC().Q() << " > \n";
+			double xp, yp, zp; (vmp->toLNC().P()).getApproxXYZCoordinates(xp, yp, zp);
+			double xq, yq, zq; (vmp->toLNC().Q()).getApproxXYZCoordinates(xq, yq, zq);
+			std::cout << "original len = " << sqrt(vector3d(xp, yp, zp).dist_sq(vector3d(xq, yq, zq))) << "\n";
 
 			ip_error("Could not split further! Did you verify whether your PLC is non-acute?\n");
 		}
@@ -2197,10 +2018,7 @@ public:
 		assert(!pointType::coincident(*v0p, *vmp));
 		assert(!pointType::coincident(*v1p, *vmp));
 
-		if (!splitSegment(s, vmp)) {
-			delete vmp; return false;
-		}
-		return true;
+		splitSegment(s, vmp);
 	}
 
 	bool isTetPositive(Tetrahedron* t) {
@@ -2219,16 +2037,14 @@ public:
 		FILE* fp;
 		if ((fp = fopen(filename, "w")) == NULL) return false;
 
-		idx = 0;
-		for (Tetrahedron* t : T) if(t->isLinked()) idx++;
-		fprintf(fp, "%zu vertices\n%llu tets\n", V.size(), idx);
+		fprintf(fp, "%zu vertices\n%zu tets\n", V.size(), T.size());
 		double x, y, z;
 		for (TetVertex* v : V) {
 			const pointType* p = v->getPoint();
 			p->getApproxXYZCoordinates(x, y, z);
 			fprintf(fp, "%f %f %f\n", x, y, z);
 		}
-		for (Tetrahedron* t : T) if(t->isLinked()){
+		for (Tetrahedron* t : T) {
 			size_t i1 = (size_t)t->v0()->getInfo();
 			size_t i2 = (size_t)t->v1()->getInfo();
 			size_t i3 = (size_t)t->v2()->getInfo();
@@ -2424,49 +2240,6 @@ public:
 			assert(vOrient3D(f->t2()->oppositeVertex(f), f->v0(), f->v2(), f->v1()) > 0);
 		}
 		std::cout << "checkFaceOrientations passed!\n";
-	}
-
-	void saveCavity(TetFaces boundary, const char* filename) {
-		size_t num_v = 0, num_t = 0;
-
-		for (TetVertex* v : V) v->setInfo(0);
-
-		for (TetFace* f : boundary) {
-			f->v0()->setInfo((void*)1);
-			f->v1()->setInfo((void*)1);
-			f->v2()->setInfo((void*)1);
-			num_t++;
-		}
-
-		for (TetVertex* v : V) if (v->getInfo()) {
-			num_v++;
-			v->setInfo((void*)(num_v));
-		}
-
-		FILE* fp;
-		if ((fp = fopen(filename, "w")) == NULL) return;
-
-		fprintf(fp, "OFF\n");
-		fprintf(fp, "%zu %zu 0\n", num_v, num_t);
-
-		double x, y, z;
-		for (TetVertex* v : V) if (v->getInfo()) {
-			const pointType* p = v->getPoint();
-			p->getApproxXYZCoordinates(x, y, z);
-			fprintf(fp, "%f %f %f\n", x, y, z);
-		}
-
-		size_t i1, i2, i3;
-		for (TetFace* f : boundary) {
-			i1 = (size_t)f->v0()->getInfo();
-			i2 = (size_t)f->v1()->getInfo();
-			i3 = (size_t)f->v2()->getInfo();
-			fprintf(fp, "3 %zu %zu %zu\n", i1 - 1, i2 - 1, i3 - 1);
-		}
-
-		for (TetVertex* v : V) v->setInfo(0);
-
-		fclose(fp);
 	}
 
 	void retetrahedrizeCavity(TetVertex* v, Tetrahedra& cavity) {
@@ -2850,198 +2623,8 @@ protected:
 		fclose(fp);
 	}
 
-	void saveEncroachedPLCFaces(const char* filename) {
-		size_t num_v = 0, num_t = 0;
-
-		for (TetVertex* v : V) v->setInfo(0);
-
-		for (auto g = G.begin(); g < G.end() - 6; g++)
-			for (DelTriangle* f : (*g)->getTriangles()) if (f->is_internal && getTriangle(f->v0(), f->v1(), f->v2())->isEncroached()) {
-				f->v0()->setInfo((void*)1);
-				f->v1()->setInfo((void*)1);
-				f->v2()->setInfo((void*)1);
-				num_t++;
-			}
-
-		for (TetVertex* v : V) if (v->getInfo()) {
-			num_v++;
-			v->setInfo((void*)(num_v));
-		}
-
-		FILE* fp;
-		if ((fp = fopen(filename, "w")) == NULL) return;
-
-		fprintf(fp, "OFF\n");
-		fprintf(fp, "%zu %zu 0\n", num_v, num_t);
-
-		double x, y, z;
-		for (TetVertex* v : V) if (v->getInfo()) {
-			const pointType* p = v->getPoint();
-			p->getApproxXYZCoordinates(x, y, z);
-			fprintf(fp, "%f %f %f\n", x, y, z);
-		}
-
-		size_t i1, i2, i3;
-		for (auto g = G.begin(); g < G.end() - 6; g++)
-			for (DelTriangle* f : (*g)->getTriangles()) if (f->is_internal && getTriangle(f->v0(), f->v1(), f->v2())->isEncroached()) {
-				i1 = (size_t)f->v0()->getInfo();
-				i2 = (size_t)f->v1()->getInfo();
-				i3 = (size_t)f->v2()->getInfo();
-				fprintf(fp, "3 %zu %zu %zu\n", i1 - 1, i2 - 1, i3 - 1);
-			}
-
-		for (TetVertex* v : V) v->setInfo(0);
-
-		fclose(fp);
-	}
-
-	void savePLCSegments(const char* filename, PLC_Face *f =NULL) {
-		size_t num_v = 0, num_s = 0;
-
-		for (TetVertex* v : V) v->setInfo(0);
-
-		PLC_Segments& segs = (f != NULL) ? (f->segments) : (S);
-
-		for (PLC_Segment* s : segs) {
-			s->v0()->setInfo((void*)1);
-			s->v1()->setInfo((void*)1);
-			num_s++;
-
-		}
-
-		for (TetVertex* v : V) if (v->getInfo()) {
-			num_v++;
-			v->setInfo((void*)(num_v));
-		}
-
-		FILE* fp;
-		if ((fp = fopen(filename, "w")) == NULL) return;
-
-		fprintf(fp, "#VRML V1.0 ascii\n	Separator {\n  DrawStyle { pointSize 4 }\n   Coordinate3 {\n   point[\n");
-
-		double x, y, z;
-		for (TetVertex* v : V) if (v->getInfo()) {
-			const pointType* p = v->getPoint();
-			p->getApproxXYZCoordinates(x, y, z);
-			fprintf(fp, "%f %f %f,\n", x, y, z);
-		}
-
-		fprintf(fp, "   ]\n  }\n  IndexedLineSet {	 coordIndex[\n");
-
-		size_t i1, i2;
-		for (PLC_Segment* s : segs) {
-			i1 = (size_t)s->v0()->getInfo();
-			i2 = (size_t)s->v1()->getInfo();
-			fprintf(fp, "%zu, %zu, -1,\n", i1 - 1, i2 - 1);
-		}
-
-		fprintf(fp, "   ]\n }\n}\n");
-
-		for (TetVertex* v : V) v->setInfo(0);
-
-		fclose(fp);
-	}
-
-
-	void saveOnePLCFace(const char* filename, PLC_Face *g) {
-		size_t num_v = 0, num_t = 0;
-
-		g->check();
-		for (TetVertex* v : V) v->setInfo(0);
-
-		for (DelTriangle* f : g->getTriangles()) if (f->is_internal) {
-			f->v0()->setInfo((void*)1);
-			f->v1()->setInfo((void*)1);
-			f->v2()->setInfo((void*)1);
-			num_t++;
-		}
-
-		for (TetVertex* v : V) if (v->getInfo()) {
-			num_v++;
-			v->setInfo((void*)(num_v));
-		}
-
-		FILE* fp;
-		if ((fp = fopen(filename, "w")) == NULL) return;
-
-		fprintf(fp, "OFF\n");
-		fprintf(fp, "%zu %zu 0\n", num_v, num_t);
-
-		double x, y, z;
-		for (TetVertex* v : V) if (v->getInfo()) {
-			const pointType* p = v->getPoint();
-			p->getApproxXYZCoordinates(x, y, z);
-			fprintf(fp, "%f %f %f\n", x, y, z);
-		}
-
-		size_t i1, i2, i3;
-		for (DelTriangle* f : g->getTriangles()) if (f->is_internal) {
-			i1 = (size_t)f->v0()->getInfo();
-			i2 = (size_t)f->v1()->getInfo();
-			i3 = (size_t)f->v2()->getInfo();
-			fprintf(fp, "3 %zu %zu %zu\n", i1 - 1, i2 - 1, i3 - 1);
-		}
-
-		for (TetVertex* v : V) v->setInfo(0);
-
-		fclose(fp);
-	}
-
-
 	void checkAllFaces() {
 		for (PLC_Face* f : G) f->check();
-	}
-
-	//////////////////////// T O   H A N D L E   A C U T E S //////////////////////
-
-	static bool isAcuteAngle(const pointType* v1p, const pointType* v2p, const pointType* vp) {
-		return pointType::dotProductSign3D(*v1p, *v2p, *vp) > 0; // IMPROVE USING 60 degrees !!!!!!!!!!
-	}
-
-	bool hasAcuteAngles() {
-		size_t i, j;
-
-		// Mark vertices
-		for (TetVertex* v : V) {
-			const pointType* vp = v->getPoint();
-			PLC_Segments* segs = v->getIncidentSegments();
-			PLC_Segment** sar = segs->data();
-			for (i = 0; i < segs->size(); i++)
-				for (j = i + 1; j < segs->size(); j++)
-				{
-					const TetVertex* ov1 = sar[i]->oppositeVertex(v);
-					const TetVertex* ov2 = sar[j]->oppositeVertex(v);
-					const pointType* v1p = ov1->getPoint();
-					const pointType* v2p = ov2->getPoint();
-					if (isAcuteAngle(v1p, v2p, vp)) return true;
-				}
-		}
-
-		// Mark segments
-		for (PLC_Segment* s : S) {
-			const pointType* v0 = s->v0()->getPoint();
-			const pointType* v1 = s->v1()->getPoint();
-			PLC_Face** far = s->inc_PLCfaces.data();
-			for (i = 0; i < s->inc_PLCfaces.size(); i++) {
-				const PLC_Face* f1 = s->inc_PLCfaces[i];
-				const pointType* vf1 = f1->ref_t[0];
-				if (!pointType::misaligned(*v0, *v1, *vf1)) vf1 = f1->ref_t[1];
-				if (!pointType::misaligned(*v0, *v1, *vf1)) vf1 = f1->ref_t[2];
-				for (j = i + 1; j < s->inc_PLCfaces.size(); j++)
-				{
-					const PLC_Face* f2 = s->inc_PLCfaces[j];
-					const pointType* vf2 = f2->ref_t[0];
-					if (!pointType::misaligned(*v0, *v1, *vf2)) vf2 = f2->ref_t[1];
-					if (!pointType::misaligned(*v0, *v1, *vf2)) vf2 = f2->ref_t[2];
-					// if (isAcuteDihedral_withNormalVects(v0, v1, vf1, vf2)) return true;
-					if (isAcuteDihedral_exact(v0, v1, vf1, vf2)) return true;
-				}
-			}
-		}
-
-		// There are cases where a segment forms an acute with a face! Must consider them too...
-
-		return false;
 	}
 };
 
