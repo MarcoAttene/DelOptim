@@ -452,7 +452,10 @@ inline pointType* createMidPoint(const pointType* v0, const pointType* v1)
 				B = &l1.P().toExplicit3D();  v = 1.0 - l1.T();
 				C = &l0.Q().toExplicit3D();
 			}
+
+			return new implicitPoint3D_BPT(*A, *B, *C, u / 2, v / 2);
 		}
+		// end ADDED by Lorenzo 20/08/2024
 	}
 
 	// LB
@@ -749,24 +752,6 @@ inline double getTetCircumSpherePrecise(const pointType* v[4], double ccc[3], do
 }
 
 // ANGLES
-
-// TRUE if triangles <e0,e1,u> and <e0,e1,v> ( where <e0,e1> has the same orientation in both triangles)
-// forms an acute dihedral angle at <e0,e1>.
-bool isAcuteDihedral_exact(const pointType* e0, const pointType* e1, const pointType* u, const pointType* v) {
-	vector3d Oe0(e0); // D
-	vector3d Oe1(e1); // C
-	vector3d Ou(u); // B
-	vector3d Ov(v); // A
-	return dihedralAcuteness(Ov.c[0], Ov.c[1], Ov.c[2], Ou.c[0], Ou.c[1], Ou.c[2], Oe1.c[0], Oe1.c[1], Oe1.c[2], Oe0.c[0], Oe0.c[1], Oe0.c[2]) > 0;
-}
-
-// TRUE if the two triangles <v0,v1,o0> and <v0,v1,o1> form an acute dihedral angle
-inline bool isAcuteDihedral_withNormalVects(const pointType* v0, const pointType* v1, const pointType* o0, const pointType* o1) {
-	const vector3d v0v(v0), v1v(v1);
-	const vector3d vav1 = (vector3d(o0) - v1v) & (v1v - v0v);
-	const vector3d vbv1 = (vector3d(o1) - v1v) & (v1v - v0v);
-	return (vbv1.dot(vav1) > 0.0);
-}
 
 // dihedral angle cosine
 inline double dihedralAngleCos(const pointType* v0, const pointType* v1, const pointType* o0, const pointType* o1) {

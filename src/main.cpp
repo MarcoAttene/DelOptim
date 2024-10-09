@@ -4,7 +4,7 @@
 
 #define EXIT_ON_THRESHOLD_NUMVERTICES //if (V.size() > 100000) { std::cout << "Limit num vertices reached!\nEXITING\n"; exit(11); }
 
-//#define USE_TETGEN
+#define USE_TETGEN
 
 #include <iostream>
 #include <fstream>
@@ -144,10 +144,9 @@ int main(int argc, char* argv[])
 #ifdef USE_TETGEN
 	Tetrahedrization mesh;
 	mesh.initWithTetgen(plc.numVertices(), plc.coordinates.data(), plc.numTriangles(), plc.triangle_vertices.data(), true, false);
-	printf("Max energy: %f\n", mesh.maxEnergy());
-	printf("Min dihedral: %f\n", mesh.minDihedral());
-	printf("Min angle: %f\n", mesh.minTetAngle());
-	mesh.saveOFFBoundary("plcfaces.off");
+	for (Tetrahedron* t : mesh.tets()) t->is_internal = true;
+	mesh.printReport();
+	std::cout << std::endl;
 #else
 
 	TetMesh tin;
@@ -202,7 +201,7 @@ int main(int argc, char* argv[])
 
 	// Tet optimization
 	std::cout << "Optimizing tets...\n";
-	mesh.optimizeTets(2.0, false, false);
+	mesh.optimizeTets(2.0, false, true);
 
 	// Remove external tets after chamfering
 	for (Tetrahedron* t : mesh.tets()) t->is_internal = isTetInternal(t, cdt);
