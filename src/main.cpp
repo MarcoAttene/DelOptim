@@ -3,10 +3,10 @@
 #endif
 
 #define EXIT_ON_THRESHOLD_NUMVERTICES //if (V.size() > 100000) { std::cout << "Limit num vertices reached!\nEXITING\n"; exit(11); }
-
+ 
 // #define USE_TETGEN
 
-#define DISP_PROGRESS
+// #define DISP_PROGRESS
 
 #include <iostream>
 #include <fstream>
@@ -18,6 +18,7 @@
 #endif
 #include <chrono>
 #include "logger.h"
+#include "getRSS.h"
 
 using namespace std;
 
@@ -28,11 +29,6 @@ using namespace std;
 #endif
 
 #include "cham.h"
-
-void force_exit(const char* message){
-	printf("ERROR: %s\nPROGRAM TERMINATED.\n", message);
-	exit(1);
-}
 
 // Export the data structure to optimizer
 void chamferPLC(inputPLC& _plc,
@@ -150,6 +146,10 @@ int main(int argc, char* argv[])
 	// Load a valid PLC from file
 	inputPLC plc;
 	plc.initFromFile(filename, options.find('v') != std::string::npos);
+
+#ifndef DISP_PROCESS
+	std::cout<<"\n\ninput_file: "<<filename<<"\n";
+#endif
 	
 #ifdef USE_TETGEN
 	Tetrahedrization mesh;
@@ -181,8 +181,15 @@ int main(int argc, char* argv[])
 	std::chrono::steady_clock::time_point time_point = std::chrono::steady_clock::now();
 
 	if (time_out > 0) {
-		time_out *= 60000;
+		std::cout<<"Time out set at "<<time_out<<" min\n";
+		time_out *= 60000; // convert to millisecond
 		mesh.set_optimization_time_out(time_point, time_out);
+	}
+
+	if (mem_out > 0) {
+		std::cout<<"Max memory set at "<<mem_out<<" Mb\n";
+		mem_out *= 1000000; // convert to byte
+		mesh.set_optimization_mem_out(mem_out);
 	}
 
 	// Copy the DT to the new structure
@@ -219,6 +226,8 @@ int main(int argc, char* argv[])
 	std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
 	uint64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - time_point).count();
 	std::cout << "Elapsed time (ms): " << ms << "\n";
+	uint64_t bmem = getPeakRSS();
+	std::cout << "Peak memory RSS (byte): " << bmem << "\n";
 
 	if (options.find('l') != std::string::npos) {
 		// append a line to logfile.csv

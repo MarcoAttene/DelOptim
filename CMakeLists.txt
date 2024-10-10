@@ -27,6 +27,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 # add the executable
 add_executable(${PROJECT_NAME} 
     src/main.cpp
+    src/getRSS.c
 )
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")

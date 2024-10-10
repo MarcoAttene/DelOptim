@@ -228,7 +228,10 @@ void PLCc::initialize(){
         #ifdef TEST_CHAMFERING
         if( e.inc_face.size()&1 ) exit( (int) EXIT_t::open_input );
         #else 
-        if (e.inc_face.size() & 1) ip_error("Input surface does not enclose a volume\n");
+        if (e.inc_face.size() & 1){ 
+            // ip_error("Input surface does not enclose a volume\n");
+            std::cout<<"[cham.cpp - initialize()] ERROR Input surface does not enclose a volume\n"; exit(1);
+        }
         #endif
     }
 
@@ -519,7 +522,8 @@ uint32_t PLCc::new_vrt_on_segment(uint32_t v0, uint32_t v1, const double d, cons
         report_vons_fail(v0, v1);
         assert( false );
         #endif
-        ip_error("[cham.cpp - new_vrt_on_segment()] ERROR invalid edge endpoints\n");
+        // ip_error("[cham.cpp - new_vrt_on_segment()] ERROR invalid edge endpoints\n");
+        std::cout<<"[cham.cpp - new_vrt_on_segment()] ERROR Invalid edge endpoints\n"; exit(1);
     }
 
     #else
@@ -1389,7 +1393,8 @@ uint32_t PLCc::chamfering_face(uint32_t fi){
         for(const uint32_t& ei : faces[fi].bounding_edges){ 
             if(ei!=EMPTY_PLACE && edges[ei].isFlat()){
                 std::cout<<"ERROR this face has the a sub edge of flat edge "<<ei<<" <"<<edges[ei].oep[0]<<","<<edges[ei].oep[1]<<"> on its boundary.\n";
-                ip_error("it is not possible to fallback chamfer - CLEVER SOLUTION NEED TO BE IMPLEMENTED\n");
+               // ip_error("it is not possible to fallback chamfer - CLEVER SOLUTION NEED TO BE IMPLEMENTED\n");
+               std::cout<<"[cham.cpp - chamfering_face()] ERROR Impossible to fallback chamfer\n"; exit(1);
             }
         }
 
@@ -1557,7 +1562,10 @@ void PLCc::chamfered_plc_simplification(){
                 if( vertices[ e0 ]->isLNC() && vertices[ e1 ]->isBPT() ) b.el = ei;
                 else if( vertices[ e0 ]->isBPT() && vertices[ e1 ]->isBPT() ) b.ec = ei;
                 else if( vertices[ e0 ]->isBPT() && vertices[ e1 ]->isLNC() ) b.er = ei;
-                else ip_error("[chamfered_plc_simplification] invalid bridge-edge\n");
+                else {
+                    // ip_error("[chamfered_plc_simplification] invalid bridge-edge\n");
+                    std::cout<<"[cham.cpp - chamfered_plc_simplification()] ERROR Invalid bridge-edge\n"; exit(1);
+                }
                 b.shortest_e_sq = min( eEdgeSqLen(ei), b.shortest_e_sq );
                 i++;
             }while(edges[ fbnd[i] ].loc_face_bridge_id == edges[ fbnd[i-1] ].loc_face_bridge_id);

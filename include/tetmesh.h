@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <functional>
 #include <queue>
+#include "getRSS.h"
 
 typedef unsigned char maskType;
 
@@ -1018,7 +1019,8 @@ public:
 			if (t->v0() == v0) return (t->v1() == v1);
 			else if (t->v1() == v0) return (t->v2() == v1);
 			else if (t->v2() == v0) return (t->v0() == v1);
-		ip_error("PLC_Face::hasCoherentOrientation: Should not happen!\n");
+		//ip_error("PLC_Face::hasCoherentOrientation: Should not happen!\n");
+		std::cout<<"[tetmesh.h - hasCoherentOrientation()]  Should not happen!\n"; exit(1);
 	}
 
 	// Flip the face orientation
@@ -1218,8 +1220,10 @@ class Tetrahedrization
 public:
 	std::chrono::steady_clock::time_point init_time;
 	uint64_t critical_time; // millisecond
+	uint64_t critical_mem; // byte
 
 	void set_optimization_time_out(std::chrono::steady_clock::time_point _init_time, uint64_t _critical_time) { init_time = _init_time, critical_time = _critical_time; }
+	void set_optimization_mem_out(uint64_t _critical_mem){ critical_mem = _critical_mem; };
 	// end TMP
 
 protected:
@@ -1243,7 +1247,7 @@ protected:
 
 public:
 
-	Tetrahedrization() : facesAreDelaunized(false), facesAreRecovered(false), critical_time(0) {}
+	Tetrahedrization() : facesAreDelaunized(false), facesAreRecovered(false), critical_time(0), critical_mem(0) {}
 
 	size_t num_vertices() { return V.size(); } const
 	size_t num_tetrahedra() { return T.size(); } const
@@ -1532,7 +1536,11 @@ public:
 		bool rec = recoverAllDirtySegments();
 
 		while (!dirty_Triangles.empty()) {
-			if (verbose) printf("\r\r\r\r\r\r\r\r\r%zu tris missing..                     ", dirty_Triangles.size()); fflush(stdout);
+			#ifdef DISP_PROGRESS
+			if (verbose){ 
+				printf("\r\r\r\r\r\r\r\r\r%zu tris missing..                     ", dirty_Triangles.size()); fflush(stdout);
+			}
+			#endif
 			DelTriangle* t = dirty_Triangles.back();
 			dirty_Triangles.pop_back();
 			t->unsetDirty();
@@ -1833,8 +1841,10 @@ public:
 			while (!queue.empty()) {
 				Tetrahedron* t = queue.top();
 				if (--cnt == 0) {
+					#ifdef DISP_PROGRESS
 					printf("\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\rTo be checked: %zu               ", queue.size());
 					fflush(stdout);
+					#endif
 					cnt = 1000;
 				}
 				queue.pop();
@@ -1949,16 +1959,32 @@ public:
 			std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
 			uint64_t duration_sec = std::chrono::duration_cast<std::chrono::milliseconds>(now - init_time).count();
 			if (duration_sec > critical_time) {
-				saveTET("part_mesh.tet");
-				savePLCFaces("part_PLCfaces.off");
+				//saveTET("part_mesh.tet");
+				//savePLCFaces("part_PLCfaces.off");
 				// -- report -- 
 				FILE* fp;
-				if ((fp = fopen("time_out_rep.txt", "w")) == NULL) { std::cerr << "cannot open the file\n"; exit(11); }
+				if ((fp = fopen("time_out_rep.txt", "w")) == NULL) { std::cout << "cannot open the file\n"; exit(11); }
 				fprintf(fp, "Feces are delaunaized (%u)\nFaces are recovered (%u)\n", (uint32_t)facesAreDelaunized, (uint32_t)facesAreRecovered);
 				fclose(fp);
 				// --
-				std::cerr << "\nPROGRAM ABORTED: time out (" << critical_time / 1000 << " sec) reached.\n";
+				std::cout << "\nPROGRAM ABORTED: time out (" << critical_time / 1000 << " sec) reached.\n";
 				exit(124);
+			}
+		}
+
+		if (critical_mem > 0) {
+			uint64_t mem_usage = getPeakRSS();
+			if (mem_usage > critical_mem) {
+				//saveTET("part_mesh.tet");
+				//savePLCFaces("part_PLCfaces.off");
+				// -- report -- 
+				FILE* fp;
+				if ((fp = fopen("time_out_rep.txt", "w")) == NULL) { std::cout << "cannot open the file\n"; exit(11); }
+				fprintf(fp, "Feces are delaunaized (%u)\nFaces are recovered (%u)\n", (uint32_t)facesAreDelaunized, (uint32_t)facesAreRecovered);
+				fclose(fp);
+				// --
+				std::cout << "\nPROGRAM ABORTED: memory out (" << critical_mem / 1000000 << " Mb) reached.\n";
+				exit(1);
 			}
 		}
 
@@ -2012,7 +2038,8 @@ public:
 			double xq, yq, zq; (vmp->toLNC().Q()).getApproxXYZCoordinates(xq, yq, zq);
 			std::cout << "original len = " << sqrt(vector3d(xp, yp, zp).dist_sq(vector3d(xq, yq, zq))) << "\n";
 
-			ip_error("Could not split further! Did you verify whether your PLC is non-acute?\n");
+			// ip_error("Could not split further! Did you verify whether your PLC is non-acute?\n");
+			std::cout<<"[tetmesh.h - splitSegment()]  Could not split further! Verify whether your PLC is non-acute\n"; exit(1);
 		}
 
 		assert(!pointType::coincident(*v0p, *vmp));
@@ -3094,7 +3121,8 @@ void PLC_Face::insertExistingVertexOnSegment(TetVertex* v, TetVertex* sv0, TetVe
 		splitAndDelaunizeEdge(v, e);
 		return;
 	}
-	ip_error("PLC_Face::insertExistingVertexOnSegment: Could not find edge\n");
+	//ip_error("PLC_Face::insertExistingVertexOnSegment: Could not find edge\n");
+	std::cout<<"[tetmesh.h - insertExistingVertexOnSegment()]  Could not find edge\n"; exit(1);
 }
 
 void DelEdge::swap() {

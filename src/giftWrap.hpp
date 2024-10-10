@@ -611,7 +611,8 @@ void TetMesh::connect_bnd_tri(const uint64_t bnd_tri, std::vector<uint64_t>& C_b
     if (v3 == UINT32_MAX) {
         // if no valid vertex could be found: 
         // ERROR cavity does not have a CDT but this is theoretically impossible.
-        ip_error("GIFT-WRAPPING FAILS\n");
+        //ip_error("GIFT-WRAPPING FAILS\n");
+        std::cout<<"[giftWrap.hpp - connect_bnd_tri()] GW fails\n"; exit(1);
     }
 
     if (++C_vrts_i < C_vrts.size()) {

@@ -905,7 +905,10 @@ public:
             std::reverse(tie.begin(), tie.end());
             f.bounding_edges.insert(f.bounding_edges.end(), tie.begin(), tie.end());
         }
-        else ip_error("Should never get here!\n");
+        else{ 
+            //ip_error("Should never get here!\n");
+            std::cout<<"[PLC.hpp - copyOrderedEdges()] Should never get here!\n"; exit(1);
+        }
     }
 };
 
@@ -1467,12 +1470,12 @@ size_t PLCx::markInnerTets() {
     // Crea relazione VF
     //   per ogni faccia f aggiungi f alla VF di tutti i suoi bounding e internal vertices
     // Per ogni triangolo in delmesh, cerca la(le) faccia comune f in VF(v1), VF(v2) e VF(v3)
-    //   se c'è più di una faccia comune marca immediatamente il triangolo e passa oltre
+    //   se c'ï¿½ piï¿½ di una faccia comune marca immediatamente il triangolo e passa oltre
     //   altrimenti
     // scopri se il triangolo sta dentro o fuori dalla faccia comune f (orient2d?)
-    //   1) se f è convessa
-    //   2) se v1 è interno a f (o v2, o v3)
-    //   3) se il baricentro del triangolo è interno a uno dei triangoli di f e al triangolo stesso (check per possibile errore numerico)
+    //   1) se f ï¿½ convessa
+    //   2) se v1 ï¿½ interno a f (o v2, o v3)
+    //   3) se il baricentro del triangolo ï¿½ interno a uno dei triangoli di f e al triangolo stesso (check per possibile errore numerico)
     // Se la faccia comune esiste e il triangolo ci sta dentro allora marcala, altrimenti no
 
 

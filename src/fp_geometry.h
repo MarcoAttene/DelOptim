@@ -499,7 +499,10 @@ inline pointType* createMidPoint(const pointType* v0, const pointType* v1)
 			if (&b0.P() == b1p && &b0.Q() == b1q && &b0.R() == b1r) { b1v = b1ov; b1u = b1ou; }
 			else if (&b0.P() == b1q && &b0.Q() == b1r && &b0.R() == b1p) { b1v = b1ou; b1u = 1.0 - b1ov - b1ou; }
 			else if (&b0.P() == b1r && &b0.Q() == b1p && &b0.R() == b1q) { b1v = 1.0 - b1ov - b1ou; b1u = b1ov; }
-			else ip_error("apparently two BPTs have different vertices...\n");
+			else{ 
+				// ip_error("apparently two BPTs have different vertices...\n");
+				std::cout<<"[fp_geometry.h - createMidPoint()] apparently two BPTs have different vertices...\n"; exit(1);
+			}
 
 			//implicitPoint3D_BPT pr(b0.P(), b0.Q(), b0.R(), (b0.V() + b1v) / 2, (b0.U() + b1u) / 2);
 			//std::cout << *v0 << "\n";
@@ -511,7 +514,8 @@ inline pointType* createMidPoint(const pointType* v0, const pointType* v1)
 	}
 
 	// No other possibility is supported
-	ip_error("createMidPoint - Should never reach this point!\n");
+	// ip_error("createMidPoint - Should never reach this point!\n");
+	std::cout<<"[fp_geometry.h - createMidPoint()] Should never reach this point!\n"; exit(1);
 	return NULL;
 }
 
@@ -773,7 +777,10 @@ inline double minTetDihedralAngleCos(const pointType* v0, const pointType* v1, c
 
 inline double getAngle(double a, double b, double c) {
 
-	if (a < 0.0 || b < 0.0 || c < 0.0) ip_error("[getAcuteAngle] Ivalid angle (negative side)\n");
+	if (a < 0.0 || b < 0.0 || c < 0.0){ 
+		//ip_error("[getAcuteAngle] Ivalid angle (negative side)\n");
+		std::cout<<"[fp_geometry.h - getAcuteAngle()] Ivalid angle (negative side)\n"; exit(1);
+	}
 
 	if (a < b) std::swap(a, b); // must be a > b
 
@@ -784,7 +791,10 @@ inline double getAngle(double a, double b, double c) {
 	double num = ((a - b) + c) * mu;
 	double den = (a + (b + c)) * ((a - c) + b);
 
-	if (den == 0.0 && num == 0.0) ip_error("[getAcuteAngle] Ivalid angle (NaN)\n");
+	if (den == 0.0 && num == 0.0){ 
+		//ip_error("[getAcuteAngle] Ivalid angle (NaN)\n");
+		std::cout<<"[fp_geometry.h - getAcuteAngle()] Ivalid angle (NaN)\n"; exit(1);
+	}
 
 	if (den == 0.0) return 180.0;
 	if (num == 0.0) return 0.0;
@@ -894,13 +904,19 @@ inline double getDihedralAngle(const pointType* v0, const pointType* v1, const p
 	const vector3d Ov0(v0), Ov1(v1), Ov2(v2), Ov3(v3);
 	double l01 = sqrt((Ov1 - Ov0).sq_length());
 
-	if (l01 == 0.0) ip_error("[getDihedralAngle] edge is degenerate\n");
+	if (l01 == 0.0){ 
+		// ip_error("[getDihedralAngle] edge is degenerate\n");
+		std::cout<<"[fp_geometry.h - getDihedralAngle()] edge is degenerate\n"; exit(1);
+	}
 
 	double num = -orient3d_val(Ov0, Ov1, Ov2, Ov3) * l01; // 6 * tet volume
 	if (num < 0 && abs(num) > toll) {
 		int o3d_tet = pointType::orient3D(*v0, *v1, *v2, *v3);
-		if (o3d_tet < 0) ip_error("[detDihedralAngle] invertedTet\n");
-		std::cout << "[detDihedralAngle] WARNING num ( ori3d = " << num << " * len = " << l01 << ") sign corrected according to exact_orient3D\n";
+		if (o3d_tet < 0){ 
+			//ip_error("[getDihedralAngle] invertedTet\n");
+			std::cout<<"[fp_geometry.h - getDihedralAngle()] inverted tet\n"; exit(1);
+		}
+		std::cout << "[getDihedralAngle] WARNING num ( ori3d = " << num << " * len = " << l01 << ") sign corrected according to exact_orient3D\n";
 		num = abs(num);
 	}
 
@@ -908,7 +924,10 @@ inline double getDihedralAngle(const pointType* v0, const pointType* v1, const p
 	const vector3d n3 = accurate_cross_prod(Ov0, Ov1, Ov2); // (Ov0-Ov2) x (Ov1-Ov2)
 	double den = (n3 * n2) * (-1.0);
 
-	if (den == 0.0 && num == 0.0) ip_error("[getDihedralAngle] invalid dihedral angle (NaN)\n");
+	if (den == 0.0 && num == 0.0){ 
+		//ip_error("[getDihedralAngle] invalid dihedral angle (NaN)\n");
+		std::cout<<"[fp_geometry.h - getDihedralAngle()] invalid dihedral angle (NaN)\n"; exit(1);
+	}
 	// if(num == 0.0 && den < 0) return 180.0;
 	// if(num == 0.0 && den > 0) return 0.0;
 	// if(den == 0.0 && num > 0) return 90.0;

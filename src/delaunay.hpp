@@ -55,8 +55,10 @@ void TetMesh::init(uint32_t& unswap_k, uint32_t& unswap_l){
 
   l--; k--;
 
-  if(ori==0)
-    ip_error("TetMesh::init() - Input vertices do not define a volume.\n");
+  if(ori==0){
+    // ip_error("TetMesh::init() - Input vertices do not define a volume.\n");
+    std::cout<<"[delaunay.hpp - init()] Input vertices do not define a volume.\n"; exit(1);
+  }
 
   unswap_k = k;
   unswap_l = l;
@@ -464,7 +466,10 @@ int TetMesh::vertexInTetSphere(const uint32_t Node[4], uint32_t v_id) const {
     if (det) return det;
     uint32_t nn[5] = { Node[0],Node[1],Node[2],Node[3],v_id };
     det = symbolicPerturbation(nn);
-    if (det == 0.0) ip_error("Symbolic perturbation failed! Should not happen.\n");
+    if (det == 0.0){ 
+        //ip_error("Symbolic perturbation failed! Should not happen.\n");
+        std::cout<<"[delaunay.hpp - vertexInSphere()] Symbolic perturbation failed! Should not happen\n"; exit(1);
+    }
     return det;
 }
 
@@ -1012,40 +1017,67 @@ void TetMesh::checkMesh(bool checkDelaunay) const {
     // Check tet nodes	
     for (i = 0; i < numTets(); i++) if (!isToDelete(i<<2)) {
         const uint32_t* tn = tet_node.data() + i * 4;
-        if (tn[0] >= num_vertices) ip_error("Wrong tet node!\n");
-        if (tn[1] >= num_vertices) ip_error("Wrong tet node!\n");
-        if (tn[2] >= num_vertices) ip_error("Wrong tet node!\n");
-        if (tn[3] != INFINITE_VERTEX && tet_node[i * 4 + 3] >= num_vertices) ip_error("Wrong tet node!\n");
+        if (tn[0] >= num_vertices){ 
+            //ip_error("Wrong tet node!\n");
+            std::cout<<"[delaunay.hpp - checkMesh()] Wrong tet node!\n"; exit(1);
+        }
+        if (tn[1] >= num_vertices){ 
+            //ip_error("Wrong tet node!\n");
+            std::cout<<"[delaunay.hpp - checkMesh()] Wrong tet node!\n"; exit(1);
+        }
+        if (tn[2] >= num_vertices){ 
+            //ip_error("Wrong tet node!\n");
+            std::cout<<"[delaunay.hpp - checkMesh()] Wrong tet node!\n"; exit(1);
+        }
+        if (tn[3] != INFINITE_VERTEX && tet_node[i * 4 + 3] >= num_vertices){ 
+            //ip_error("Wrong tet node!\n");
+            std::cout<<"[delaunay.hpp - checkMesh()] Wrong tet node!\n"; exit(1);
+        }
         if (tn[0] == tn[1] || tn[0] == tn[2] || tn[0] == tn[3]
-            || tn[1] == tn[2] || tn[1] == tn[3] || tn[2] == tn[3]) 
-            ip_error("Wrong tet node indexes!\n");
+            || tn[1] == tn[2] || tn[1] == tn[3] || tn[2] == tn[3]){ 
+            //ip_error("Wrong tet node indexes!\n");
+            std::cout<<"[delaunay.hpp - checkMesh()] Wrong tet node!\n"; exit(1);
+        }
     }
 
     // Check neighbors	
     for (i = 0; i < numTets() * 4; i++) if (!isToDelete(i))
-        if (tet_neigh[i] >= tet_neigh.size() || tet_neigh[tet_neigh[i]] != i)
-            ip_error("Wrong neighbor!\n");
+        if (tet_neigh[i] >= tet_neigh.size() || tet_neigh[tet_neigh[i]] != i){
+            //ip_error("Wrong neighbor!\n");
+            std::cout<<"[delaunay.hpp - checkMesh()] Wrong neighbor!\n"; exit(1);
+        }
 
     // Check neighbor-node coherence
     for (i = 0; i < numTets() * 4; i++) if (!isToDelete(i)) {
-        if (tetHasVertex(tet_neigh[i] >> 2, tet_node[i]))
-            ip_error("Incoherent neighbor!\n");
+        if (tetHasVertex(tet_neigh[i] >> 2, tet_node[i])){
+            //ip_error("Incoherent neighbor!\n");
+            std::cout<<"[delaunay.hpp - checkMesh()] Incoherent neighbor!\n"; exit(1);
+        }
         else {
             uint32_t v[3];
             getFaceVertices(i, v);
-            if (!tetHasVertex(tet_neigh[i] >> 2, v[0])) ip_error("Incoherent face at neighbors!\n");
+            if (!tetHasVertex(tet_neigh[i] >> 2, v[0])){ 
+                //ip_error("Incoherent face at neighbors!\n");
+                std::cout<<"[delaunay.hpp - checkMesh()] Incoherent face at neighbors!\n"; exit(1);
+            }
         }
     }
 
     // Check vt*	
     for (i = 0; i < num_vertices; i++) if (inc_tet[i]!=UINT64_MAX) {
-        if (inc_tet[i] >= numTets())
-            ip_error("Wrong vt* (out of range)!\n");
-        if (isGhost(inc_tet[i]))
+        if (inc_tet[i] >= numTets()){
+            //ip_error("Wrong vt* (out of range)!\n");
+            std::cout<<"[delaunay.hpp - checkMesh()] Wrong vt* (out of range)!\n"; exit(1);
+        }
+        if (isGhost(inc_tet[i])){
             ip_error("Wrong vt* (ghost tet)!\n");
+            std::cout<<"[delaunay.hpp - checkMesh()] Wrong vt* (ghost tet)!\n"; exit(1);
+        }
         const uint32_t* tn = tet_node.data() + inc_tet[i] * 4;
-        if (tn[0] != i && tn[1] != i && tn[2] != i && tn[3] != i)
-            ip_error("Wrong vt*!\n");
+        if (tn[0] != i && tn[1] != i && tn[2] != i && tn[3] != i){
+            //ip_error("Wrong vt*!\n");
+            std::cout<<"[delaunay.hpp - checkMesh()] Wrong vt*!\n"; exit(1);
+        }
     }
 
     // Check marks
@@ -1056,7 +1088,10 @@ void TetMesh::checkMesh(bool checkDelaunay) const {
     // Check geometry
     for (i = 0; i < numTets(); i++) if (!isToDelete(i<<2)) {
         const uint32_t* tn = tet_node.data() + i * 4;
-        if (tn[3] != INFINITE_VERTEX && vOrient3D(tn[0], tn[1], tn[2], tn[3]) <= 0) ip_error("Inverted/degn tet\n");
+        if (tn[3] != INFINITE_VERTEX && vOrient3D(tn[0], tn[1], tn[2], tn[3]) <= 0){ 
+            //ip_error("Inverted/degn tet\n");
+            std::cout<<"[delaunay.hpp - checkMesh()] Inverted/degn tet!\n"; exit(1);
+        }
     }
 
     if (checkDelaunay) {
@@ -1065,7 +1100,10 @@ void TetMesh::checkMesh(bool checkDelaunay) const {
             if (n[3] == INFINITE_VERTEX) continue;
             for (int j = 0; j < 4; j++) {
                 uint32_t ov = tet_node[tet_neigh[i * 4 + j]];
-                if (ov != INFINITE_VERTEX && vertexInTetSphere(n, ov) > 0) ip_error("Non delaunay\n");
+                if (ov != INFINITE_VERTEX && vertexInTetSphere(n, ov) > 0){ 
+                    //ip_error("Non delaunay\n");
+                    std::cout<<"[delaunay.hpp - checkMesh()] Non delaunay!\n"; exit(1);
+                }
             }
         }
     }

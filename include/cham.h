@@ -665,7 +665,7 @@ public:
                     else std::cout<<"OTHER\n";
                 }
                 // ip_error("[check_bridge] ERROR invalid bridge vertices\n");
-                std::cout<<"[check_bridge] ERROR invalid bridge vertices\n"; exit(1);
+                std::cout<<"[cham.h - check_bridge()] ERROR invalid bridge vertices\n"; exit(1);
            }
     }
 
