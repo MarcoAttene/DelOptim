@@ -894,6 +894,7 @@ inline double getDihedralAngle_withNormalVectors(const pointType* v0, const poin
 	return getAngle(l1, l2, l3);
 }
 
+bool avoid_repeat_warning = false;
 // Given tetrahedron <v0,v1,v2,v3> (oriented such that orient3d_val<0), 
 // computes dihedral angle at tet edge <v0,v1>.
 // From: "Lecture Notes on Geometric Robustnes" by J. R. Shewchuk
@@ -943,7 +944,10 @@ inline double getDihedralAngle(const pointType* v0, const pointType* v1, const p
 			return 90.0;
 		}
 		if (abs(num) < toll && abs(den) < toll) {
-			std::cout << "[getDihedralAngle] WARNING: uncertain num and den angle not computable.\n";
+			if(!avoid_repeat_warning){ 
+				avoid_repeat_warning = true;
+				std::cout << "[getDihedralAngle] WARNING: uncertain num and den angle not computable.\n";
+			}
 		}
 	}
 
