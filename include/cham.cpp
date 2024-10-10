@@ -225,7 +225,7 @@ void PLCc::initialize(){
         if( findIF_flat_edge(e) ) e.type = CHAMedge_t::flat; 
         else                      e.type = CHAMedge_t::undet;
 
-        if (e.inc_face.size() & 1) def_interior = false;
+        if (e.inc_face.size() & 1){ def_interior = false;}
     }
 
     #ifdef PLCC_VERBOSE_DEBUG

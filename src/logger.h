@@ -59,6 +59,10 @@ inline void logDouble(double d) {
     fprintf(log_fp, ", %g", d);
 }
 
+inline void logEmpty() {
+    fprintf(log_fp, ", ");
+}
+
 inline void finishLogging() {
     fprintf(log_fp, "\n");
     if (log_fp != stdout) fclose(log_fp);

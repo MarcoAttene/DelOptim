@@ -39,8 +39,7 @@ bool chamferPLC(inputPLC& _plc,
 	std::vector<std::vector<uint32_t>>& _faces,
 	bool simplify_cham_plc, bool verbose) {
 	
-	bool def_interior = true;
-	PLCc* cut_plc = new PLCc(_plc, _epsilon, def_interior, verbose);
+	PLCc* cut_plc = new PLCc(_plc, _epsilon, true, verbose);
 
 	if (simplify_cham_plc) {
 		uint32_t num_edges = cut_plc->edges.size();
@@ -73,7 +72,7 @@ bool chamferPLC(inputPLC& _plc,
 
 	// cut_plc->saveFaces();
 
-	return def_interior;
+	return cut_plc->input_plc_defines_interior();
 }
 
 // createSteinerCDT
@@ -233,6 +232,7 @@ int main(int argc, char* argv[])
 		TetMesh *cdt = createSteinerCDT(plc);
 		for (Tetrahedron* t : mesh.tets()) t->is_internal = isTetInternal(t, cdt);
 	}
+	else{ for (Tetrahedron* t : mesh.tets()) t->is_internal = true; }
 	
 	std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
 	uint64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - time_point).count();
@@ -251,17 +251,22 @@ int main(int argc, char* argv[])
 		logDouble(mesh.minEdgeLength());
 		double maxEneIN, maxEneEX;
 		mesh.maxTetEnergy(maxEneIN, maxEneEX);
-		logDouble(maxEneIN); logDouble(maxEneEX);
+		logDouble(maxEneIN); 
+		if(input_encloses_vol) logDouble(maxEneEX); else logEmpty();
 		double minFAIN, maxFAIN, minFAEX, maxFAEX, minDAIN, maxDAIN, minDAEX, maxDAEX;
 		mesh.minMaxTetAngle(minFAIN, maxFAIN, minFAEX, maxFAEX, minDAIN, maxDAIN, minDAEX, maxDAEX);
-		logDouble(minFAIN); logDouble(maxFAIN);
-		logDouble(minFAEX); logDouble(maxFAEX);
-		logDouble(minDAIN); logDouble(maxDAIN);
-		logDouble(minDAEX); logDouble(maxDAEX);
+		logDouble(minFAIN); 
+		logDouble(maxFAIN); 
+		if(input_encloses_vol) logDouble(minFAEX); else logEmpty();
+		if(input_encloses_vol) logDouble(maxFAEX); else logEmpty();
+		logDouble(minDAIN); 
+		logDouble(maxDAIN); 
+		if(input_encloses_vol) logDouble(minDAEX); else logEmpty();
+		if(input_encloses_vol) logDouble(maxDAEX); else logEmpty();
 		finishLogging();
 	}
 	else {
-		mesh.printReport();
+		mesh.printReport(input_encloses_vol);
 		std::cout << std::endl;
 
 		mesh.saveOFFInterface("plcfaces.off");

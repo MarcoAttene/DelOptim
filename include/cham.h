@@ -306,6 +306,8 @@ public:
         return vOrient3D(e.ep[0], e.ep[1], inTri_opp_vrt(e, e.inc_face[0]), inTri_opp_vrt(e, e.inc_face[1])) == 0;
     }
 
+    bool input_plc_defines_interior() const { return def_interior; }
+
     // Search for acute angle between PLCc elements
     
     void search_acute_angles();

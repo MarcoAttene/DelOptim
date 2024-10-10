@@ -1937,21 +1937,26 @@ public:
 		}
 	}
 
-	void printReport() const {
+	void printReport(bool input_encloses_vol) const {
 		printf("\nMesh has %zu vertices and %zu tetrahedra\n", V.size(), T.size());
 
 		double mai, mae;
 		maxTetEnergy(mai, mae);
-		printf("\nMax tet energy:\n\tInternal tets: %f\n\tExternal tets: %f\n", mai, mae);
+		printf("\nMax tet energy:\n\tInternal tets: %f\n", mai);
+		if(input_encloses_vol) printf("\tExternal tets: %f\n", mae);
 
 		double minPlanIN, maxPlanIN, minPlanEX, maxPlanEX;
 		double minDihedIN, maxDihedIN, minDihedEX, maxDihedEX;
 		minMaxTetAngle(minPlanIN, maxPlanIN, minPlanEX, maxPlanEX, minDihedIN, maxDihedIN, minDihedEX, maxDihedEX);
 		printf("\nExtremal angles (DEGs)\n");
-		printf("Min dihedral angle:\n\tInternal mesh: %f\n\tExternal mesh: %f\n", minDihedIN, minDihedEX);
-		printf("Max dihedral angle:\n\tInternal mesh: %f\n\tExternal mesh: %f\n", maxDihedIN, maxDihedEX);
-		printf("Min face angle:\n\tInternal mesh: %f\n\tExternal mesh: %f\n", minPlanIN, minPlanEX);
-		printf("Max face angle:\n\tInternal mesh: %f\n\tExternal mesh: %f\n", maxPlanIN, maxPlanEX);
+		printf("Min dihedral angle:\n\tInternal mesh: %f\n", minDihedIN);
+		if(input_encloses_vol) printf("\tExternal mesh: %f\n", minDihedEX);
+		printf("Max dihedral angle:\n\tInternal mesh: %f\n", maxDihedIN);
+		if(input_encloses_vol) printf("\tExternal mesh: %f\n", maxDihedEX);
+		printf("Min face angle:\n\tInternal mesh: %f\n", minPlanIN);
+		if(input_encloses_vol) printf("\tExternal mesh: %f\n", minPlanEX);
+		printf("Max face angle:\n\tInternal mesh: %f\n", maxPlanIN);
+		if(input_encloses_vol) printf("\tExternal mesh: %f\n", maxPlanEX);
 	}
 	// -----------------------------------
 	void insertExistingVertex(TetVertex* vm, Tetrahedron *st) {
