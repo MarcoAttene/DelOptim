@@ -63,7 +63,7 @@ typedef std::vector<Tetrahedron*> Tetrahedra;
 // This is used to assign a unique index to each vertex to guarantee a
 // coherent and reproducible symbolic perturbation.
 // Should be used for debugging. Disable in normal conditions.
-//#define USE_INDEX_BASED_PERTURBATION
+#define USE_INDEX_BASED_PERTURBATION
 
 #ifdef USE_INDEX_BASED_PERTURBATION
 uint32_t _TetVertexGlobalIndex = 0;

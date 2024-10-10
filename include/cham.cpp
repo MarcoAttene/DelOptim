@@ -225,14 +225,7 @@ void PLCc::initialize(){
         if( findIF_flat_edge(e) ) e.type = CHAMedge_t::flat; 
         else                      e.type = CHAMedge_t::undet;
 
-        #ifdef TEST_CHAMFERING
-        if( e.inc_face.size()&1 ) exit( (int) EXIT_t::open_input );
-        #else 
-        if (e.inc_face.size() & 1){ 
-            // ip_error("Input surface does not enclose a volume\n");
-            std::cout<<"[cham.cpp - initialize()] ERROR Input surface does not enclose a volume\n"; exit(1);
-        }
-        #endif
+        if (e.inc_face.size() & 1) def_interior = false;
     }
 
     #ifdef PLCC_VERBOSE_DEBUG

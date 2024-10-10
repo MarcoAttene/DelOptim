@@ -30,13 +30,17 @@ using namespace std;
 
 #include "cham.h"
 
-// Export the data structure to optimizer
-void chamferPLC(inputPLC& _plc,
+// Export the data structure to optimizer,
+// eturns true if the input surface enclses a volume, i.e. input edges have
+// an even number of incident input triangles. 
+bool chamferPLC(inputPLC& _plc,
 	double _epsilon,
 	std::vector<genericPoint*>& _vertices,
 	std::vector<std::vector<uint32_t>>& _faces,
 	bool simplify_cham_plc, bool verbose) {
-	PLCc* cut_plc = new PLCc(_plc, _epsilon, verbose);
+	
+	bool def_interior = true;
+	PLCc* cut_plc = new PLCc(_plc, _epsilon, def_interior, verbose);
 
 	if (simplify_cham_plc) {
 		uint32_t num_edges = cut_plc->edges.size();
@@ -68,6 +72,8 @@ void chamferPLC(inputPLC& _plc,
 	}
 
 	// cut_plc->saveFaces();
+
+	return def_interior;
 }
 
 // createSteinerCDT
@@ -161,15 +167,12 @@ int main(int argc, char* argv[])
 
 	TetMesh tin;
 
-	// Here we create a CDT of the input as it is and extract a chamfered version to be optimized
-	TetMesh *cdt = createSteinerCDT(plc);
 	std::vector<genericPoint*> chamf_vertices;
 	std::vector<std::vector<uint32_t>> chamf_faces;
 	double epsilon = plc.bbDiag() / 1000.0;	// Use bounding-box-diagonal/1000 as chamfering distance
 
 	bool simplify_chamferd_plc = true; // try to remove uncessary edges while keeping non-acute angles
-
-	chamferPLC(plc, epsilon, chamf_vertices, chamf_faces, simplify_chamferd_plc, options.find('v') != std::string::npos);
+	bool input_encloses_vol = chamferPLC(plc, epsilon, chamf_vertices, chamf_faces, simplify_chamferd_plc, options.find('v') != std::string::npos);
 
 	tin.init_vertices(chamf_vertices);
 
@@ -221,8 +224,16 @@ int main(int argc, char* argv[])
 	mesh.optimizeTets(2.0, false, true);
 
 	// Remove external tets after chamfering
-	for (Tetrahedron* t : mesh.tets()) t->is_internal = isTetInternal(t, cdt);
-
+	// In case the input edges has even number of incident input triangles,
+	// i.e. the input surface define an "interior",
+	// we create a CDT of the input surface to decide wherever an "otimized mesh" tetrahedron 
+	// is internal/external wrt the input surface.
+	if(input_encloses_vol){
+		std::cout<<"Input enclose a volume\n";
+		TetMesh *cdt = createSteinerCDT(plc);
+		for (Tetrahedron* t : mesh.tets()) t->is_internal = isTetInternal(t, cdt);
+	}
+	
 	std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
 	uint64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - time_point).count();
 	std::cout << "Elapsed time (ms): " << ms << "\n";
@@ -253,7 +264,7 @@ int main(int argc, char* argv[])
 		mesh.printReport();
 		std::cout << std::endl;
 
-		//mesh.saveOFFInterface("plcfaces.off");
+		mesh.saveOFFInterface("plcfaces.off");
 		//mesh.saveTET("mesh.tet");
 	}
 

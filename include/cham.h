@@ -206,6 +206,7 @@ public:
 class PLCc{
 private:
     bool verbose;
+    bool def_interior;
 
 public:
     const double epsilon;
@@ -227,7 +228,7 @@ public:
     std::vector<uint32_t> mark_edges;
     std::vector<uint32_t> mark_faces;
 
-    PLCc(const inputPLC& _plc, const double _epsilon, bool _verbose) : plc(_plc), epsilon(_epsilon), n_in_vrts(_plc.numVertices()), verbose(_verbose) {
+    PLCc(const inputPLC& _plc, const double _epsilon, bool _def_interior, bool _verbose) : plc(_plc), epsilon(_epsilon), n_in_vrts(_plc.numVertices()), def_interior(_def_interior), verbose(_verbose) {
         
         #ifdef PLCC_VERBOSE_DEBUG
         verbose = true;
