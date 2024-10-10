@@ -2275,8 +2275,8 @@ public:
 	}
 
 	void retetrahedrizeCavity(TetVertex* v, Tetrahedra& cavity) {
-		TetFaces boundary, innerFaces;
-		TetEdges bdEdges, innerEdges;
+		TETMESH_STATIC TetFaces boundary, innerFaces;
+		TETMESH_STATIC TetEdges bdEdges, innerEdges;
 		TetFace* f;
 		TetEdge* e;
 		Tetrahedron* s;
@@ -2369,7 +2369,7 @@ public:
 		// Make the new tets
 		for (TetFace* f : boundary) {
 			assert(vOrient3D(v, f->v0(), f->v1(), f->v2()) != 0);
-			if (f->t1()==NULL)
+			if (f->t1() == NULL) 
 				assert(vOrient3D(v, f->v0(), f->v1(), f->v2()) > 0);
 			else
 				assert(vOrient3D(v, f->v0(), f->v2(), f->v1()) > 0);
@@ -2392,6 +2392,9 @@ public:
 
 		// Unmark boundary edges
 		for (TetEdge* e : bdEdges) e->unmark<7>();
+
+		boundary.clear(); innerFaces.clear();
+		bdEdges.clear(); innerEdges.clear();
 	}
 
 protected:

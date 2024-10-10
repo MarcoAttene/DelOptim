@@ -894,7 +894,16 @@ inline double getDihedralAngle_withNormalVectors(const pointType* v0, const poin
 	return getAngle(l1, l2, l3);
 }
 
-bool avoid_repeat_warning = false;
+inline double getDihedralAngle_withNormalVectors_bf(const pointType* v0, const pointType* v1, const pointType* o0, const pointType* o1) {
+	const vec3d_bf v0v(v0), v1v(v1);
+	const vec3d_bf d = (v1v - v0v);
+	const vec3d_bf vav1 = (vec3d_bf(o0) - v0v) & d; // Normal at t1
+	const vec3d_bf vbv1 = (vec3d_bf(o1) - v0v) & d; // Normal at t2
+	bigfloat l1 = (vav1.sq_length()), l2 = (vbv1.sq_length());
+	bigfloat l3 = ((vav1 - vbv1).sq_length());
+	return getAngle(sqrt(l1.get_d()), sqrt(l2.get_d()), sqrt(l3.get_d()));
+}
+
 // Given tetrahedron <v0,v1,v2,v3> (oriented such that orient3d_val<0), 
 // computes dihedral angle at tet edge <v0,v1>.
 // From: "Lecture Notes on Geometric Robustnes" by J. R. Shewchuk
@@ -905,19 +914,13 @@ inline double getDihedralAngle(const pointType* v0, const pointType* v1, const p
 	const vector3d Ov0(v0), Ov1(v1), Ov2(v2), Ov3(v3);
 	double l01 = sqrt((Ov1 - Ov0).sq_length());
 
-	if (l01 == 0.0){ 
-		// ip_error("[getDihedralAngle] edge is degenerate\n");
-		std::cout<<"[fp_geometry.h - getDihedralAngle()] edge is degenerate\n"; exit(1);
-	}
+	if (l01 == 0.0) ip_error("[getDihedralAngle] edge is degenerate\n");
 
 	double num = -orient3d_val(Ov0, Ov1, Ov2, Ov3) * l01; // 6 * tet volume
 	if (num < 0 && abs(num) > toll) {
 		int o3d_tet = pointType::orient3D(*v0, *v1, *v2, *v3);
-		if (o3d_tet < 0){ 
-			//ip_error("[getDihedralAngle] invertedTet\n");
-			std::cout<<"[fp_geometry.h - getDihedralAngle()] inverted tet\n"; exit(1);
-		}
-		std::cout << "[getDihedralAngle] WARNING num ( ori3d = " << num << " * len = " << l01 << ") sign corrected according to exact_orient3D\n";
+		if (o3d_tet < 0) ip_error("[detDihedralAngle] invertedTet\n");
+		std::cout << "[detDihedralAngle] WARNING num ( ori3d = " << num << " * len = " << l01 << ") sign corrected according to exact_orient3D\n";
 		num = abs(num);
 	}
 
@@ -925,31 +928,11 @@ inline double getDihedralAngle(const pointType* v0, const pointType* v1, const p
 	const vector3d n3 = accurate_cross_prod(Ov0, Ov1, Ov2); // (Ov0-Ov2) x (Ov1-Ov2)
 	double den = (n3 * n2) * (-1.0);
 
-	if (den == 0.0 && num == 0.0){ 
-		//ip_error("[getDihedralAngle] invalid dihedral angle (NaN)\n");
-		std::cout<<"[fp_geometry.h - getDihedralAngle()] invalid dihedral angle (NaN)\n"; exit(1);
-	}
-	// if(num == 0.0 && den < 0) return 180.0;
-	// if(num == 0.0 && den > 0) return 0.0;
-	// if(den == 0.0 && num > 0) return 90.0;
+	if (den == 0.0 && num == 0.0) ip_error("[getDihedralAngle] invalid dihedral angle (NaN)\n");
 
-	if (avoid_atan2_below_toll && (abs(num) < toll || abs(den) < toll)) {
-		// uncertain cases
-		if (abs(num) < toll && abs(den) >= toll) {
-			if (den < 0) return 180.0;
-			else 		return 0.0; // den > 0
-		}
-		if (abs(num) >= toll && abs(den) < toll) {
-			if (num < 0) std::cout << "[getDihedralAngle] WARNING: uncertain den (|den|< " << toll << ") and num = " << num << ". num has been sign changed.\n";
-			return 90.0;
-		}
-		if (abs(num) < toll && abs(den) < toll) {
-			if(!avoid_repeat_warning){ 
-				avoid_repeat_warning = true;
-				std::cout << "[getDihedralAngle] WARNING: uncertain num and den angle not computable.\n";
-			}
-		}
-	}
+	// Use bigfloats when numerics make things unstable
+	if (avoid_atan2_below_toll && (abs(num) < toll || abs(den) < toll))
+		return getDihedralAngle_withNormalVectors_bf(v0, v1, v2, v3);
 
 	return atan2(num, den) * 180.0 / M_PI; // atan2 should return angles in [0,pi]
 }

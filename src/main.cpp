@@ -42,7 +42,7 @@ bool chamferPLC(inputPLC& _plc,
 	PLCc* cut_plc = new PLCc(_plc, _epsilon, true, verbose);
 
 	if (simplify_cham_plc) {
-		uint32_t num_edges = cut_plc->edges.size();
+		size_t num_edges = cut_plc->edges.size();
 		cut_plc->chamfered_plc_simplification();
 		// assert( cut_plc->checkup() );
 		// assert( cut_plc->check_acuteness() );
@@ -245,9 +245,9 @@ int main(int argc, char* argv[])
 
 		// LOGfile
 		startLogging(filename);
-		logInteger(mesh.num_vertices());
-		logInteger(mesh.num_tetrahedra());
-		logInteger(ms);
+		logInteger((uint32_t)mesh.num_vertices());
+		logInteger((uint32_t)mesh.num_tetrahedra());
+		logInteger((uint32_t)ms);
 		logDouble(mesh.minEdgeLength());
 		double maxEneIN, maxEneEX;
 		mesh.maxTetEnergy(maxEneIN, maxEneEX);
