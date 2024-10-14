@@ -73,6 +73,13 @@ public:
     // constructor for new edges
     inline CHAMedge(const uint32_t e0, const uint32_t e1, const uint32_t f) : ep{e0, e1}, oep{e0, e1}, type(CHAMedge_t::undet), loc_face_bridge_id(NO_BRIDGE) { inc_face.push_back(f); }
 
+    inline void init_bridge_edge(const uint32_t e0, const uint32_t e1, const uint32_t bridge_v, const uint32_t f){ 
+        oep[0] = ep[0] = e0;  oep[1] = ep[1] = e1; 
+        type = CHAMedge_t::undet; 
+        loc_face_bridge_id = bridge_v; 
+        inc_face.push_back(f); 
+    }
+
     // Enquiry
     inline bool isFlat() const { return type == CHAMedge_t::flat; }
     inline bool isAcute() const { return type == CHAMedge_t::acute; }

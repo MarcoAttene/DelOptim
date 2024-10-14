@@ -387,8 +387,6 @@ void PLCc::search_acute_angles(){
         if( findIF_acute_edge(e) ) e.type = CHAMedge_t::acute;
     }
 
-    // print_input_vt(7122); // DEBUG
-
     #ifdef PLCC_VERBOSE_DEBUG
     disp_howManyAcuteEdges();
     #endif
@@ -525,7 +523,7 @@ uint32_t PLCc::new_vrt_on_segment(uint32_t v0, uint32_t v1, const double d, cons
     // const vector3d Ov0( vertices[v0] );
     // const vector3d Ov1( vertices[v1] );
     // const vector3d Op( Ov0 * (1-t) + Ov1 * t );
-    coonst vector3d Op = vector3d( vertices[v0] ).leftLinComb( vector3d( vertices[v1] ), t );
+    const vector3d Op = vector3d( vertices[v0] ).leftLinComb( vector3d( vertices[v1] ), t );
     p = new explicitPoint3D(Op.c[0], Op.c[1], Op.c[2]);
 
     #endif
@@ -1328,7 +1326,7 @@ uint32_t PLCc::chamfering_face(uint32_t fi){
             std::cout<<"\nvertex "<<vi<<" between\n"; print_edge(ei); std::cout<<"and\n";
             print_edge(nei); std::cout<<"is acute.\n\n";
             #endif
-            
+
             // 1) create two new vertices (v2 and v3) inside the face
             uint32_t v1, v4, ov1, ov4;
             v1 = edges[ei].oppositeVertex(vi);
@@ -1340,11 +1338,12 @@ uint32_t PLCc::chamfering_face(uint32_t fi){
 
             // 2) create 3 new edges
             uint32_t v2 = resp -1, v3 = resp;
-            edges.reserve(edges.size()+3);
-            edges.push_back( CHAMedge(v1, v2, fi) );  edges.back().loc_face_bridge_id = vi;
-            edges.push_back( CHAMedge(v2, v3, fi) );  edges.back().loc_face_bridge_id = vi;
-            edges.push_back( CHAMedge(v3, v4, fi) );  edges.back().loc_face_bridge_id = vi;
-            mark_edges.resize(mark_edges.size()+3, 0);
+            uint32_t num_e = edges.size()+3;
+            edges.resize(num_e);
+            edges[num_e-3].init_bridge_edge(v1, v2, vi, fi);
+            edges[num_e-2].init_bridge_edge(v2, v3, vi, fi);
+            edges[num_e-1].init_bridge_edge(v3, v4, vi, fi);
+            mark_edges.resize(num_e, 0);
 
             #ifdef PLCC_DEBUG
             check_bridge(v1,v2,v3,v4);
