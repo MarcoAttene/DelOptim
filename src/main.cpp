@@ -103,9 +103,33 @@ bool isTetInternal(Tetrahedron* t, TetMesh* cdt) {
 	getTetBarycenter(v, ccc);
 	explicitPoint3D p(ccc[0], ccc[1], ccc[2]);
 	cdt->vertices.push_back(&p);
-	uint64_t tet = cdt->searchTetrahedron(0, cdt->numVertices() - 1);
+	static uint64_t tet = 0;
+	tet = cdt->searchTetrahedron(tet, cdt->numVertices() - 1);
 	cdt->vertices.pop_back();
 	return (cdt->mark_tetrahedra[tet>>2] == DT_IN);
+}
+
+void markInternalTets(Tetrahedrization& mesh, TetMesh* cdt) {
+	//for (Tetrahedron* t : mesh.tets()) t->is_internal = isTetInternal(t, cdt);
+
+	// Smarter method - exploit adjacencies to make location in CDT faster
+	for (Tetrahedron* t : mesh.tets()) t->unmark<0>();
+	Tetrahedra todo;
+	todo.reserve(mesh.tets().size());
+	Tetrahedron *s, *t = mesh.tets().front();
+	todo.push_back(t); t->mark<0>();
+
+	while (!todo.empty()) {
+		t = todo.back();
+		t->is_internal = isTetInternal(t, cdt);
+		todo.pop_back();
+		s = t->t0(); if (s != NULL && !s->isMarked<0>()) { todo.push_back(s); s->mark<0>(); }
+		s = t->t1(); if (s != NULL && !s->isMarked<0>()) { todo.push_back(s); s->mark<0>(); }
+		s = t->t2(); if (s != NULL && !s->isMarked<0>()) { todo.push_back(s); s->mark<0>(); }
+		s = t->t3(); if (s != NULL && !s->isMarked<0>()) { todo.push_back(s); s->mark<0>(); }
+	}
+
+	for (Tetrahedron* t : mesh.tets()) t->unmark<0>();
 }
 
 
@@ -224,13 +248,13 @@ int main(int argc, char* argv[])
 
 	// Remove external tets after chamfering
 	// In case the input edges has even number of incident input triangles,
-	// i.e. the input surface define an "interior",
+	// i.e. the input surface defines an "interior",
 	// we create a CDT of the input surface to decide wherever an "otimized mesh" tetrahedron 
 	// is internal/external wrt the input surface.
 	if(input_encloses_vol){
-		std::cout<<"Input enclose a volume\n";
+		std::cout<<"Input encloses a volume\n";
 		TetMesh *cdt = createSteinerCDT(plc);
-		for (Tetrahedron* t : mesh.tets()) t->is_internal = isTetInternal(t, cdt);
+		markInternalTets(mesh, cdt);
 	}
 	else{ for (Tetrahedron* t : mesh.tets()) t->is_internal = true; }
 	
