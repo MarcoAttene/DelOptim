@@ -285,7 +285,7 @@ void PLCc::inTri_opp_edge(const uint32_t v, const uint32_t ti, uint32_t& u1, uin
 bool PLCc::findIF_acute_edge(const CHAMedge& e) const {
 
     if(e.inc_face.size() == 1) return false;
-    if(e.inc_face.size() > 4) return true; // 369/5 < 360/4 = 90 
+    if(e.inc_face.size() > 2) return true; // 369/5 < 360/4 = 90 
 
     uint32_t u, v;
     const pointType* e0_pt = vertices[ e.ep[0] ];
