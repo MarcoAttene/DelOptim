@@ -1658,8 +1658,9 @@ void PLCc::chamfered_plc_simplification(){
             }
             else if(simpL || simpR){
                 uint32_t fi = edges[b.ec].inc_face[0];
-                uint32_t be_rem = b.el, new_ep = v1, ext_ep = v0;
+                uint32_t be_rem, new_ep, ext_ep; 
                 if(simpR){ be_rem = b.er; new_ep = v2; ext_ep = v3;}
+                else{ be_rem = b.el, new_ep = v1, ext_ep = v0; }
                 uint32_t c = edges[b.ec].notCommonVertex(edges[be_rem]);
                 uint32_t d = edges[b.ec].commonVertex(edges[be_rem]);
 
