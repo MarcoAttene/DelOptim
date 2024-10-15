@@ -1989,7 +1989,7 @@ public:
 				fclose(fp);
 				// --
 				std::cout << "\nPROGRAM ABORTED: memory out (" << critical_mem / 1000000 << " Mb) reached.\n";
-				exit(1);
+				exit(421);
 			}
 		}
 
