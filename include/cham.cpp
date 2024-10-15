@@ -243,6 +243,19 @@ void PLCc::initialize(){
             faces[t].bounding_edges.push_back(ei);
 
     for(CHAMface& f : faces) orient_initial_triface_bnd(f);
+
+    // DEBUG
+    for(uint32_t fi=0; fi<faces.size()-1; fi++){
+        std::vector<uint32_t> fiv; get_face_vertices(faces[fi], fiv);
+        for(uint32_t fj=1; fi<faces.size(); fi++){
+            std::vector<uint32_t> fjv; get_face_vertices(faces[fj], fjv);
+            if((fiv[0]==fjv[0] || fiv[0]==fjv[1] || fiv[0]==fjv[2]) &&
+               (fiv[1]==fjv[0] || fiv[1]==fjv[1] || fiv[1]==fjv[2]) &&
+               (fiv[2]==fjv[0] || fiv[2]==fjv[1] || fiv[2]==fjv[2])   ){
+                std::cout<<"WARNING: face["<<fi<<"] is equal to face["<<fj<<"]\n";
+            }
+        }
+    }
 }
 
 // -------------------------- //
@@ -1480,7 +1493,7 @@ void PLCc::chamfering(){
     for(CHAMedge& e : edges) if( e.isJunk() ){ e.inc_face.clear(); }
     cleanUp_edges();
 
-    std::cout<<n_fbs<<" (on "<<faces.size()<<") faces have be fall-back chamfered.\n";
+    if(n_fbs) std::cout<<n_fbs<<" (on "<<faces.size()<<") faces have be fall-back chamfered.\n";
     if(verbose) std::cout<<"[chamfering()] edge chamfering COMPLETED\n";
 }
 

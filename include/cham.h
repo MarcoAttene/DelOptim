@@ -246,6 +246,9 @@ public:
         initialize(); 
         if(verbose) std::cout<<"[PLCc] - initialization COMPLETED\n";
 
+        if(duplicated_edges()){ std::cout<<"\nEXITING: duplicated edges!!"; exit(1); } // DEBUG
+        if(duplicated_vertices()){ std::cout<<"\nEXITING: duplicated vertices!!"; exit(1); } // DEBUG
+
         search_acute_angles();
 
         if(verbose) std::cout<<"[PLCc] - determination of acute vertices and edges COMPLETED\n";
@@ -263,6 +266,9 @@ public:
         #endif
         
         if(verbose) std::cout<<"[PLCc] - chamfering COMPLETED\n\n";
+
+        if(duplicated_edges()){ std::cout<<"\nEXITING: duplicated edges!!"; exit(1); } // DEBUG
+        if(duplicated_vertices()){ std::cout<<"\nEXITING: duplicated vertices!!"; exit(1); } // DEBUG
 
         // if( !check_acuteness() ) exit(99); // DEBUG
     };
@@ -616,6 +622,16 @@ public:
     // Debug
 
     inline void print_vertex(uint32_t vi) const { std::cout<<"vertex["<<vi<<"] = "<< *vertices[vi] <<"\n"; }
+    inline void print_vertex_info(uint32_t vi) const { 
+        const pointType* v = vertices[vi];
+        std::cout<<"vertex["<<vi<<"] = "<< *v
+                 <<" - type ";
+        if(v->isExplicit3D()) std::cout<<"EXPLIC3D ";
+        else if(v->isLNC()){ std::cout<<"LNC (P = "<< v->toLNC().P() <<", Q = "<< v->toLNC().Q() <<", t = "<<v->toLNC().T()<<" )"; }
+        else if(v->isBPT()){ std::cout<<"BPT (P = "<< v->toBPT().P() <<", Q = "<< v->toBPT().Q() <<", R = "<< v->toBPT().R() <<", u = "<<v->toBPT().U()<<", v = "<<v->toBPT().V()<<" )"; }
+        else std::cout<<"UNKNOWN ";
+        std::cout<<"\n"; 
+    }
     inline void print_edge(size_t ei) const { std::cout<<"edge["<<(uint32_t)ei<<"] = <"<<edges[ei].ep[0]<<","<<edges[ei].ep[1]<<">\n"; }
     inline void print_input_vt(uint32_t vi) const { 
         std::cout<<"input vt["<<vi<<"]:\n";
@@ -1023,9 +1039,6 @@ public:
         return true;
     }
 
-    #ifdef PLCC_DEBUG
-    // Debug mode functions
-
     bool duplicated_vertices() const{
         bool duplicated = false;
         std::vector< std::pair<vector3d,uint32_t> > vrts_cpy;
@@ -1038,7 +1051,28 @@ public:
             if(vrts_cpy[i-1].first.c[0] == vrts_cpy[i].first.c[0] &&
             vrts_cpy[i-1].first.c[1] == vrts_cpy[i].first.c[1] &&
             vrts_cpy[i-1].first.c[2] == vrts_cpy[i].first.c[2]     ){
-                std::cout<<"ERROR: duplicated vertex["<< vrts_cpy[i-1].second <<"] = vertex["<< vrts_cpy[i].second <<"]\n"; 
+                uint32_t v1 = vrts_cpy[i-1].second;
+                uint32_t v2 = vrts_cpy[i].second;
+                std::cout<<"ERROR: duplicated vertex["<< v1 <<"] = vertex["<< v2 <<"]\n"; 
+                print_vertex_info(v1);
+                print_vertex_info(v2);
+                const pointType *vv1 = vertices[v1];
+                const pointType *vv2 = vertices[v2];
+                if(vv1->isLNC() && vv2->isLNC()){  
+                    if(vv1->toLNC().P() == vv2->toLNC().P() && 
+                       vv1->toLNC().Q() == vv2->toLNC().Q() && 
+                       vv1->toLNC().T() == vv2->toLNC().T()   )
+                        std::cout<<"Exact Versions Are Equal\n";
+                }
+                if(vv1->isBPT() && vv2->isBPT()){  
+                    if(vv1->toBPT().P() == vv2->toBPT().P() && 
+                       vv1->toBPT().Q() == vv2->toBPT().Q() && 
+                       vv1->toBPT().R() == vv2->toBPT().R() && 
+                       vv1->toBPT().U() == vv2->toBPT().U() &&
+                       vv1->toBPT().V() == vv2->toBPT().V()   )
+                        std::cout<<"Exact Versions Are Equal\n";
+                }
+                
                 duplicated = true;
             }
         }
@@ -1049,7 +1083,9 @@ public:
         bool duplicated = false;
         std::vector< std::vector<uint32_t> > edge_cpy;
         for(uint32_t i=0; i<edges.size(); i++){ 
-            edge_cpy.push_back( std::vector<uint32_t> ({edges[i].ep[0], edges[i].ep[1], i}) ); 
+            uint32_t ep0=edges[i].ep[0], ep1=edges[i].ep[1];
+            if(ep0>ep1) std::swap(ep0,ep1);
+            edge_cpy.push_back( std::vector<uint32_t> ({ep0, ep1, i}) ); 
         }
         std::sort(edge_cpy.begin(), edge_cpy.end(),
                   [](const std::vector<uint32_t> &a, const std::vector<uint32_t> &b){ 
@@ -1065,6 +1101,9 @@ public:
         }
         return duplicated;
     }
+
+    #ifdef PLCC_DEBUG
+    // Debug mode functions
 
     void checkEdges_beforeJunkDeletion() const {
         for(const CHAMedge& e : edges)if(!e.isIsolated()){
