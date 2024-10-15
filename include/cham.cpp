@@ -244,18 +244,18 @@ void PLCc::initialize(){
 
     for(CHAMface& f : faces) orient_initial_triface_bnd(f);
 
-    // DEBUG
-    for(uint32_t fi=0; fi<faces.size()-1; fi++){
-        std::vector<uint32_t> fiv; get_face_vertices(faces[fi], fiv);
-        for(uint32_t fj=1; fi<faces.size(); fi++){
-            std::vector<uint32_t> fjv; get_face_vertices(faces[fj], fjv);
-            if((fiv[0]==fjv[0] || fiv[0]==fjv[1] || fiv[0]==fjv[2]) &&
-               (fiv[1]==fjv[0] || fiv[1]==fjv[1] || fiv[1]==fjv[2]) &&
-               (fiv[2]==fjv[0] || fiv[2]==fjv[1] || fiv[2]==fjv[2])   ){
-                std::cout<<"WARNING: face["<<fi<<"] is equal to face["<<fj<<"]\n";
-            }
-        }
-    }
+    // DEBUG : search duplicated faces
+    // for(uint32_t fi=0; fi<faces.size()-1; fi++){
+    //     std::vector<uint32_t> fiv; get_face_vertices(faces[fi], fiv);
+    //     for(uint32_t fj=fi+1; fj<faces.size(); fj++){
+    //         std::vector<uint32_t> fjv; get_face_vertices(faces[fj], fjv);
+    //         if((fiv[0]==fjv[0] || fiv[0]==fjv[1] || fiv[0]==fjv[2]) &&
+    //            (fiv[1]==fjv[0] || fiv[1]==fjv[1] || fiv[1]==fjv[2]) &&
+    //            (fiv[2]==fjv[0] || fiv[2]==fjv[1] || fiv[2]==fjv[2])   ){
+    //             std::cout<<"WARNING: face["<<fi<<"] (original tri "<<faces[fi].triangle<<") is equal to face["<<fj<<"] (original tri "<<faces[fj].triangle<<")\n";
+    //         }
+    //     }
+    // }
 }
 
 // -------------------------- //

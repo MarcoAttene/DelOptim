@@ -246,9 +246,6 @@ public:
         initialize(); 
         if(verbose) std::cout<<"[PLCc] - initialization COMPLETED\n";
 
-        if(duplicated_edges()){ std::cout<<"\nEXITING: duplicated edges!!"; exit(1); } // DEBUG
-        if(duplicated_vertices()){ std::cout<<"\nEXITING: duplicated vertices!!"; exit(1); } // DEBUG
-
         search_acute_angles();
 
         if(verbose) std::cout<<"[PLCc] - determination of acute vertices and edges COMPLETED\n";
@@ -266,9 +263,6 @@ public:
         #endif
         
         if(verbose) std::cout<<"[PLCc] - chamfering COMPLETED\n\n";
-
-        if(duplicated_edges()){ std::cout<<"\nEXITING: duplicated edges!!"; exit(1); } // DEBUG
-        if(duplicated_vertices()){ std::cout<<"\nEXITING: duplicated vertices!!"; exit(1); } // DEBUG
 
         // if( !check_acuteness() ) exit(99); // DEBUG
     };
@@ -1039,6 +1033,9 @@ public:
         return true;
     }
 
+    #ifdef PLCC_DEBUG
+    // Debug mode functions
+
     bool duplicated_vertices() const{
         bool duplicated = false;
         std::vector< std::pair<vector3d,uint32_t> > vrts_cpy;
@@ -1101,9 +1098,6 @@ public:
         }
         return duplicated;
     }
-
-    #ifdef PLCC_DEBUG
-    // Debug mode functions
 
     void checkEdges_beforeJunkDeletion() const {
         for(const CHAMedge& e : edges)if(!e.isIsolated()){

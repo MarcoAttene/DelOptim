@@ -130,8 +130,16 @@ int vertex_compare(const void* void_v1, const void* void_v2)
 }
 
 int triOrder(const void* t1, const void* t2) {
-    const uint32_t* a = (uint32_t*)t1;
-    const uint32_t* b = (uint32_t*)t2;
+    uint32_t a[3] = { *((uint32_t*)t1), *((uint32_t*)t1 +1), *((uint32_t*)t1 +2) };
+    uint32_t b[3] = { *((uint32_t*)t2), *((uint32_t*)t2 +1), *((uint32_t*)t2 +2) };
+
+    if(a[0]>a[1]) std::swap(a[0],a[1]);
+    if(a[0]>a[2]) std::swap(a[0],a[2]);
+    if(a[1]>a[2]) std::swap(a[1],a[2]);
+
+    if(b[0]>b[1]) std::swap(b[0],b[1]);
+    if(b[0]>b[2]) std::swap(b[0],b[2]);
+    if(b[1]>b[2]) std::swap(b[1],b[2]);
 
     // Here we should pre-order a[3] and b[3] to identify coincident triangles with different vertex ordering!!!
     // To be done!
