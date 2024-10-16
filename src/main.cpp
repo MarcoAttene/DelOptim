@@ -30,6 +30,8 @@ using namespace std;
 
 #include "cham.h"
 
+typedef std::chrono::steady_clock chrono_clock;
+
 // Export the data structure to optimizer,
 // eturns true if the input surface enclses a volume, i.e. input edges have
 // an even number of incident input triangles. 
@@ -132,6 +134,18 @@ void markInternalTets(Tetrahedrization& mesh, TetMesh* cdt) {
 	for (Tetrahedron* t : mesh.tets()) t->unmark<0>();
 }
 
+inline void set_time_limit(chrono_clock::time_point time_point, uint64_t time_out, Tetrahedrization& mesh){
+	std::cout<<"Time out set at "<<time_out<<" min\n";
+	time_out *= 60000; // convert to millisecond
+	mesh.set_optimization_time_out(time_point, time_out);
+}
+
+inline void set_memory_limit(uint64_t mem_out, Tetrahedrization& mesh){
+	std::cout<<"Max memory set at "<<mem_out<<" Mb\n";
+		mem_out *= 1000000; // convert to byte
+		mesh.set_optimization_mem_out(mem_out);
+}
+
 
 int main(int argc, char* argv[])
 {
@@ -141,14 +155,15 @@ int main(int argc, char* argv[])
 #ifndef DEBUG
 	if (argc < 2) {
 		std::cout << "Mesher - Create a well-shaped tetrahedral mesh out of a triangulated OFF file.\n";
-		std::cout << "USAGE: ./delmesher [-v][-t60] filename.off\n";
+		std::cout << "USAGE: ./delmesher [-v][-l][-t 60][-m 32000][-d 8] filename.off\n";
 		std::cout << "OUTPUT:\n";
 		std::cout << "plcfaces.off, mesh.tet\n";
 		std::cout << "OPTIONS:\n";
 		std::cout << "\t[-v] -> verbose mode\n";
 		std::cout << "\t[-l] -> logging mode\n";
-		std::cout << "\t[-t max time in minutes] -> time out mode";
-		std::cout << "\t[-m max allocatable memory in Mb] -> memory out mode";
+		std::cout << "\t[-t max time in minutes (pos. integer)] -> time out mode\n";
+		std::cout << "\t[-m max allocatable memory in Mb (pos. integer)] -> memory out mode\n";
+		std::cout << "\t[-d exp (pos. integer)] -> avoid Delaunay Refinement if the min pt.s dist after chamfering is < 10^-exp\n";
 		std::cout << std::endl;
 		return 0;
 	}
@@ -160,21 +175,31 @@ int main(int argc, char* argv[])
 
 #endif
 
+	// Manage options
 	std::string options = "";
 
 	uint64_t time_out = 0;
 	uint64_t mem_out = 0;
+	uint32_t min_pts_dist_exp = UINT32_MAX;
+
 	for (int i = 1; i < argc; i++)
 		if (argv[i][0] == '-') {
 			if (argv[i][1] == 't') { time_out = atoi(argv[++i]); continue; }
 			else if (argv[i][1] == 'm') { mem_out = atoi(argv[++i]); continue; }
+			else if (argv[i][1] == 'd') { min_pts_dist_exp = atoi(argv[++i]); continue; }
 			for (int j = 1; j < strlen(argv[i]); j++) options += argv[i][j];
 		}
 		else memcpy(filename, argv[i], strlen(argv[i]) + 1);
 
+	bool log_mode = (options.find('l') != std::string::npos);
+
+	if (log_mode) startLogging(filename);
+
 	// Load a valid PLC from file
 	inputPLC plc;
 	plc.initFromFile(filename, options.find('v') != std::string::npos);
+
+	if (log_mode) advance_ProcessLogging("load_input");
 
 #ifndef DISP_PROCESS
 	std::cout<<"\n\ninput_file: "<<filename<<"\n";
@@ -197,36 +222,42 @@ int main(int argc, char* argv[])
 	bool simplify_chamferd_plc = true; // try to remove uncessary edges while keeping non-acute angles
 	bool input_encloses_vol = chamferPLC(plc, epsilon, chamf_vertices, chamf_faces, simplify_chamferd_plc, options.find('v') != std::string::npos);
 
+	if (log_mode) advance_ProcessLogging("chamfering");
+
 	tin.init_vertices(chamf_vertices);
 
 	std::cout << "Delaunizing vertices...\n";
 	tin.addBoundingBoxVertices();
 	tin.tetrahedrize();
 
+	if (log_mode) advance_ProcessLogging("Del_vertices");
+
 	Tetrahedrization mesh;
-	std::chrono::steady_clock::time_point time_point = std::chrono::steady_clock::now();
+	chrono_clock::time_point time_point = chrono_clock::now();
 
-	if (time_out > 0) {
-		std::cout<<"Time out set at "<<time_out<<" min\n";
-		time_out *= 60000; // convert to millisecond
-		mesh.set_optimization_time_out(time_point, time_out);
-	}
-
-	if (mem_out > 0) {
-		std::cout<<"Max memory set at "<<mem_out<<" Mb\n";
-		mem_out *= 1000000; // convert to byte
-		mesh.set_optimization_mem_out(mem_out);
-	}
+	if (time_out > 0) set_time_limit(time_point, time_out, mesh);
+	if (mem_out > 0) set_memory_limit(mem_out, mesh);
 
 	// Copy the DT to the new structure
 	double closest_pts_dist = mesh.initFromVerticesAndTets(tin.vertices, tin.tet_node);
 	std::cout << "Distance of closest points relative to bb diagonal: " << closest_pts_dist << "\n";
 
-	//if (closest_pts_dist < 1.0e-8) ip_error("Closest points are too close. Optimization would produce too many tets!\nEXITING\n");
+	if (min_pts_dist_exp != UINT32_MAX){
+		double min_pts_dist = std::pow(10.0, (double)min_pts_dist_exp * (-1.0));
+		if (closest_pts_dist < min_pts_dist){ 
+			// ip_error("Closest points are too close. Optimization would produce too many tets!\nEXITING\n");
+			std::cout<<"Closest points are too close ( < "<< min_pts_dist <<") EXITING!\n";
+			exit(1);
+		}
+	}
+	
+	if (log_mode) advance_ProcessLogging("DelRef_init");
 
 	// Add PLC faces - at this stage faces are just collections of input triangles
 	std::cout << "Adding PLC faces...\n";
 	mesh.addPLCFaces(chamf_faces);
+
+	if (log_mode) advance_ProcessLogging("add_PLCfaces");
 
 	// Split all missing segments while no more remain.
 	// This does not modify the triangles in PLC faces, but updates their edges with
@@ -234,17 +265,25 @@ int main(int argc, char* argv[])
 	std::cout << "Recovering segments...\n";
 	mesh.recoverAllSegments();
 
+	if (log_mode) advance_ProcessLogging("rec_seg");
+
 	// Create a local 2D Delaunay triangulation for each PLC face
 	std::cout << "Delaunizing faces...\n";
 	mesh.delaunizePLCFaces();
+
+	if (log_mode) advance_ProcessLogging("Del_faces");
 
 	// Face recovery
 	std::cout << "Recovering faces...\n";
 	mesh.recoverAllFaces();
 
+	if (log_mode) advance_ProcessLogging("rec_faces");
+
 	// Tet optimization
 	std::cout << "Optimizing tets...\n";
 	mesh.optimizeTets(2.0, false, true);
+
+	if (log_mode) advance_ProcessLogging("tet_optim");
 
 	// Remove external tets after chamfering
 	// In case the input edges has even number of incident input triangles,
@@ -255,23 +294,24 @@ int main(int argc, char* argv[])
 		std::cout<<"Input encloses a volume\n";
 		TetMesh *cdt = createSteinerCDT(plc);
 		markInternalTets(mesh, cdt);
+
+		if (log_mode) advance_ProcessLogging("IntExt_class");
 	}
 	else{ for (Tetrahedron* t : mesh.tets()) t->is_internal = true; }
 	
-	std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+	chrono_clock::time_point now = chrono_clock::now();
 	uint64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - time_point).count();
 	std::cout << "Elapsed time (ms): " << ms << "\n";
 	uint64_t bmem = getPeakRSS();
 	std::cout << "Peak memory RSS (byte): " << bmem << "\n";
 
-	if (options.find('l') != std::string::npos) {
-		// append a line to logfile.csv
+	if (log_mode) {
 
 		// LOGfile
-		startLogging(filename);
-		logInteger((uint32_t)mesh.num_vertices());
-		logInteger((uint32_t)mesh.num_tetrahedra());
-		logInteger((uint32_t)ms);
+		
+		logUInteger((uint32_t)mesh.num_vertices());
+		logUInteger((uint32_t)mesh.num_tetrahedra());
+		logUInteger((uint32_t)ms);
 		logDouble(mesh.minEdgeLength());
 		double maxEneIN, maxEneEX;
 		mesh.maxTetEnergy(maxEneIN, maxEneEX);
@@ -299,6 +339,8 @@ int main(int argc, char* argv[])
 
 #endif
 	//mesh.saveTET("mesh.tet");
+
+	if (log_mode) advance_ProcessLogging("COMPLETED");
 
 	return 0;
 }

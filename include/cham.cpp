@@ -243,19 +243,6 @@ void PLCc::initialize(){
             faces[t].bounding_edges.push_back(ei);
 
     for(CHAMface& f : faces) orient_initial_triface_bnd(f);
-
-    // DEBUG : search duplicated faces
-    // for(uint32_t fi=0; fi<faces.size()-1; fi++){
-    //     std::vector<uint32_t> fiv; get_face_vertices(faces[fi], fiv);
-    //     for(uint32_t fj=fi+1; fj<faces.size(); fj++){
-    //         std::vector<uint32_t> fjv; get_face_vertices(faces[fj], fjv);
-    //         if((fiv[0]==fjv[0] || fiv[0]==fjv[1] || fiv[0]==fjv[2]) &&
-    //            (fiv[1]==fjv[0] || fiv[1]==fjv[1] || fiv[1]==fjv[2]) &&
-    //            (fiv[2]==fjv[0] || fiv[2]==fjv[1] || fiv[2]==fjv[2])   ){
-    //             std::cout<<"WARNING: face["<<fi<<"] (original tri "<<faces[fi].triangle<<") is equal to face["<<fj<<"] (original tri "<<faces[fj].triangle<<")\n";
-    //         }
-    //     }
-    // }
 }
 
 // -------------------------- //
@@ -298,7 +285,9 @@ void PLCc::inTri_opp_edge(const uint32_t v, const uint32_t ti, uint32_t& u1, uin
 bool PLCc::findIF_acute_edge(const CHAMedge& e) const {
 
     if(e.inc_face.size() == 1) return false;
-    if(e.inc_face.size() > 2) return true; // 369/5 < 360/4 = 90 
+    //if(e.inc_face.size() > 4) return true; // 369/5 < 360/4 = 90 
+    if(e.inc_face.size() > 2) return true; // This line replaces the previous as the Delaunay Refinement 
+                                           // algorithm (tetmesh.h) probably does not support non-manyfold configurations.
 
     uint32_t u, v;
     const pointType* e0_pt = vertices[ e.ep[0] ];

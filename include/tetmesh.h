@@ -1243,11 +1243,10 @@ protected:
 
 	// This is true only if faces in G have a local 2D Delaunay triangulation
 	bool facesAreDelaunized;
-	bool facesAreRecovered;
 
 public:
 
-	Tetrahedrization() : facesAreDelaunized(false), facesAreRecovered(false), critical_time(0), critical_mem(0) {}
+	Tetrahedrization() : critical_time(0), critical_mem(0) {}
 
 	size_t num_vertices() { return V.size(); } const
 	size_t num_tetrahedra() { return T.size(); } const
@@ -1570,7 +1569,6 @@ public:
 
 		bool ret = recoverAllDirtyTriangles(true);
 		removeUnlinkedElements();
-		facesAreRecovered = true;
 		return ret;
 	}
 
@@ -1964,14 +1962,6 @@ public:
 			std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
 			uint64_t duration_sec = std::chrono::duration_cast<std::chrono::milliseconds>(now - init_time).count();
 			if (duration_sec > critical_time) {
-				//saveTET("part_mesh.tet");
-				//savePLCFaces("part_PLCfaces.off");
-				// -- report -- 
-				FILE* fp;
-				if ((fp = fopen("time_out_rep.txt", "w")) == NULL) { std::cout << "cannot open the file\n"; exit(11); }
-				fprintf(fp, "Feces are delaunaized (%u)\nFaces are recovered (%u)\n", (uint32_t)facesAreDelaunized, (uint32_t)facesAreRecovered);
-				fclose(fp);
-				// --
 				std::cout << "\nPROGRAM ABORTED: time out (" << critical_time / 1000 << " sec) reached.\n";
 				exit(124);
 			}
@@ -1980,14 +1970,6 @@ public:
 		if (critical_mem > 0) {
 			uint64_t mem_usage = getPeakRSS();
 			if (mem_usage > critical_mem) {
-				//saveTET("part_mesh.tet");
-				//savePLCFaces("part_PLCfaces.off");
-				// -- report -- 
-				FILE* fp;
-				if ((fp = fopen("time_out_rep.txt", "w")) == NULL) { std::cout << "cannot open the file\n"; exit(11); }
-				fprintf(fp, "Feces are delaunaized (%u)\nFaces are recovered (%u)\n", (uint32_t)facesAreDelaunized, (uint32_t)facesAreRecovered);
-				fclose(fp);
-				// --
 				std::cout << "\nPROGRAM ABORTED: memory out (" << critical_mem / 1000000 << " Mb) reached.\n";
 				exit(421);
 			}

@@ -1,9 +1,11 @@
 #include <chrono>
 
-FILE* log_fp;
+FILE *log_fp, *log_prog;
 std::chrono::steady_clock::time_point time_point;
 
 inline void startLogging(const char* fn) {
+
+    char log_prog_file_name[] = "delOpt_log_completed_steps.txt";
     
     char log_file_name[] = "delOpt_log.csv";
     char first_line[] = "Input_File, num_vrts, num_tets, "
@@ -12,10 +14,11 @@ inline void startLogging(const char* fn) {
                         "min_Face_Ang_int(DEG), max_Face_Ang_int(DEG), "
                         "min_Face_Ang_ext(DEG), max_Face_Ang_ext(DEG), "
                         "min_Dihed_Ang_int(DEG), max_Dihed_Ang_int(DEG), "
-                        "min_Dihed_Ang_ext(DEG), max_Dihed_Ang_ext(DEG)"
-                        "\n";
+                        "min_Dihed_Ang_ext(DEG), max_Dihed_Ang_ext(DEG)";
 
     if (fn != NULL) {
+
+        // open a .csv file to collect statistics
         log_fp = fopen(log_file_name, "r");
         if (log_fp == NULL) {
             log_fp = fopen(log_file_name, "w");
@@ -27,16 +30,22 @@ inline void startLogging(const char* fn) {
         }
         if (log_fp == NULL) ip_error("Can't open the file for logging!\n");
 
+        // open a .txt file to monitor execution progresses (usefull for models that do not convege)
+        log_prog = fopen(log_prog_file_name, "a");
+        if (log_prog == NULL) ip_error("Can't open the file for logging progresses!\n");
+
         size_t i;
         for (i = strlen(fn); i > 0; i--) if (fn[i - 1] == '\\' || fn[i - 1] == '/') break;
-        fprintf(log_fp, "%s", fn + i);
+        fprintf(log_fp, "\n%s", fn + i);
+        fprintf(log_prog, "\n%s", fn + i);
     }
     else {
+        log_prog = stdout;
         log_fp = stdout;
         fprintf(log_fp, "%s", first_line);
     }
 
-    time_point = std::chrono::steady_clock::now();
+    time_point = std::chrono::steady_clock::now(); // set "time zero"
 }
 
 inline void logTimeChunk() {
@@ -47,25 +56,18 @@ inline void logTimeChunk() {
     fprintf(log_fp, ", %zu", ms);
 }
 
-inline void logBoolean(bool b) {
-    fprintf(log_fp, ", %s", b ? "True" : "False");
-}
+inline void logBoolean(bool b) { fprintf(log_fp, ", %s", b ? "True" : "False"); }
+inline void logUInteger(uint32_t n) { fprintf(log_fp, ", %u", n); }
+inline void logDouble(double d) { fprintf(log_fp, ", %g", d); }
+inline void logEmpty() { fprintf(log_fp, ", "); }
 
-inline void logInteger(uint32_t n) {
-    fprintf(log_fp, ", %u", n);
-}
-
-inline void logDouble(double d) {
-    fprintf(log_fp, ", %g", d);
-}
-
-inline void logEmpty() {
-    fprintf(log_fp, ", ");
+inline void advance_ProcessLogging(const char* stage){
+    fprintf(log_prog, ", %s", stage);
 }
 
 inline void finishLogging() {
-    fprintf(log_fp, "\n");
     if (log_fp != stdout) fclose(log_fp);
+    if (log_prog != stdout) fclose(log_prog);
 }
 
 #ifdef _MSC_VER
