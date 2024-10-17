@@ -1246,7 +1246,7 @@ protected:
 
 public:
 
-	Tetrahedrization() : critical_time(0), critical_mem(0) {}
+	Tetrahedrization() : facesAreDelaunized(false), critical_time(0), critical_mem(0) {}
 
 	size_t num_vertices() { return V.size(); } const
 	size_t num_tetrahedra() { return T.size(); } const
