@@ -39,39 +39,27 @@ void CHAMface::replaceEdge_11(uint32_t old_e, uint32_t new_e){
 
 // Let be tau the plane for the triangle <q,r,s>.
 // Returns TRUE if 
-// 1) qp forms an acute angle at q with tau
-// AND 
-// 2) the ray (of origin q) defined by the projection of qp on tau crosses segment <r,s>
+// segment qp forms an acute angle at q with the triangle <q,r,s> AND
+// the projection of qp on tau is inside the sector limited by half-straight-lines qr and qs
+// containing the triangle <q,r,s>
 bool isAcuteAngle(const pointType* p, const pointType* q, const pointType* r, const pointType* s) {
-    static bool om = true;
+    static bool om = true;;
     if (om) {
         om = false;
         std::cout << "\nIGNORED isAcuteAngle(const pointType* p, const pointType* q, const pointType* r, const pointType* s)\ni.e. segment-triangle sharing a vertex angle TO BE FIXED!\n\n";
+        return false;
     }
-    return false;
+    
 
-    // compute the normal vector to <q,r,s> given by qr x qs
-    // and find the vector endpoint opposite to q
-    vector3d Op(p), Oq(q), Or(r), Os(s);
-    vector3d qr = Or - Oq;
-    vector3d qs = Os - Oq;
-    vector3d qn = qr.cross(qs);
-    vector3d On = qn + Oq;
-    const explicitPoint3D n( On.c[0], On.c[1], On.c[2] );
+    // The following check is based on the variatinal approach described in
+    // https://www.geometrictools.com/Documentation/DistancePoint3Triangle3.pdf
 
-    // projection of qp on the plane for <q,r,s> also lies in the plane <q,n,p>
-    // thus projection will be lie inside the triangle <q,r,s> if and only if
-    // r and s belong to opposite half-spaces defined by the plane for <q,n,p>
-    int ori1 = pointType::orient3D(*q, n, *p, *r); 
-    int ori2 = pointType::orient3D(*q, n, *p, *s); 
-
-    if( ori1 != ori2 ) return false;
-
-    // compute the endpoint opposite to q of the projection of qp on <q,r,s>
-    vector3d qp = Op - Oq;
-    vector3d proj = Op - qn * (qp.dot(qn) / qn.dot(qn));
-    const explicitPoint3D pp( proj.c[0], proj.c[1], proj.c[2] );
-    return pointType::dotProductSign3D(*p, *q, pp) > 0;
+    vector3d Op(p), Oq(q), Or(r), Os(s), w(Oq-Op);
+    double a = Or.dot(Or), b = Or.dot(Os), c = Os.dot(Os);
+    double d = Or.dot(w), e = Os.dot(w);
+    double u = b * e - c * d;
+    double v = b * d - a * e;
+    return (u > 0 && v > 0);
 }
 
 // ------------------ //
