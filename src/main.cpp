@@ -146,6 +146,29 @@ inline void set_memory_limit(uint64_t mem_out, Tetrahedrization& mesh){
 		mesh.set_optimization_mem_out(mem_out);
 }
 
+inline void logFinalStats(Tetrahedrization& mesh, uint64_t ms, bool input_encloses_vol){
+	logUInteger((uint32_t)mesh.num_vertices());
+	logUInteger((uint32_t)mesh.num_tetrahedra());
+	logUInteger((uint32_t)ms);
+	logDouble(mesh.minEdgeLength());
+	
+	double maxEneIN, maxEneEX;
+	mesh.maxTetEnergy(maxEneIN, maxEneEX);
+	logDouble(maxEneIN); 
+	if(input_encloses_vol) logDouble(maxEneEX); else logEmpty();
+	
+	double minFAIN, maxFAIN, minFAEX, maxFAEX, minDAIN, maxDAIN, minDAEX, maxDAEX;
+	mesh.minMaxTetAngle(minFAIN, maxFAIN, minFAEX, maxFAEX, minDAIN, maxDAIN, minDAEX, maxDAEX);
+	logDouble(minFAIN); 
+	logDouble(maxFAIN); 
+	if(input_encloses_vol) logDouble(minFAEX); else logEmpty();
+	if(input_encloses_vol) logDouble(maxFAEX); else logEmpty();
+	logDouble(minDAIN); 
+	logDouble(maxDAIN); 
+	if(input_encloses_vol) logDouble(minDAEX); else logEmpty();
+	if(input_encloses_vol) logDouble(maxDAEX); else logEmpty();
+}
+
 
 int main(int argc, char* argv[])
 {
@@ -242,6 +265,8 @@ int main(int argc, char* argv[])
 	double closest_pts_dist = mesh.initFromVerticesAndTets(tin.vertices, tin.tet_node);
 	std::cout << "Distance of closest points relative to bb diagonal: " << closest_pts_dist << "\n";
 
+	if(log_mode) logDouble(closest_pts_dist);
+
 	if (min_pts_dist_exp != UINT32_MAX){
 		double min_pts_dist = std::pow(10.0, (double)min_pts_dist_exp * (-1.0));
 		if (closest_pts_dist < min_pts_dist){ 
@@ -306,27 +331,8 @@ int main(int argc, char* argv[])
 	std::cout << "Peak memory RSS (byte): " << bmem << "\n";
 
 	if (log_mode) {
-
-		// LOGfile
-		
-		logUInteger((uint32_t)mesh.num_vertices());
-		logUInteger((uint32_t)mesh.num_tetrahedra());
-		logUInteger((uint32_t)ms);
-		logDouble(mesh.minEdgeLength());
-		double maxEneIN, maxEneEX;
-		mesh.maxTetEnergy(maxEneIN, maxEneEX);
-		logDouble(maxEneIN); 
-		if(input_encloses_vol) logDouble(maxEneEX); else logEmpty();
-		double minFAIN, maxFAIN, minFAEX, maxFAEX, minDAIN, maxDAIN, minDAEX, maxDAEX;
-		mesh.minMaxTetAngle(minFAIN, maxFAIN, minFAEX, maxFAEX, minDAIN, maxDAIN, minDAEX, maxDAEX);
-		logDouble(minFAIN); 
-		logDouble(maxFAIN); 
-		if(input_encloses_vol) logDouble(minFAEX); else logEmpty();
-		if(input_encloses_vol) logDouble(maxFAEX); else logEmpty();
-		logDouble(minDAIN); 
-		logDouble(maxDAIN); 
-		if(input_encloses_vol) logDouble(minDAEX); else logEmpty();
-		if(input_encloses_vol) logDouble(maxDAEX); else logEmpty();
+		logFinalStats(mesh, ms, input_encloses_vol);
+		advance_ProcessLogging("COMPLETED");
 		finishLogging();
 	}
 	else {
@@ -334,13 +340,11 @@ int main(int argc, char* argv[])
 		std::cout << std::endl;
 
 		mesh.saveOFFInterface("plcfaces.off");
-		//mesh.saveTET("mesh.tet");
 	}
 
-#endif
 	//mesh.saveTET("mesh.tet");
 
-	if (log_mode) advance_ProcessLogging("COMPLETED");
+#endif
 
 	return 0;
 }

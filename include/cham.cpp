@@ -43,14 +43,6 @@ void CHAMface::replaceEdge_11(uint32_t old_e, uint32_t new_e){
 // the projection of qp on tau is inside the sector limited by half-straight-lines qr and qs
 // containing the triangle <q,r,s>
 bool isAcuteAngle(const pointType* p, const pointType* q, const pointType* r, const pointType* s) {
-    static bool om = true;;
-    if (om) {
-        om = false;
-        std::cout << "\nIGNORED isAcuteAngle(const pointType* p, const pointType* q, const pointType* r, const pointType* s)\ni.e. segment-triangle sharing a vertex angle TO BE FIXED!\n\n";
-        return false;
-    }
-    
-
     // The following check is based on the variatinal approach described in
     // https://www.geometrictools.com/Documentation/DistancePoint3Triangle3.pdf
 
@@ -308,10 +300,7 @@ bool PLCc::findIF_acute_vrt(const uint32_t vi,
         }
     }
 
-    // Check angles formed by each edge and the plane for each triangle 
-    // that does not contain it. 
-    // In case that one angle is acute it must be rejected if the projection 
-    // of the edge on the triangle plane lies outside the triangle.
+    // Check angles formed by each edge and triangle sharing exactly a vertex.
     uint32_t t0, t1, t2, ep;
     for(uint32_t j = 0; j < vv_i.size(); j++){
         ep = vv_i[j];
@@ -327,10 +316,10 @@ bool PLCc::findIF_acute_vrt(const uint32_t vi,
             if( t0==ep || t1==ep || t2==ep ) continue;
             
             if( t1 == vi ) std::swap(t0,t1); 
-            if( t2 == vi ) std::swap(t0,t2); 
+            else if( t2 == vi ) std::swap(t0,t2); 
             // now t0 is vi
 
-            if( isAcuteAngle( vertices[ep], vip, vertices[t1], vertices[t2] ) ) return true; // IGNORED
+            if( isAcuteAngle( vertices[ep], vip, vertices[t1], vertices[t2] ) ) return true;
         }
     }    
 

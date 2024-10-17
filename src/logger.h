@@ -8,7 +8,7 @@ inline void startLogging(const char* fn) {
     char log_prog_file_name[] = "delOpt_log_completed_steps.txt";
     
     char log_file_name[] = "delOpt_log.csv";
-    char first_line[] = "Input_File, num_vrts, num_tets, "
+    char first_line[] = "Input_File, chamPLC_minVrtsDist, num_vrts, num_tets, "
                         "Elapsed_time(ms), Shortest_Edge, " 
                         "max_Energy_int, max_Energy_ext, "
                         "min_Face_Ang_int(DEG), max_Face_Ang_int(DEG), "
