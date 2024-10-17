@@ -1962,7 +1962,7 @@ public:
 			std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
 			uint64_t duration_sec = std::chrono::duration_cast<std::chrono::milliseconds>(now - init_time).count();
 			if (duration_sec > critical_time) {
-				std::cout << "\nPROGRAM ABORTED: time out (" << critical_time / 1000 << " sec) reached.\n";
+				std::cout << "\nPROGRAM ABORTED: time out (" << critical_time / 1000 << " sec) reached.\n\n\n";
 				exit(124);
 			}
 		}
@@ -1970,7 +1970,7 @@ public:
 		if (critical_mem > 0) {
 			uint64_t mem_usage = getPeakRSS();
 			if (mem_usage > critical_mem) {
-				std::cout << "\nPROGRAM ABORTED: memory out (" << critical_mem / 1000000 << " Mb) reached.\n";
+				std::cout << "\nPROGRAM ABORTED: memory out (" << critical_mem / 1000000 << " Mb) reached.\n\n\n";
 				exit(421);
 			}
 		}

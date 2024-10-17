@@ -95,7 +95,7 @@ void read_OFF_file(const char* filename,
         ip_error("read_OFF_file: FATAL ERROR 2st line of "
             "input file does not contanin point and triangles numbers.\n");
 
-    if (verbose) std::cout << "file " << filename << " contains " << *npts << " vertices and " << *ntri << " constraints (triangles)\n";
+    if (verbose) std::cout << "\nfile " << filename << " contains " << *npts << " vertices and " << *ntri << " constraints (triangles)\n";
 
     // Reading points coordinates.
     *vertices_p = (double*)malloc(sizeof(double) * 3 * (*npts));

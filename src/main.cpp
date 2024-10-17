@@ -48,7 +48,7 @@ bool chamferPLC(inputPLC& _plc,
 		cut_plc->chamfered_plc_simplification();
 		// assert( cut_plc->checkup() );
 		// assert( cut_plc->check_acuteness() );
-		if (verbose) std::cout << "Chamfered PLC simplication COMPLETED: " << num_edges - cut_plc->edges.size() << " edges removed.\n\n";
+		if (verbose) std::cout << "Chamfered PLC simplication COMPLETED: " << num_edges - cut_plc->edges.size() << " edges removed.\n";
 	}
 
 	std::vector<uint32_t> used_vertex(cut_plc->vertices.size(), UINT32_MAX);
@@ -215,19 +215,17 @@ int main(int argc, char* argv[])
 		else memcpy(filename, argv[i], strlen(argv[i]) + 1);
 
 	bool log_mode = (options.find('l') != std::string::npos);
+	bool verbose_mode = (options.find('v') != std::string::npos);
 
 	if (log_mode) startLogging(filename);
 
 	// Load a valid PLC from file
 	inputPLC plc;
-	plc.initFromFile(filename, options.find('v') != std::string::npos);
+	plc.initFromFile(filename, verbose_mode);
 
+	if (!verbose_mode) std::cout<<"\ninput_file: "<<filename<<"\n";
 	if (log_mode) advance_ProcessLogging("load_input");
 
-#ifndef DISP_PROCESS
-	std::cout<<"\n\ninput_file: "<<filename<<"\n";
-#endif
-	
 #ifdef USE_TETGEN
 	Tetrahedrization mesh;
 	mesh.initWithTetgen(plc.numVertices(), plc.coordinates.data(), plc.numTriangles(), plc.triangle_vertices.data(), true, false);
@@ -271,7 +269,7 @@ int main(int argc, char* argv[])
 		double min_pts_dist = std::pow(10.0, (double)min_pts_dist_exp * (-1.0));
 		if (closest_pts_dist < min_pts_dist){ 
 			// ip_error("Closest points are too close. Optimization would produce too many tets!\nEXITING\n");
-			std::cout<<"Closest points are too close ( < "<< min_pts_dist <<") EXITING!\n";
+			std::cout<<"\nPROGRAM ABORTED: Closest points are too close ( < "<< min_pts_dist <<")\n\n\n";
 			exit(1);
 		}
 	}
@@ -343,6 +341,7 @@ int main(int argc, char* argv[])
 	}
 
 	//mesh.saveTET("mesh.tet");
+	std::cout << "Execution correctly COMPLETED.\n\n\n";
 
 #endif
 

@@ -45,7 +45,7 @@ void CHAMface::replaceEdge_11(uint32_t old_e, uint32_t new_e){
 bool isAcuteAngle(const pointType* p, const pointType* q, const pointType* r, const pointType* s) {
     // The following check is based on the variatinal approach described in
     // https://www.geometrictools.com/Documentation/DistancePoint3Triangle3.pdf
-
+    
     vector3d Op(p), Oq(q), Or(r), Os(s), w(Oq-Op);
     double a = Or.dot(Or), b = Or.dot(Os), c = Os.dot(Os);
     double d = Or.dot(w), e = Os.dot(w);
@@ -1547,7 +1547,7 @@ void PLCc::chamfered_plc_simplification(){
     if(verbose){ 
         uint32_t nbrs = 0;  
         for(const CHAMedge& e : edges){ if(e.loc_face_bridge_id != NO_BRIDGE) nbrs++; }
-        std::cout<<"There are "<< nbrs << " bridge-edges and "<< bridges.size()<< " bridges.\n";
+        if(nbrs > 0) std::cout<<"There are "<< nbrs << " bridge-edges and "<< bridges.size()<< " bridges.\n";
     }
 
     #ifdef PLCC_DEBUG_VERBOSE_LEV1

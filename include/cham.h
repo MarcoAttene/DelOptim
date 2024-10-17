@@ -262,7 +262,7 @@ public:
         std::cout<<"[PLCc] - post-chamfering debug COMPLETED\n";
         #endif
         
-        if(verbose) std::cout<<"[PLCc] - chamfering COMPLETED\n\n";
+        if(verbose) std::cout<<"[PLCc] - chamfering COMPLETED\n";
 
         // if( !check_acuteness() ) exit(99); // DEBUG
     };
