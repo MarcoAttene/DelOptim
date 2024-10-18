@@ -269,6 +269,7 @@ int main(int argc, char* argv[])
 		double min_pts_dist = std::pow(10.0, (double)min_pts_dist_exp * (-1.0));
 		if (closest_pts_dist < min_pts_dist){ 
 			// ip_error("Closest points are too close. Optimization would produce too many tets!\nEXITING\n");
+			if(log_mode) finishLogging();
 			std::cout<<"\nPROGRAM ABORTED: Closest points are too close ( < "<< min_pts_dist <<")\n\n\n";
 			exit(1);
 		}
