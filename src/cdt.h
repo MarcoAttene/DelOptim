@@ -31,7 +31,7 @@
 #define UNMARKBIT(m, twoPowBit) m &= (~((uint32_t)twoPowBit))
 #define ISMARKEDBIT(m, twoPowBit) m & ((uint32_t)twoPowBit) 
 
-// Uncommenting the following macro definition makes the code use modified parts of hxt_SeqDel (Copyright (C) 2018 Célestin Marot).
+// Uncommenting the following macro definition makes the code use modified parts of hxt_SeqDel (Copyright (C) 2018 CÃ©lestin Marot).
 // hxt_SeqDel is a sequential Delaunay triangulator hosted at https://git.immc.ucl.ac.be/hextreme/hxt_seqdel as of 2020.
 // hxt_SeqDel is GPL licensed, meaning that if you uncomment the following line you accept the terms of the GPL license for
 // the whole CDT code.
@@ -82,7 +82,7 @@ public:
     void init_vertices(std::vector<genericPoint *>& pts);
     void init_vertices(const double* coords, uint32_t num_v);
 
-    void addBoundingBoxVertices(double dist = 0.25);
+    void addBoundingBoxVertices(double dist = 1.0);
 
     // Destroy vertices
     void flushVertices() { for (pointType* p : vertices) delete p; }
