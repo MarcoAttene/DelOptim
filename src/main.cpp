@@ -178,15 +178,20 @@ int main(int argc, char* argv[])
 #ifndef DEBUG
 	if (argc < 2) {
 		std::cout << "Mesher - Create a well-shaped tetrahedral mesh out of a triangulated OFF file.\n";
-		std::cout << "USAGE: ./delmesher [-v][-l][-t 60][-m 32000][-d 8] filename.off\n";
-		std::cout << "OUTPUT:\n";
-		std::cout << "plcfaces.off, mesh.tet\n";
+		std::cout << "USAGE: ./delmesher [-v][-l][-o][-t 60][-m 32000][-d 8] filename.off\n";
 		std::cout << "OPTIONS:\n";
 		std::cout << "\t[-v] -> verbose mode\n";
 		std::cout << "\t[-l] -> logging mode\n";
 		std::cout << "\t[-t max time in minutes (pos. integer)] -> time out mode\n";
 		std::cout << "\t[-m max allocatable memory in Mb (pos. integer)] -> memory out mode\n";
 		std::cout << "\t[-d exp (pos. integer)] -> avoid Delaunay Refinement if the min pt.s dist after chamfering is < 10^-exp\n";
+		std::cout << "OUTPUT:\n";
+		std::cout << "\t[-o] produces a volumetric (mesh.tet) and a surface (plcfaces.off) meshes.\n";
+		std::cout << "RETURNS:\n";
+		std::cout << "\t0 when the whole execution terminates correctly (also when an iperror occours)\n";
+		std::cout << "\t10 when option -t is activated and time out is exceeded\n";
+		std::cout << "\t11 when option -m is activated and max memory is exceeded\n";
+		std::cout << "\t12 when option -d is activated and min dist. is violated\n";
 		std::cout << std::endl;
 		return 0;
 	}
@@ -216,6 +221,7 @@ int main(int argc, char* argv[])
 
 	bool log_mode = (options.find('l') != std::string::npos);
 	bool verbose_mode = (options.find('v') != std::string::npos);
+	bool produce_output = (options.find('o') != std::string::npos);
 
 	if (log_mode) startLogging(filename);
 
@@ -271,7 +277,7 @@ int main(int argc, char* argv[])
 			// ip_error("Closest points are too close. Optimization would produce too many tets!\nEXITING\n");
 			if(log_mode) finishLogging();
 			std::cout<<"\nPROGRAM ABORTED: Closest points are too close ( < "<< min_pts_dist <<")\n\n\n";
-			exit(1);
+			exit(12);
 		}
 	}
 	
@@ -337,11 +343,13 @@ int main(int argc, char* argv[])
 	else {
 		mesh.printReport(input_encloses_vol);
 		std::cout << std::endl;
-
-		mesh.saveOFFInterface("plcfaces.off");
 	}
 
-	//mesh.saveTET("mesh.tet");
+	if(produce_output){
+		mesh.saveTET("mesh.tet");
+		mesh.saveOFFInterface("plcfaces.off");
+	}
+	
 	std::cout << "Execution correctly COMPLETED.\n\n\n";
 
 #endif
