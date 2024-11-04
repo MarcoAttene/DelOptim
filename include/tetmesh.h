@@ -2029,6 +2029,27 @@ public:
 			std::cout<<"[tetmesh.h - splitSegment()]  Could not split further! Verify whether your PLC is non-acute\n"; exit(1);
 		}
 
+		if (vmp->isBPT() && (vmp->toBPT().U() <= 0.0 || vmp->toBPT().U() >= 1.0 || vmp->toBPT().V() <= 0.0 || vmp->toBPT().V() >= 1.0)) {
+
+			// DEBUG
+			double x0, y0, z0; v0p->getApproxXYZCoordinates(x0, y0, z0);
+			double x1, y1, z1; v1p->getApproxXYZCoordinates(x1, y1, z1);
+			std::cout << "v0 = " << vector3d(x0, y0, z0) << " , v1 = " << vector3d(x1, y1, z1) << "\n";
+			std::cout << "u=" << vmp->toBPT().U() << "\n";
+			std::cout << "v=" << vmp->toBPT().V() << "\n";
+			std::cout << "of len = " << sqrt(vector3d(x0, y0, z0).dist_sq(vector3d(x1, y1, z1))) << "\n";
+			std::cout << "on original < " << vmp->toBPT().P() << " , " << vmp->toBPT().Q() << " , " << vmp->toBPT().R() << " > \n";
+			double xp, yp, zp; (vmp->toBPT().P()).getApproxXYZCoordinates(xp, yp, zp);
+			double xq, yq, zq; (vmp->toBPT().Q()).getApproxXYZCoordinates(xq, yq, zq);
+			double xr, yr, zr; (vmp->toBPT().R()).getApproxXYZCoordinates(xr, yr, zr);
+			std::cout << "original len PQ= " << sqrt(vector3d(xp, yp, zp).dist_sq(vector3d(xq, yq, zq))) << "\n";
+			std::cout << "original len QR= " << sqrt(vector3d(xr, yr, zr).dist_sq(vector3d(xq, yq, zq))) << "\n";
+			std::cout << "original len RP= " << sqrt(vector3d(xp, yp, zp).dist_sq(vector3d(xr, yr, zr))) << "\n";
+
+			// ip_error("Could not split further! Did you verify whether your PLC is non-acute?\n");
+			std::cout<<"[tetmesh.h - splitSegment()]  Could not split further! Verify whether your PLC is non-acute\n"; exit(1);
+		}
+
 		assert(!pointType::coincident(*v0p, *vmp));
 		assert(!pointType::coincident(*v1p, *vmp));
 
