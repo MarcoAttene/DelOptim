@@ -260,6 +260,36 @@ bool TetMesh::saveBoundaryToOFF(const char* filename) const {
     return true;
 }
 
+bool TetMesh::saveConstrTrisToOFF(const char* filename, const std::vector<bool>& constrTris) const {
+    ofstream f(filename);
+
+    if (!f) {
+        std::cerr << "\nTetMesh::saveBoundaryToOFF: Can't open file for writing.\n";
+        return false;
+    }
+
+    f << "OFF\n" << numVertices() << " ";
+
+    size_t num_tris = 0;
+    for (uint64_t i = 0; i < tet_node.size(); i++) 
+        if (i > tet_neigh[i] && constrTris[i] ) num_tris++;
+
+    f << num_tris << " 0\n";
+
+    for (uint32_t i = 0; i < numVertices(); i++)
+        f << *vertices[i] << "\n";
+
+    uint32_t fv[3];
+    for (uint64_t i = 0; i < tet_node.size(); i++)
+        if (i > tet_neigh[i] && constrTris[i]) {
+            getFaceVertices(i, fv);
+            f << "3 " << fv[0] << " " << fv[1] << " " << fv[2] << "\n";
+        }
+    f.close();
+
+    return true;
+}
+
 bool TetMesh::saveRationalTET(const char* filename, bool inner_only)
 {
 #ifdef USE_INDIRECT_PREDS
@@ -428,6 +458,29 @@ uint64_t TetMesh::searchTetrahedron(uint64_t tet, const uint32_t v_id)
         const uint64_t* Neigh = getTetNeighs(tet);
         for (i = 0; i < 4; i++)
             if (i != f0 && vOrient3D(Node[tetON1(i)], Node[tetON2(i)], Node[tetON3(i)], v_id) < 0) {
+                tet = getIthNeighbor(Neigh, i);
+                f0 = Neigh[i] & 3;
+                break;
+            }
+    } while (i != 4);
+
+    return tet;
+}
+
+// Added by Lorenzo on 06 Nov 2024
+uint64_t TetMesh::searchTetrahedron(uint64_t tet, const pointType* pt)
+{
+    if (tet_node[tet + 3] == INFINITE_VERTEX)
+        tet = getIthNeighbor(getTetNeighs(tet), 3);
+
+    uint64_t i, f0 = 4;
+    do {
+        const uint32_t* Node = getTetNodes(tet);
+        if (Node[3] == INFINITE_VERTEX) return tet;
+
+        const uint64_t* Neigh = getTetNeighs(tet);
+        for (i = 0; i < 4; i++)
+            if (i != f0 && (-pointType::orient3D(*vertices[Node[tetON1(i)]],*vertices[Node[tetON2(i)]],*vertices[Node[tetON3(i)]],*pt)) < 0) {
                 tet = getIthNeighbor(Neigh, i);
                 f0 = Neigh[i] & 3;
                 break;
@@ -1182,4 +1235,71 @@ uint32_t TetMesh::findEncroachingPoint(const uint32_t ep0, const uint32_t ep1, u
     return enc_pt_i;
 }
 
+bool TetMesh::is_constrained_edge(uint32_t ep0, uint32_t ep1, const std::vector<bool>& constr_tri_asCorners){
+    std::vector<uint64_t> vt; VT(ep0,vt);
+    for(uint64_t t : vt) {
+        // search for constrained faces incident at ep0 
+        // (i.e. with opposite node different from ep0),
+        // that have also ep1 as face vertex.
+        for(size_t k=0; k<4; k++){
+            uint64_t c = t*4+k;
+            if(tet_node[c] != ep0 && constr_tri_asCorners[c]){
+                uint32_t fv[3]; getFaceVertices(c, fv);
+                if(fv[0]==ep1 || fv[1]==ep1 || fv[2]==ep1) return true;
+            }
+        }
+    }
+    return false;
+}
+
+// UNEFFICIENT
+double TetMesh::compute_closest_features_dist(const std::vector<bool>& constr_tri_asCorners){
+    // to compute efficiently the following minimum distances we need the CDT struture 
+    // related to the PLC. The adjacencies of the PLC itself sre not sufficient since 
+    // closest features may not be adjacent.
+
+    // closet point-triangle and point-edge distance on the plc
+    double md = DBL_MAX, dist;
+    for(uint32_t vi=0; vi<numVertices(); vi++){
+        std::vector<uint64_t> vt; VT(vi,vt); // tets incident at vi
+        vector3d Ov(vertices[vi]);
+
+        for(uint64_t t : vt) {
+
+            for(size_t i=0; i<4; i++) if(!constr_tri_asCorners[t*4+i]){ 
+                uint64_t c = t*4+i; // tet-corner opposite to a constrained triangle
+                uint32_t fv[3]; getFaceVertices(c, fv);
+
+                if(tet_node[c]==vi){ // tet-face opposite at vi
+                    vector3d Ou0(vertices[fv[0]]), Ou1(vertices[fv[1]]), Ou2(vertices[fv[2]]);
+                    dist = Ov.sq_dist_triangle(Ou0,Ou1,Ou2);
+                    if(dist < md) md = dist; // contribute to vrt-vrt, vrt-edge, vrt-face distances
+                }
+                else{ // tet-faces incident at vi
+                    // we have to check both edges <vi,u[0]>, <vi,u[1]>
+                    uint32_t u[] = {fv[0], fv[1]};
+                    if(fv[0]==vi){ u[0]=fv[1]; u[1]=fv[2]; }
+                    else if(fv[1]==vi){ u[0]=fv[0]; u[1]=fv[2]; }
+
+                    for(size_t j=0; j<2; j++){
+                        // consider the contrained edge <uj,vi>
+                        vector3d Ou(vertices[u[j]]);
+                        uint32_t ev[]={vi , u[j]}, w[2];
+                        std::vector<uint64_t> et; ET(vi,u[j], et);
+                        for(size_t x : et){
+                            oppositeTetEdge(4*x, ev, w);
+                            if(is_constrained_edge(w[0],w[1],constr_tri_asCorners)){
+                                vector3d Ow0(vertices[w[0]]), Ow1(vertices[w[1]]);
+                                dist = Ov.sq_dist_seg_seg(Ou,Ow0,Ow1);
+                                if(dist < md) md = dist;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return sqrt(md);
+}
 

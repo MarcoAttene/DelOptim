@@ -1764,7 +1764,7 @@ void PLCc::hear_clipping(uint32_t fi, std::vector<uint32_t>& out_tri_fv_list) co
     size_t fv_last = fv.size()-1;
     while(fv.size() > 2){
 
-        if(jc == 0){ jl = fv_last; jr = jc+1; }
+        if(jc == 0){ jl = fv_last; jr = 1; }
         else{ 
             if(jc == fv_last){ jl = jc-1; jr = 0; }
             else{ jl = jc-1; jr = jc+1; }
@@ -1822,9 +1822,7 @@ void PLCc::hear_clipping(uint32_t fi, std::vector<uint32_t>& out_tri_fv_list) co
 
             out_tri_fv_list.insert(out_tri_fv_list.end(), {fv[jl],fv[jc],fv[jr]} );
             fv.erase(std::remove(fv.begin(),fv.end(),fv[jc]));
-            //fv.resize( fv.size()-1 );
             fv_last = fv.size()-1;
-
             jc = 0;
         }
         else{
@@ -1839,16 +1837,16 @@ void PLCc::get_triangles(std::vector<uint32_t>& tri_fv) const {
 
     for(size_t fi = 0; fi < faces.size(); fi++) {
 
-        // DEBUG
-        // std::cout<<"\ntriangualting "; print_face_edges(fi);
+        // std::cout<<"\ntriangualting "; print_face_edges(fi); // DEBUG
 
         if(faces[fi].bounding_edges.size() == 3){
             std::vector<uint32_t> fv;
             get_face_vertices(faces[fi], fv);
             tri_fv.insert(tri_fv.end(), {fv[0],fv[1],fv[2]} );
-        }else{
-             // DEBUG
-            // std::cout<<"HEAR CLIPPING\n";
+        }
+        else{
+
+            // std::cout<<"HEAR CLIPPING\n"; // DEBUG
 
             hear_clipping((uint32_t)fi, tri_fv);
         }
@@ -1858,8 +1856,7 @@ void PLCc::get_triangles(std::vector<uint32_t>& tri_fv) const {
 
 // WORK IN PROGRESS
 void PLCc::triangulate_chamfered_plc(){
-    
-
+    std::cout<<"[triangulate_chamfered_plc] THIS FUNCTION IS NOT COMPLETE.";
     assert( checkup() );
 }
 

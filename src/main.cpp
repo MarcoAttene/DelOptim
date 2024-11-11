@@ -52,6 +52,7 @@ bool chamferPLC(inputPLC& _plc,
 	}
 
 	std::vector<uint32_t> used_vertex(cut_plc->vertices.size(), UINT32_MAX);
+	//std::vector<uint32_t> used_vertex(cut_plc->vertices.size(), 1);
 
 	std::vector<uint32_t> out_tri;
 	cut_plc->get_triangles(out_tri);
@@ -72,7 +73,8 @@ bool chamferPLC(inputPLC& _plc,
 		_faces[i].push_back(used_vertex[out_tri[i * 3 + 2]]);
 	}
 
-	// cut_plc->saveFaces();
+	// cut_plc->saveFaces(); // save polygonal faces
+	// cut_plc->saveTriFaces(); // triangulates and save faces
 
 	return cut_plc->input_plc_defines_interior();
 }
@@ -81,7 +83,7 @@ bool chamferPLC(inputPLC& _plc,
 // 
 // 'plc' is a valid input PLC to the process. Validity is assumed but not verified!
 
-TetMesh* createSteinerCDT(inputPLC& plc, bool verbose =false) {
+TetMesh* createSteinerCDT(inputPLC& plc, double& min_PLC_dist, bool verbose =false) {
 
 	// Build a delaunay tetrahedrization of the vertices
 	TetMesh* tin = new TetMesh;
@@ -94,24 +96,70 @@ TetMesh* createSteinerCDT(inputPLC& plc, bool verbose =false) {
 	PLCx Steiner_plc(*tin, plc.triangle_vertices.data(), plc.numTriangles());
 	Steiner_plc.segmentRecovery_HSi(!verbose);
 	Steiner_plc.faceRecovery(!verbose);
-	Steiner_plc.markInnerTets();
+	std::vector<bool> constr_tri_asCorners;
+	Steiner_plc.markInnerTets_andGetConstrFaces(constr_tri_asCorners);
+	//tin->saveConstrTrisToOFF("constrainedFaces.off", constr_tri_asCorners);
+	if(min_PLC_dist != 0.0) min_PLC_dist = tin->compute_closest_features_dist(constr_tri_asCorners); // minimum distance between cdt elemnts contrained on the PLC
 
 	return tin;
 }
 
+// bool isTetInternal(Tetrahedron* t, TetMesh* cdt) {
+// 	double ccc[3];
+// 	const pointType* v[4] = { t->v0()->getPoint(), t->v1()->getPoint(), t->v2()->getPoint(), t->v3()->getPoint() };
+// 	getTetBarycenter(v, ccc);
+// 	explicitPoint3D p(ccc[0], ccc[1], ccc[2]);
+// 	cdt->vertices.push_back(&p);
+// 	static uint64_t tet = 0;
+// 	tet = cdt->searchTetrahedron(tet, cdt->numVertices() - 1);
+// 	cdt->vertices.pop_back();
+// 	return (cdt->mark_tetrahedra[tet>>2] == DT_IN);
+// }
+
+// Add by Lorenzo -- 06 Nov 2024 (old version above)
+// mark as internal only tets that have an internal barycenter and all internal vertices.
 bool isTetInternal(Tetrahedron* t, TetMesh* cdt) {
 	double ccc[3];
 	const pointType* v[4] = { t->v0()->getPoint(), t->v1()->getPoint(), t->v2()->getPoint(), t->v3()->getPoint() };
 	getTetBarycenter(v, ccc);
 	explicitPoint3D p(ccc[0], ccc[1], ccc[2]);
-	cdt->vertices.push_back(&p);
+	
 	static uint64_t tet = 0;
-	tet = cdt->searchTetrahedron(tet, cdt->numVertices() - 1);
-	cdt->vertices.pop_back();
-	return (cdt->mark_tetrahedra[tet>>2] == DT_IN);
+	tet = cdt->searchTetrahedron(tet, &p);
+	//return (cdt->mark_tetrahedra[tet>>2] == DT_IN);
+	if (cdt->mark_tetrahedra[tet>>2] != DT_IN) return false;
+
+	if (!(t->v0()->isMarked<0>())){
+		tet = cdt->searchTetrahedron(tet, v[0]);
+		if (cdt->mark_tetrahedra[tet>>2] != DT_IN) return false;
+	}
+
+	if (!(t->v1()->isMarked<0>())){
+		tet = cdt->searchTetrahedron(tet, v[1]);
+		if (cdt->mark_tetrahedra[tet>>2] != DT_IN) return false;
+	}
+
+	if (!(t->v2()->isMarked<0>())){
+		tet = cdt->searchTetrahedron(tet, v[2]);
+		if (cdt->mark_tetrahedra[tet>>2] != DT_IN) return false;
+	}
+
+	if (!(t->v3()->isMarked<0>())){
+		tet = cdt->searchTetrahedron(tet, v[3]);
+		if (cdt->mark_tetrahedra[tet>>2] != DT_IN) return false;
+	}
+
+	return true;
 }
 
 void markInternalTets(Tetrahedrization& mesh, TetMesh* cdt) {
+	// mark all mesh vertices belonging to the PLC
+	for (TetVertex* v : mesh.vrts()) v->unmark<0>();
+	//for (PLC_Segment* s : mesh.get_PLCsegs()) { s->v0()->mark<0>(); s->v1()->mark<0>(); }	
+	for (PLC_Face* f : mesh.get_PLCfaces()){
+		for(DelEdge* e : f->getEdges() ) { e->v0()->mark<0>(); e->v1()->mark<0>(); }
+	}
+	
 	//for (Tetrahedron* t : mesh.tets()) t->is_internal = isTetInternal(t, cdt);
 
 	// Smarter method - exploit adjacencies to make location in CDT faster
@@ -132,18 +180,7 @@ void markInternalTets(Tetrahedrization& mesh, TetMesh* cdt) {
 	}
 
 	for (Tetrahedron* t : mesh.tets()) t->unmark<0>();
-}
-
-inline void set_time_limit(chrono_clock::time_point time_point, uint64_t time_out, Tetrahedrization& mesh){
-	std::cout<<"Time out set at "<<time_out<<" min\n";
-	time_out *= 60000; // convert to millisecond
-	mesh.set_optimization_time_out(time_point, time_out);
-}
-
-inline void set_memory_limit(uint64_t mem_out, Tetrahedrization& mesh){
-	std::cout<<"Max memory set at "<<mem_out<<" Mb\n";
-		mem_out *= 1000000; // convert to byte
-		mesh.set_optimization_mem_out(mem_out);
+	for (TetVertex* v : mesh.vrts()) v->unmark<0>();
 }
 
 inline void logFinalStats(Tetrahedrization& mesh, uint64_t ms, bool input_encloses_vol){
@@ -182,16 +219,14 @@ int main(int argc, char* argv[])
 		std::cout << "OPTIONS:\n";
 		std::cout << "\t[-v] -> verbose mode\n";
 		std::cout << "\t[-l] -> logging mode\n";
-		std::cout << "\t[-t max time in minutes (pos. integer)] -> time out mode\n";
-		std::cout << "\t[-m max allocatable memory in Mb (pos. integer)] -> memory out mode\n";
 		std::cout << "\t[-d exp (pos. integer)] -> avoid Delaunay Refinement if the min pt.s dist after chamfering is < 10^-exp\n";
+		std::cout << "\t[-a] -> computes the lower bound for minimum distance between mesh elements (point - segment - triangle), otherwise only point-point distances are computed.\n";
+		std::cout << "\t[-o] -> produces outputs (see below)\n";
 		std::cout << "OUTPUT:\n";
-		std::cout << "\t[-o] produces a volumetric (mesh.tet) and a surface (plcfaces.off) meshes.\n";
+		std::cout << "\t when [-o] is activated produces a volumetric (mesh.tet) and a surface (plcfaces.off) meshes.\n";
 		std::cout << "RETURNS:\n";
 		std::cout << "\t0 when the whole execution terminates correctly (also when an iperror occours)\n";
-		std::cout << "\t10 when option -t is activated and time out is exceeded\n";
-		std::cout << "\t11 when option -m is activated and max memory is exceeded\n";
-		std::cout << "\t12 when option -d is activated and min dist. is violated\n";
+		std::cout << "\t10 when option -d is activated and min dist. is violated\n";
 		std::cout << std::endl;
 		return 0;
 	}
@@ -205,16 +240,11 @@ int main(int argc, char* argv[])
 
 	// Manage options
 	std::string options = "";
-
-	uint64_t time_out = 0;
-	uint64_t mem_out = 0;
-	uint32_t min_pts_dist_exp = UINT32_MAX;
+	uint32_t min_dist_exp = UINT32_MAX;
 
 	for (int i = 1; i < argc; i++)
 		if (argv[i][0] == '-') {
-			if (argv[i][1] == 't') { time_out = atoi(argv[++i]); continue; }
-			else if (argv[i][1] == 'm') { mem_out = atoi(argv[++i]); continue; }
-			else if (argv[i][1] == 'd') { min_pts_dist_exp = atoi(argv[++i]); continue; }
+			if (argv[i][1] == 'd') { min_dist_exp = atoi(argv[++i]); continue; }
 			for (int j = 1; j < strlen(argv[i]); j++) options += argv[i][j];
 		}
 		else memcpy(filename, argv[i], strlen(argv[i]) + 1);
@@ -222,6 +252,7 @@ int main(int argc, char* argv[])
 	bool log_mode = (options.find('l') != std::string::npos);
 	bool verbose_mode = (options.find('v') != std::string::npos);
 	bool produce_output = (options.find('o') != std::string::npos);
+	bool lowBnd_onMeshDist = (options.find('a') != std::string::npos);
 
 	if (log_mode) startLogging(filename);
 
@@ -262,22 +293,29 @@ int main(int argc, char* argv[])
 	Tetrahedrization mesh;
 	chrono_clock::time_point time_point = chrono_clock::now();
 
-	if (time_out > 0) set_time_limit(time_point, time_out, mesh);
-	if (mem_out > 0) set_memory_limit(mem_out, mesh);
-
 	// Copy the DT to the new structure
-	double closest_pts_dist = mesh.initFromVerticesAndTets(tin.vertices, tin.tet_node);
-	std::cout << "Distance of closest points relative to bb diagonal: " << closest_pts_dist << "\n";
+	double closest_dist = mesh.initFromVerticesAndTets(tin.vertices, tin.tet_node);
+	std::cout << "Distance of closest points relative to bb diagonal: " << closest_dist << "\n";
 
-	if(log_mode) logDouble(closest_pts_dist);
+	TetMesh *cdt = NULL;  
+	if(lowBnd_onMeshDist){
+		double min_PLC_dist = DBL_MAX;
+		cdt = createSteinerCDT(plc, min_PLC_dist); // needed to compute lower bound on generic mesh elements distances
+		double mesh_BBox_len = euclideanDistance(mesh.vrts().back(), mesh.vrts()[mesh.num_vertices()-8]);
+		min_PLC_dist = min_PLC_dist / (3.0 * mesh_BBox_len); // the lower bound is 1/3 * min_PLC_dist normalized wrt mesh bounding box diagonal
+		std::cout << "Distance of closest generic mesh elements, relative to bb diagonal: " << min_PLC_dist << "\n";
+		closest_dist = min(closest_dist, min_PLC_dist);
+	}
 
-	if (min_pts_dist_exp != UINT32_MAX){
-		double min_pts_dist = std::pow(10.0, (double)min_pts_dist_exp * (-1.0));
-		if (closest_pts_dist < min_pts_dist){ 
+	if(log_mode) logDouble(closest_dist);
+
+	if (min_dist_exp != UINT32_MAX){
+		double min_dist = std::pow(10.0, (double)min_dist_exp * (-1.0));
+		if (closest_dist < min_dist){ 
 			// ip_error("Closest points are too close. Optimization would produce too many tets!\nEXITING\n");
 			if(log_mode) finishLogging();
-			std::cout<<"\nPROGRAM ABORTED: Closest points are too close ( < "<< min_pts_dist <<")\n\n\n";
-			exit(12);
+			std::cout<<"\nPROGRAM ABORTED: Closest points are too close ( < "<< min_dist <<")\n\n\n";
+			exit(10);
 		}
 	}
 	
@@ -322,7 +360,10 @@ int main(int argc, char* argv[])
 	// is internal/external wrt the input surface.
 	if(input_encloses_vol){
 		std::cout<<"Input encloses a volume\n";
-		TetMesh *cdt = createSteinerCDT(plc);
+		if(cdt==NULL){ 
+			double zero=0.0; 
+			cdt = createSteinerCDT(plc, zero);
+		}
 		markInternalTets(mesh, cdt);
 
 		if (log_mode) advance_ProcessLogging("IntExt_class");

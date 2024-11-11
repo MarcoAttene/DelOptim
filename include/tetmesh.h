@@ -954,6 +954,7 @@ public:
 	}
 
 	const DelTriangles& getTriangles() const { return T; }
+	const DelEdges& getEdges() const { return E; }
 
 	uint32_t numEdges() const { return (uint32_t)E.size(); }
 
@@ -1216,16 +1217,6 @@ int vOrient3D(const TetVertex* v1, const TetVertex* v2, const TetVertex* v3, con
 
 class Tetrahedrization
 {
-	// TMP: only for testing purposes, related to #define EXIT_ON_THRESHOLD_TIME
-public:
-	std::chrono::steady_clock::time_point init_time;
-	uint64_t critical_time; // millisecond
-	uint64_t critical_mem; // byte
-
-	void set_optimization_time_out(std::chrono::steady_clock::time_point _init_time, uint64_t _critical_time) { init_time = _init_time, critical_time = _critical_time; }
-	void set_optimization_mem_out(uint64_t _critical_mem){ critical_mem = _critical_mem; };
-	// end TMP
-
 protected:
 	// Vertices, edges, faces and tets
 	TetVertices V;
@@ -1246,7 +1237,7 @@ protected:
 
 public:
 
-	Tetrahedrization() : facesAreDelaunized(false), critical_time(0), critical_mem(0) {}
+	Tetrahedrization() : facesAreDelaunized(false) {}
 
 	size_t num_vertices() { return V.size(); } const
 	size_t num_tetrahedra() { return T.size(); } const
@@ -1255,6 +1246,9 @@ public:
 	void queueDirtyTriangle(DelTriangle* s) { if (!s->isDirty()) { s->setDirty(); dirty_Triangles.push_back(s); } }
 
 	const Tetrahedra& tets() const { return T; }
+	const TetVertices& vrts() const { return V; }
+	const PLC_Segments& get_PLCsegs() const { return S; }
+	const PLC_Faces& get_PLCfaces() const { return G; }
 
 	void initWithTetgen(int num_vertices, double vertices[], int num_triangles, uint32_t triangles[], bool quality, bool no_erosion);
 
@@ -1268,6 +1262,7 @@ public:
 		for (auto* v : V) deleteFullVE(v);
 		for (auto* e : E) deleteFullEF(e);
 
+		// closest points
 		double ad, cp = DBL_MAX;
 		for (auto* e : E) if ((ad = euclideanDistance(e->v0(), e->v1())) < cp) cp = ad;
 
@@ -1958,26 +1953,17 @@ public:
 	}
 	// -----------------------------------
 	void insertExistingVertex(TetVertex* vm, Tetrahedron *st) {
-		if (critical_time > 0) {
-			std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
-			uint64_t duration_sec = std::chrono::duration_cast<std::chrono::milliseconds>(now - init_time).count();
-			if (duration_sec > critical_time) {
-				std::cout << "\nPROGRAM ABORTED: time out (" << critical_time / 1000 << " sec) reached.\n\n\n";
-				exit(10);
-			}
-		}
-
-		if (critical_mem > 0) {
-			uint64_t mem_usage = getPeakRSS();
-			if (mem_usage > critical_mem) {
-				std::cout << "\nPROGRAM ABORTED: memory out (" << critical_mem / 1000000 << " Mb) reached.\n\n\n";
-				exit(11);
-			}
-		}
 
 		TETMESH_STATIC Tetrahedra cavity;
 		Tetrahedron *t0 = searchTet(vm->getPoint(), st);
 		getCavity(vm, cavity, t0);
+
+		// DEBUG start
+		// if(cavity.size() > 10000){
+		// 	std::cout << "\nPROGRAM ABORTED: too large cavity (" << cavity.size() << " tetrahedra).\n\n\n";
+		// 	exit(13);
+		// }
+		// DEBUG end
 
 		retetrahedrizeCavity(vm, cavity);
 		cavity.clear();

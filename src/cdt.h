@@ -106,6 +106,7 @@ public:
 
     // Save the interface between DT_IN and DT_OUT as an OFF file
     bool saveBoundaryToOFF(const char* filename) const;
+    bool saveConstrTrisToOFF(const char* filename, const std::vector<bool>& constrTris) const;
 
     // As above, but saves rational coordinates and distinguishes between inner and outer tets
     bool saveRationalTET(const char* filename, bool inner_only = false);
@@ -200,6 +201,7 @@ public:
     // Starting from 'tet', move by adjacencies until a tet is found that
     // contains vi. Return that tet.
     uint64_t searchTetrahedron(uint64_t tet, const uint32_t v_id);
+    uint64_t searchTetrahedron(uint64_t tet, const pointType* pt); // Add by Lorenzo on 06 Nov 2024
 
     // Incident tetrahedra at a vertex
     void VT(uint32_t v, std::vector<uint64_t>& vt) const;
@@ -376,6 +378,9 @@ public:
     double getTetEnergy(uint64_t t) const;
 
     double convergentSwapMesh(double th_energy);
+
+    bool is_constrained_edge(uint32_t ep0, uint32_t ep1, const std::vector<bool>& constr_tri_asCorners);
+    double compute_closest_features_dist(const std::vector<bool>& constr_tri_asCorners);
 };
 
 
@@ -490,7 +495,219 @@ public:
         return vector3d(c[0] + (v.c[0] - c[0]) * k, c[1] + (v.c[1] - c[1]) * k, c[2] + (v.c[2] - c[2]) * k);
     }
 
+    double sq_dist_triangle(const vector3d& v1, const vector3d& v2, const vector3d& v3);
+    double sq_dist_seg_seg(const vector3d& p1, const vector3d& q0, const vector3d& q1);
+
 };
+
+// NOT ROBUST (see https://www.geometrictools.com/Documentation/DistancePoint3Triangle3.pdf)
+double vector3d::sq_dist_triangle(const vector3d& v1, const vector3d& v2, const vector3d& v3){
+    // compute the square distance between the point P = (*this) and the triangle T(s,t) = v1 + s*v2 + t*v2, with s,t in [0,1]
+    // |T(s,t) - P|^2 = a*s^2 + 2*b*s*t + c*t^2 + 2*d*s + 2*e*t + f
+    // where
+    vector3d U( v1 - (*this) );
+    double a = v2.dot(v2);
+    double b = v2.dot(v3);
+    double c = v3.dot(v3);
+    double d = U.dot(v2);
+    double e = U.dot(v3);
+    double f = U.dot(U);
+    // the minimum of |T(s,t)-P|^2 is the minimu squared distance between P and the plane for T(s,t)
+    // it occours when the gradient of |T(s,t)-P|^2 vanishes, i.e.
+    // (s,t) such that 2 * ( as + bt + d, bs + ct + e ) = (0,0), which gives:
+    double delta = abs(a*c - b*b);
+    double s = b*e - c*d; // this is actually s * delta;
+    double t = b*d - a*e; // this is actually t * delta;
+    // we have to check wherever (s,t) belong to T or not
+    uint32_t region = UINT32_MAX;
+    if( s + t <= delta ){
+        if(s < 0){ (t < 0) ? region=4 : region=3; }
+        else{      (t < 0) ? region=5 : region=0; }
+    }
+    else{
+        if(s < 0)            region=2;
+        else{      (t < 0) ? region=6 : region=1; }
+    }
+
+    double num, den, tmp0, tmp1;
+    switch(region){ 
+        case(0):
+            s/=delta; t/=delta;
+            break;
+
+        case(1):
+            num = (c+e) - (b+d);
+            if(num < 0) s=0;
+            else{
+                den = a - 2*b + c;
+                (num >= den) ?  s = 1  :  s = num/den;
+            }
+            t = 1-s;
+            break;
+
+        case(2):
+            tmp0 = b + d, tmp1 = c + e;
+            if(tmp1 > tmp0){
+                num = tmp1 - tmp0, den = a - 2*b + c;
+                (num >= den) ?  s = 1 : s = num/den;
+                t = 1-s;
+            }
+            else{
+                s = 0;
+                if(tmp1 <= 0) t = 1;
+                else if(e >= 0) t = 0;
+                else t = -(e/c);
+            }
+            break;
+
+        case(3):
+            s = 0;
+            if(e >= 0) t = 0;
+            else (-e >= c) ?  t = 1  :  t = -(e/c);
+            break;
+
+        case(4):
+            if(d < 0){
+                t = 0;
+                (-d >= a) ?  s = 1  :  s = -(d/a);
+            }
+            else{
+                s = 0;
+                (-e >= c) ?  t = 1  :  t = -(e/c);
+            }
+            break;
+
+        case(5):
+            t = 0;
+            if(d >= 0) s = 0;
+            else (-d >= a) ?  s = 1  :  s = -(d/a);
+            break;
+
+        case(6):
+            tmp0 = b + e, tmp1 = a + d;
+            if(tmp1 > tmp0){
+                num = tmp1 - tmp0, den = a - 2*b + c;
+                (num >= den) ?  t = 1 : t = num/den;
+                s = 1-t;
+            }
+            else{
+                t = 0;
+                if(tmp1 <= 0) s = 1;
+                else if(d >= 0) s = 0;
+                else s = -(d/a);
+            }
+            break;
+
+        default:
+            ip_error("[cdt.h] sq_dist_triangle(): ERROR invalid region");
+            break;
+    }
+
+    vector3d diff( v1 + v2*s + v2*t - (*this) );
+    return diff.dot(diff); //(a*s*s + 2*b*s*t + c*t*t + 2*d*s + 2*e*t + f);
+}
+
+// NOT ROBUST (see https://www.geometrictools.com/Documentation/DistanceLine3Line3.pdf)
+double vector3d::sq_dist_seg_seg(const vector3d& p1, const vector3d& q0, const vector3d& q1){
+    vector3d p1p0 = p1 - (*this);
+    vector3d q1q0 = q1 - q0;
+    vector3d p0q0 = (*this) - q0;
+
+    double a = p1p0.dot(p1p0);
+    double b = p1p0.dot(q1q0);
+    double c = q1q0.dot(q1q0);
+    double d = p1p0.dot(p0q0);
+    double e = q1q0.dot(p0q0);
+    double f = p0q0.dot(p0q0);
+    double det = abs(a * c - b * b);
+    double s, t, nd, bmd, bte, ctd, bpe, ate, btd;
+
+    if (det > 0){ // segments are not parallel
+        bte = b * e;
+        ctd = c * d;
+        if (bte <= ctd){  // s <= 0
+            s = 0;
+            if (e <= 0){  // region 6, t <= 0
+                t = 0; nd = -d;
+                if (nd >= a) s = 1;
+                else if (nd > 0) s = nd / a;
+                // else: s is already zero
+            }
+            else if (e < c)  t = e / c; // region 5, 0 < t < 1
+            else{   // region 4, t >= 1
+                t = 1; bmd = b - d;
+                if (bmd >= a) s = 1;
+                else if (bmd > 0) s = bmd / a; 
+                // else:  s is already zero
+            }
+        }
+        else{  // s > 0
+            s = bte - ctd;
+            if (s >= det){  // s >= 1
+                s = 1; bpe = b + e;
+                if (bpe <= 0){  // region 8,  t <= 0
+                    t = 0; nd = -d;
+                    if (nd <= 0) s = 0; 
+                    else if (nd < a) s = nd / a;
+                    // else: s is already one
+                }
+                else if (bpe < c){  // region 1, 0 < t < 1
+                    t = bpe / c;
+                }
+                else{   // region 2, t >= 1
+                    t = 1; bmd = b - d;
+                    if (bmd <= 0) s = 0; 
+                    else if (bmd < a) s = bmd / a;
+                    // else:  s is already one
+                }
+            }
+            else{ // 0 < s < 1
+                ate = a * e;
+                btd = b * d;
+                if (ate <= btd){  // region 7, t <= 0
+                    t = 0; nd = -d;
+                    if (nd <= 0) s = 0;
+                    else if (nd >= a) s = 1;
+                    else s = nd / a;
+                }
+                else{  // t > 0
+                    t = ate - btd;
+                    if (t >= det){  // region 3, t >= 1
+                        t = 1; bmd = b - d;
+                        if (bmd <= 0) s = 0; 
+                        else if (bmd >= a) s = 1;
+                        else    s = bmd / a;
+                    }
+                    else { // region 0, 0 < t < 1
+                        s /= det; t /= det;
+                    }
+                }
+            }
+        }
+    }
+    else{ // The segments are parallel.
+        // When s = 0, solve c*t - e = 0 (t = e/c).
+        if (e <= 0){  // t <= 0
+            t = 0; nd = -d;
+            if (nd <= 0)   s = 0; // region 6, s <= 0
+            else if (nd >= a)  s = 1; // region 8, s >= 1
+            else  s = nd / a; // region 7, 0 < s < 1
+        }
+        else if (e >= c){  // t >= 1
+            // Now solve a*s - b*t + d = 0 for t = 1 (s = (b-d)/a).
+            t = 1; bmd = b - d;
+            if (bmd <= 0)  s = 0; // region 4, s <= 0
+            else if (bmd >= a)  s = 1; // region 2, s >= 1
+            else  s = bmd / a; // region 3, 0 < s < 1
+        }
+        else{  // 0 < t < 1
+            s = 0; t = e / c;
+        }
+    }
+
+    vector3d diff = ((*this) + p1p0 * s) - (q0 + q1q0 * t);
+    return diff.dot(diff);
+}
 
 inline std::ostream& operator<<(std::ostream& os, const vector3d& p)
 {
@@ -751,7 +968,7 @@ public:
   uint64_t meshCavity(const std::vector<uint64_t>& bnd, const std::vector<uint32_t>& vertices, std::vector<uint64_t>& base);
   uint64_t expandCavity(std::vector<uint64_t>& bnd, std::vector<uint32_t>& vertices, uint64_t t, const PLCface& f);
 
-  size_t markInnerTets();
+  size_t markInnerTets_andGetConstrFaces(std::vector<bool>& constr_tri_asCorners);
 
   //void getTetsIntersectingFaceSlow(uint32_t fi, std::vector<uint64_t>* i_tets) {
   //    const PLCface& f = faces[fi];
@@ -802,6 +1019,7 @@ public:
       fprintf(fp, "]\n}\n}\n");
       fclose(fp);
   }
+
 };
 
 #include "delaunay.hpp"

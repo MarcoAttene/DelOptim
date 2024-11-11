@@ -1448,23 +1448,23 @@ void PLCx::initFaceFlatEdges(PLCface& f) {
 
 
 // Mark internal tetrahedra
-size_t PLCx::markInnerTets() {
+size_t PLCx::markInnerTets_andGetConstrFaces(std::vector<bool>& cornerMask) {
 
     // If the PLC does not define a valid polyhedron, just tag every tet as IN but the ghosts
-    if (!is_polyhedron) {
-        size_t ng = 0;
-        for (size_t i = 0; i < delmesh.numTets(); i++) 
-            if (delmesh.isGhost(i)) delmesh.mark_tetrahedra[i] = DT_OUT;
-            else {
-                delmesh.mark_tetrahedra[i] = DT_IN;
-                ng++;
-            }
-        return ng;
-    }
+    // if (!is_polyhedron) {
+    //     size_t ng = 0;
+    //     for (size_t i = 0; i < delmesh.numTets(); i++) 
+    //         if (delmesh.isGhost(i)) delmesh.mark_tetrahedra[i] = DT_OUT;
+    //         else {
+    //             delmesh.mark_tetrahedra[i] = DT_IN;
+    //             ng++;
+    //         }
+    //     return ng;
+    // }
 
     // 1) Mark constraint corners
-    std::vector<bool> cornerMask(delmesh.tet_node.size(), false);
-
+    //std::vector<bool> cornerMask(delmesh.tet_node.size(), false);
+    cornerMask.resize(delmesh.tet_node.size(), false);
 
 
     // Crea relazione VF

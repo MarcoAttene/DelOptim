@@ -22,7 +22,7 @@ inline void startLogging(const char* fn) {
         log_fp = fopen(log_file_name, "r");
         if (log_fp == NULL) {
             log_fp = fopen(log_file_name, "w");
-            fprintf(log_fp, "%s", first_line);
+            fprintf(log_fp, "%s", first_line);  fflush(log_fp);
         }
         else {
             fclose(log_fp);
@@ -36,13 +36,13 @@ inline void startLogging(const char* fn) {
 
         size_t i;
         for (i = strlen(fn); i > 0; i--) if (fn[i - 1] == '\\' || fn[i - 1] == '/') break;
-        fprintf(log_fp, "\n%s", fn + i);
-        fprintf(log_prog, "\n%s", fn + i);
+        fprintf(log_fp, "\n%s", fn + i); 
+        fprintf(log_prog, "\n%s", fn + i); fflush(log_fp);
     }
     else {
         log_prog = stdout;
         log_fp = stdout;
-        fprintf(log_fp, "%s", first_line);
+        fprintf(log_fp, "%s", first_line);  fflush(log_fp);
     }
 
     time_point = std::chrono::steady_clock::now(); // set "time zero"
@@ -52,18 +52,15 @@ inline void logTimeChunk() {
     std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
     uint64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - time_point).count();
     time_point = now;
-
-    fprintf(log_fp, ", %zu", ms);
+    fprintf(log_fp, ", %zu", ms); fflush(log_fp);
 }
 
-inline void logBoolean(bool b) { fprintf(log_fp, ", %s", b ? "True" : "False"); }
-inline void logUInteger(uint32_t n) { fprintf(log_fp, ", %u", n); }
-inline void logDouble(double d) { fprintf(log_fp, ", %g", d); }
-inline void logEmpty() { fprintf(log_fp, ", "); }
+inline void logBoolean(bool b) { fprintf(log_fp, ", %s", b ? "True" : "False"); fflush(log_fp);  }
+inline void logUInteger(uint32_t n) { fprintf(log_fp, ", %u", n); fflush(log_fp); }
+inline void logDouble(double d) { fprintf(log_fp, ", %g", d); fflush(log_fp); }
+inline void logEmpty() { fprintf(log_fp, ", "); fflush(log_fp); }
 
-inline void advance_ProcessLogging(const char* stage){
-    fprintf(log_prog, ", %s", stage);
-}
+inline void advance_ProcessLogging(const char* stage){ fprintf(log_prog, ", %s", stage); fflush(log_prog); }
 
 inline void finishLogging() {
     if (log_fp != stdout) fclose(log_fp);
@@ -107,5 +104,6 @@ inline void logMemInfo() {
     struct rusage r_usage;
     getrusage(RUSAGE_SELF, &r_usage);
     fprintf(log_fp, ", %.2f", r_usage.ru_maxrss); // bytes
+    fflush(log_fp);
 }
 #endif

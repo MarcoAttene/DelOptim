@@ -496,7 +496,7 @@ public:
 
         uint32_t nfaces = (uint32_t)out_tri.size() / 3;
 
-        FILE* fp = fopen("cut_plc_faces.off", "w");
+        FILE* fp = fopen("cut_plc_faces_triangles.off", "w");
         fprintf(fp, "OFF\n%zu %u 0\n", vertices.size(), nfaces);
         for(uint32_t i=0; i<vertices.size(); i++) {
             assert(vertices[i]->is3D()); // DEBUG
