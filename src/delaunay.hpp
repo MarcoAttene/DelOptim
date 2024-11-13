@@ -1266,7 +1266,7 @@ double TetMesh::compute_closest_features_dist(const std::vector<bool>& constr_tr
 
         for(uint64_t t : vt) {
 
-            for(size_t i=0; i<4; i++) if(!constr_tri_asCorners[t*4+i]){ 
+            for(size_t i=0; i<4; i++) if(constr_tri_asCorners[t*4+i]){ 
                 uint64_t c = t*4+i; // tet-corner opposite to a constrained triangle
                 uint32_t fv[3]; getFaceVertices(c, fv);
 
