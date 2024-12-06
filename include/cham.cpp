@@ -167,6 +167,7 @@ void PLCc::initialize(){
         vertices.push_back( new explicitPoint(*x, *(x +1), *(x +2)) ); 
     }
     mark_vrts.resize(vertices.size(),0);
+    ref_exp3D_vrt.resize(vertices.size(), UINT32_MAX);
 
     // -- Edges --
     edges.resize(plc.numTriangles() * 3); // More than necessary, will be merged later
@@ -469,7 +470,8 @@ uint32_t PLCc::new_vrt_on_segment(uint32_t v0, uint32_t v1, const double d, cons
   
     // new point p is such that p = (1-t) v0 + t v1
     pointType* p;
-    
+    uint32_t exp3D_i = (t < 0.5) ? v0 : v1;
+
     #ifndef FP_CHAMFERING
 
     const pointType* p0 = vertices[v0];
@@ -507,7 +509,7 @@ uint32_t PLCc::new_vrt_on_segment(uint32_t v0, uint32_t v1, const double d, cons
 
     #endif
 
-    add_vertex( p );
+    add_vertex( p, exp3D_i);
     return ((uint32_t) vertices.size()-1);
 }
 
@@ -688,8 +690,8 @@ uint32_t PLCc::new_vrts_in_inputTri(const uint32_t fi,
 
     #endif
     
-    add_vertex( p0 );
-    add_vertex( p1 );
+    add_vertex( p0, vi );
+    add_vertex( p1, vi );
     return ((uint32_t) vertices.size()-1);
 }
 
@@ -1851,6 +1853,57 @@ void PLCc::get_triangles(std::vector<uint32_t>& tri_fv) const {
             hear_clipping((uint32_t)fi, tri_fv);
         }
 
+    }
+}
+
+// Complmentar
+void PLCc::get_complementar_tri(const std::vector<uint32_t>& out_tri, std::vector<uint32_t>& compl_tri){
+    // make half-edges
+    std::vector< std::vector<uint32_t> > he; // ep0, ep1, tri, occurences for each edge
+    uint32_t v0,v1,v2,e0,e1;
+    for(uint32_t i=0; i<out_tri.size()/3; i++){
+        v0 = out_tri[3*i  ];
+        v1 = out_tri[3*i+1];
+        v2 = out_tri[3*i+2];
+        e0 = v0; e1 = v1; if(v0 > v1) {e0 = v1; e1 = v0;} he.push_back({e0,e1,i,1});
+        e0 = v1; e1 = v2; if(v1 > v2) {e0 = v2; e1 = v1;} he.push_back({e0,e1,i,1});
+        e0 = v2; e1 = v0; if(v2 > v0) {e0 = v0; e1 = v2;} he.push_back({e0,e1,i,1});
+    }
+    sort(he.begin(), he.end(),
+        [](const std::vector<uint32_t> &a, const std::vector<uint32_t> &b){ return (a[0] < b[0] || (a[0]==b[0] && a[1]<b[1])); } );
+
+    for(size_t i=0; i<he.size()-1; i++){
+        if(he[i][0] == he[i+1][0] && he[i][1] == he[i+1][1]){
+            he[i+1][3] += he[i][3];
+            he[i][3] = 0;
+        }
+    }
+
+    he.erase(std::remove_if(he.begin(), he.end(), [](const std::vector<uint32_t> &a){ return (a[3] != 1); }), he.end());
+    
+    uint32_t r0, r1;
+    for(size_t i=0; i<he.size(); i++){
+        e0 = he[i][0]; e1 = he[i][1]; 
+
+        if(vertices[e0]->isExplicit3D() || vertices[e1]->isExplicit3D() ) continue;
+
+        r0 = ref_exp3D_vrt[e0]; r1 = ref_exp3D_vrt[e1];
+        if( r0 == r1 ) {
+            compl_tri.insert( compl_tri.end(), {e0, e1, r0} ); // orientation maybe have to be changed
+        }
+        else{
+            if(e0 > e1) std::swap(e0, e1);
+            compl_tri.insert( compl_tri.end(), {e0, e1, r0} );
+            compl_tri.insert( compl_tri.end(), {r0, r1, e1} );
+            // orientation maybe have to be changed
+        }
+    }
+
+    for(size_t i=0; i<compl_tri.size()/3; i++){
+        uint32_t a = compl_tri[3*i];
+        uint32_t b = compl_tri[3*i+1];
+        uint32_t c = compl_tri[3*i+2];
+        assert( !vCollinear(a,b,c) );
     }
 }
 

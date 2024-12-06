@@ -230,6 +230,8 @@ public:
 
     std::vector<double> vrt_ch_dist;  // contains chamfering (cut) distance if v is an acute vertex, -1 otherwise  
 
+    std::vector<uint32_t> ref_exp3D_vrt; // store the vrtex index of "closest" explicit3D point for implicit points, UINT32_MAX for explicit points
+
     // marker
     std::vector<uint32_t> mark_vrts;
     std::vector<uint32_t> mark_edges;
@@ -287,10 +289,11 @@ public:
     }
 
     // Add new vertex to vertices vector and update related vectors
-    inline void add_vertex(pointType* p){
+    inline void add_vertex(pointType* p, uint32_t exp3d_i){
         vertices.push_back( p );
         mark_vrts.push_back( 0 );
         vrt_ch_dist.push_back( -1.0 );
+        ref_exp3D_vrt.push_back(exp3d_i);
     }
 
     // void swap_faces(uint32_t f1, uint32_t f2); // swap faces[f1] and faces[f2] and update connectivity
@@ -357,6 +360,9 @@ public:
 
     void hear_clipping(uint32_t fi, std::vector<uint32_t>& out_tri_fv_list) const;
     void triangulate_chamfered_plc(); // WORK IN PROGRESS
+
+    // get a triengulation of the complementar of the chamfered faces wrt the input surface
+    void get_complementar_tri(const std::vector<uint32_t>& out_tri, std::vector<uint32_t>& compl_tri);
 
     // Predicates interfaces
 
@@ -451,38 +457,8 @@ public:
         return true;
     }
 
-    // do not work if non-simpy connected faces are present
-    // bool saveTriFaces() const {
-
-    //     for(const CHAMface& f : faces)if( !f.is_simply_connected ){  
-    //         std::cout<<"PLCc - not simply connected face founded (off file not generated)\n";
-    //         return false; 
-    //     }
-
-    //     uint32_t nfaces = 0;
-    //     for(const CHAMface& f : faces) nfaces += (f.bounding_edges.size()-2);
-
-    //     FILE* fp = fopen("cut_plc_faces.off", "w");
-    //     fprintf(fp, "OFF\n%zu %zu 0\n", vertices.size(), nfaces);
-    //     for(uint32_t i=0; i<vertices.size(); i++) {
-    //         assert(vertices[i]->is3D()); // DEBUG
-    //         double x, y, z;
-    //         vertices[i]->getApproxXYZCoordinates(x, y, z);
-    //         fprintf(fp, "%f %f %f\n", x, y, z);
-    //     }
-        
-    //     for(const CHAMface& f : faces) {
-    //         std::vector<uint32_t> fv;
-    //         get_face_vertices(f, fv);
-    //         uint32_t v0 = fv[0];
-    //         for(size_t i=2; i<fv.size(); i++){
-    //              fprintf(fp, "3 %u %u %u \n", v0, fv[i-1], fv[i]);
-    //         }
-    //     }
-    //     fclose(fp);
-    //     return true;
-    // }
-
+    // computes a trinagulation of the chamfered PLC (without modifing it) 
+    // and saves into the result in to an off file
     bool saveTriFaces() const {
 
         for(const CHAMface& f : faces)if( !f.is_simply_connected ){  
@@ -510,6 +486,41 @@ public:
             v.assign(out_tri.begin() + 3*i, out_tri.begin() +3*i +3);
             fprintf(fp, "3 %u %u %u \n", v[0], v[1], v[2]);
         }
+        fclose(fp);
+        return true;
+    }
+
+    // save the triangles whose vertices indices are triple of consecutive integers
+    // of save_tri vector into a an .off file
+    bool saveTriangles(const std::vector<uint32_t>& save_tri, const char* title) const {
+
+        assert( (save_tri.size() % 3) == 0 );
+
+        std::vector<uint32_t> used_vertex(vertices.size(), UINT32_MAX);
+	    for (size_t i = 0; i < save_tri.size(); i++)    used_vertex[save_tri[i]] = 1;
+
+	    uint32_t idx = 0;
+	    for (size_t i = 0; i < used_vertex.size(); i++) if (used_vertex[i] != UINT32_MAX) {
+		    used_vertex[i] = idx++;
+	    }
+
+        uint32_t nfaces = (uint32_t)save_tri.size() / 3;
+        FILE* fp = fopen(title, "w");
+        fprintf(fp, "OFF\n%u %u 0\n", idx, nfaces);
+
+        for(uint32_t i=0; i<vertices.size(); i++) if(used_vertex[i] != UINT32_MAX){
+            assert(vertices[i]->is3D()); // DEBUG
+            double x, y, z;
+            vertices[i]->getApproxXYZCoordinates(x, y, z);
+            fprintf(fp, "%f %f %f\n", x, y, z);
+        }
+
+        for(size_t i=0; i<save_tri.size()/3; i++) {
+            std::vector<uint32_t> v;
+            v.assign(save_tri.begin() + 3*i, save_tri.begin() +3*i +3);
+            fprintf(fp, "3 %u %u %u \n", used_vertex[v[0]], used_vertex[v[1]], used_vertex[v[2]]);
+        }
+        
         fclose(fp);
         return true;
     }

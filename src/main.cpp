@@ -38,6 +38,7 @@ typedef std::chrono::steady_clock chrono_clock;
 bool chamferPLC(inputPLC& _plc,
 	double _epsilon,
 	std::vector<genericPoint*>& _vertices,
+	std::vector<uint32_t>& _conn_vertices,
 	std::vector<std::vector<uint32_t>>& _faces,
 	bool simplify_cham_plc, bool verbose) {
 	
@@ -51,30 +52,38 @@ bool chamferPLC(inputPLC& _plc,
 		if (verbose) std::cout << "Chamfered PLC simplication COMPLETED: " << num_edges - cut_plc->edges.size() << " edges removed.\n";
 	}
 
-	std::vector<uint32_t> used_vertex(cut_plc->vertices.size(), UINT32_MAX);
-	//std::vector<uint32_t> used_vertex(cut_plc->vertices.size(), 1);
-
 	std::vector<uint32_t> out_tri;
-	cut_plc->get_triangles(out_tri);
+	cut_plc->get_triangles(out_tri); // computes a trinagulation of cut_plc (without modifing it) and saves into out_tris triangles indices wrt cut_plc->vertices
 	if (verbose) std::cout << "Chamfered PLC triangulation COMPLETED\n\n";
 
-	for (size_t i = 0; i < out_tri.size(); i++)	used_vertex[out_tri[i]] = 1;
+	std::vector<uint32_t> used_vertex(cut_plc->vertices.size(), UINT32_MAX);
+	for (size_t i = 0; i < cut_plc->n_in_vrts; i++) used_vertex[i] = 1; // all explicit points
+	for (size_t i = 0; i < out_tri.size(); i++)	used_vertex[ out_tri[i] ] = 1;
 
 	uint32_t idx = 0;
 	for (size_t i = 0; i < used_vertex.size(); i++) if (used_vertex[i] != UINT32_MAX) {
 		used_vertex[i] = idx++;
 		_vertices.push_back(cut_plc->vertices[i]);
+		_conn_vertices.push_back(cut_plc->ref_exp3D_vrt[i]); // explicit points do not change indexing
 	}
 
-	_faces.resize(out_tri.size() / 3);
+	_faces.resize(out_tri.size() / 3);	
 	for (size_t i = 0; i < out_tri.size() / 3; i++) {
 		_faces[i].push_back(used_vertex[out_tri[i * 3]]);
 		_faces[i].push_back(used_vertex[out_tri[i * 3 + 1]]);
 		_faces[i].push_back(used_vertex[out_tri[i * 3 + 2]]);
 	}
 
+	bool get_complement = true;
+	if(get_complement){
+		std::vector<uint32_t> compl_tri;
+		cut_plc->get_complementar_tri(out_tri, compl_tri);
+		compl_tri.insert(compl_tri.end(), out_tri.begin(), out_tri.end());
+		cut_plc->saveTriangles(compl_tri, "all_tris_chamf.off");
+	}
+	
 	// cut_plc->saveFaces(); // save polygonal faces
-	// cut_plc->saveTriFaces(); // triangulates and save faces
+	cut_plc->saveTriangles(out_tri, "chamfered_plc.off"); // save triangulated faces
 
 	return cut_plc->input_plc_defines_interior();
 }
@@ -83,7 +92,7 @@ bool chamferPLC(inputPLC& _plc,
 // 
 // 'plc' is a valid input PLC to the process. Validity is assumed but not verified!
 
-TetMesh* createSteinerCDT(inputPLC& plc, double& min_PLC_dist, bool verbose =false) {
+TetMesh* createSteinerCDT(inputPLC& plc, double& min_PLC_dist, bool produce_output, bool verbose =false) {
 
 	// Build a delaunay tetrahedrization of the vertices
 	TetMesh* tin = new TetMesh;
@@ -102,6 +111,152 @@ TetMesh* createSteinerCDT(inputPLC& plc, double& min_PLC_dist, bool verbose =fal
 	if(min_PLC_dist != 0.0) min_PLC_dist = tin->compute_closest_features_dist(constr_tri_asCorners); // minimum distance between cdt elemnts contrained on the PLC
 
 	return tin;
+}
+
+//
+bool get_vrts_and_tris_for_cdt(Tetrahedrization& mesh, std::vector<uint32_t>& ref_vrts){
+	
+	// exctract triangles of the optimized mesh that are part of the chamfered surface (deltri)
+	std::vector<uint32_t> constr_tri;
+	size_t n_constr_tri = 0;
+	uint32_t v0,v1,v2;
+	for(const TetFace* tri : mesh.faces()) if(tri->deltri != NULL){
+		if(tri->t1()==NULL || tri->t2()==NULL) continue; // do not use bounding box boundary faces
+		v0 = (uint32_t) tri->deltri->v0()->getIndex();
+		v1 = (uint32_t) tri->deltri->v1()->getIndex();
+		v2 = (uint32_t) tri->deltri->v2()->getIndex();
+		constr_tri.insert(constr_tri.end(), {v0,v1,v2});
+		n_constr_tri++;
+	}
+
+	// make half-edges wrt constr_tri
+    std::vector< std::vector<uint32_t> > be; // ep0, ep1, tri, occurences for each edge
+    uint32_t e0,e1;
+    for(uint32_t i=0; i<n_constr_tri; i++){
+        v0 = constr_tri[3*i  ];
+        v1 = constr_tri[3*i+1];
+        v2 = constr_tri[3*i+2];
+        e0 = v0; e1 = v1; if(v0 > v1) {e0 = v1; e1 = v0;} be.push_back({e0,e1,i,1});
+        e0 = v1; e1 = v2; if(v1 > v2) {e0 = v2; e1 = v1;} be.push_back({e0,e1,i,1});
+        e0 = v2; e1 = v0; if(v2 > v0) {e0 = v0; e1 = v2;} be.push_back({e0,e1,i,1});
+    }
+    sort(be.begin(), be.end(),
+        [](const std::vector<uint32_t> &a, const std::vector<uint32_t> &b){ return (a[0] < b[0] || (a[0]==b[0] && a[1]<b[1])); } );
+
+	// keep half-edges that occour only one time, i.e. those on the boundary of constr_tri
+    for(size_t i=0; i<be.size()-1; i++){
+        if(be[i][0] == be[i+1][0] && be[i][1] == be[i+1][1]){
+            be[i+1][3] += be[i][3];
+            be[i][3] = 0;
+        }
+    }
+    be.erase(std::remove_if(be.begin(), be.end(), [](const std::vector<uint32_t> &a){ return (a[3] != 1); }), be.end());
+
+	// make the vertex-edge relation of boundary edges
+	std::vector< std::vector<uint32_t> > vbe_rel( mesh.num_vertices() );
+	for(size_t i=0; i<be.size(); i++){
+		vbe_rel[ be[i][0] ].push_back(i);
+		vbe_rel[ be[i][1] ].push_back(i);
+	}
+
+	// complete ref_vrts by assigning to vertices of the boundary of constr_tri
+	// introduced by Delauny refinement algorithm a ref_vrt to connect with while
+	// closure triangles are created. 
+	size_t n_cham_vrts = ref_vrts.size();
+	ref_vrts.resize(mesh.num_vertices(), UINT32_MAX);
+
+	for(size_t i=0; i<vbe_rel.size(); i++) if(ref_vrts[i]==UINT32_MAX) assert(vbe_rel[i].empty() || vbe_rel[i].size()==2); // DEBUG
+	
+	std::vector<uint32_t> queue;
+	for(size_t vi=0; vi<n_cham_vrts; vi++) if(ref_vrts[vi]!=UINT32_MAX){
+		// Consider each boundary edge incident at vi (at least 2)
+		for(size_t j=0; j<vbe_rel[vi].size(); j++){
+			uint32_t bei = vbe_rel[vi][j];
+			e0 = be[bei][0]; e1 = be[bei][1]; // edge endpoints
+			v0 = vi; // starting vertex
+			// v0 is a vertex s.t. ref_vrt[v0] != UINT32_MAX, 
+			// each boundary edge E = <b0,b1> of the chamfered PLC has a ref_vrt for both endpoint,
+			// during Delaunay refinement new vertices may be inserted on E splitting it
+			// producing a partition of E, each of these new vertices on E have exactly two incident
+			// edges. 
+			// Starting from b0 = v0 we wanto to rach b1 tracking all these new vertices using a queue to
+			// assign them the correct ref_vrt.
+			assert( ref_vrts[v0] != UINT32_MAX );
+			v1 = e0; if(v1 == v0) v1 = e1;
+			uint32_t curr_edge, last_edge = bei;
+			while( ref_vrts[v1] == UINT32_MAX ){
+				queue.push_back(v1);
+				v0 = v1;
+				assert(vbe_rel[v1].size() == 2);
+				curr_edge = vbe_rel[v1][0]; if(curr_edge == last_edge) curr_edge = vbe_rel[v1][1];
+				v1 = be[curr_edge][0]; if(v0 == v1) v1 = be[curr_edge][1];
+				last_edge = curr_edge;
+			}
+			if( !queue.empty() ){
+				v0 = vi;
+				uint32_t refv = (ref_vrts[v0] < ref_vrts[v1]) ? ref_vrts[v0] : ref_vrts[v1]; // we have to choose one, the conventional rule is given by lower index
+				for(uint32_t q : queue) ref_vrts[q] = refv;
+				queue.clear();
+			}
+		}
+	}
+
+	// build the comlementary triangles of the chamfered optimized surface wrt input
+    std::vector<uint32_t> compl_tri;
+    uint32_t r0, r1;
+    for(size_t i=0; i<be.size(); i++){
+		e0 = be[i][0]; e1 = be[i][1]; 
+		if(mesh.vrts()[e0]->getPoint()->isExplicit3D() || mesh.vrts()[e1]->getPoint()->isExplicit3D() ) continue;
+		r0 = ref_vrts[e0]; r1 = ref_vrts[e1];
+    	if( r0 == r1 ) {
+    		compl_tri.insert( compl_tri.end(), {e0, e1, r0} ); // orientation maybe have to be changed
+		}
+        else{
+            if(e0 > e1) std::swap(e0, e1);
+            compl_tri.insert( compl_tri.end(), {e0, e1, r0} );
+            compl_tri.insert( compl_tri.end(), {r0, r1, e1} );
+            // orientation maybe have to be changed
+        }
+    }
+
+    // for(size_t i=0; i<compl_tri.size()/3; i++){ // DEBUG
+    //     uint32_t a = compl_tri[3*i];
+    //     uint32_t b = compl_tri[3*i+1];
+    //     uint32_t c = compl_tri[3*i+2];
+    //     assert( !vCollinear(a,b,c) );
+    // }
+
+	// DEBUG
+	for(uint32_t i=0; i<mesh.num_vertices(); i++) {
+		if( i != (uint32_t)mesh.vrts()[i]->getIndex() ){ 
+			std::cout<<"# tot. vrts = "<<mesh.num_vertices()<<", # cham_vrts = "<<ref_vrts.size()<<"\n";
+			std::cout<<"mismatching i = "<<i<<", vrt[i]_index = "<< (uint32_t)mesh.vrts()[i]->getIndex()<<"\n";
+			exit(0);
+		}
+	}
+
+	constr_tri.insert(constr_tri.end(), compl_tri.begin(), compl_tri.end());
+	assert( (constr_tri.size() % 3) == 0 );
+
+    FILE* fp = fopen("input_rebuild.off", "w");
+    fprintf(fp, "OFF\n%u %u 0\n", mesh.num_vertices(), (uint32_t) constr_tri.size() / 3);
+
+    for(uint32_t i=0; i<mesh.num_vertices(); i++) {
+		assert( i == (uint32_t)mesh.vrts()[i]->getIndex() );
+        double x, y, z;
+        mesh.vrts()[i]->getPoint()->getApproxXYZCoordinates(x, y, z);
+        fprintf(fp, "%f %f %f\n", x, y, z);
+    }
+
+    for(size_t i=0; i<constr_tri.size()/3; i++) {
+        std::vector<uint32_t> v;
+        v.assign(constr_tri.begin() + 3*i, constr_tri.begin() +3*i +3);
+        fprintf(fp, "3 %u %u %u \n", v[0], v[1], v[2]);
+    }
+        
+ 	fclose(fp);
+
+	return true;
 }
 
 // bool isTetInternal(Tetrahedron* t, TetMesh* cdt) {
@@ -129,6 +284,8 @@ bool isTetInternal(Tetrahedron* t, TetMesh* cdt) {
 	//return (cdt->mark_tetrahedra[tet>>2] == DT_IN);
 	if (cdt->mark_tetrahedra[tet>>2] != DT_IN) return false;
 
+	t->mark<1>(); // TMP
+
 	if (!(t->v0()->isMarked<0>())){
 		tet = cdt->searchTetrahedron(tet, v[0]);
 		if (cdt->mark_tetrahedra[tet>>2] != DT_IN) return false;
@@ -149,7 +306,92 @@ bool isTetInternal(Tetrahedron* t, TetMesh* cdt) {
 		if (cdt->mark_tetrahedra[tet>>2] != DT_IN) return false;
 	}
 
+	t->unmark<1>(); // TMP
+
 	return true;
+}
+
+void smoothVertices(Tetrahedrization& mesh, uint32_t n_input_vrts, double optim_ratio){
+	for (TetVertex* v : mesh.vrts()){ v->unmark<0>(); v->unmark<1>(); }; // Reset
+	for (TetFace* f : mesh.faces()) if (f->isInterface()) {
+		f->v0()->mark<1>();
+		f->v1()->mark<1>();
+		f->v2()->mark<1>();
+	}
+	// Tag explicit points whose index is greater than n_input_vrts: 
+	// they are Steiner points that do not belong to the input surface
+	for(uint32_t i=n_input_vrts; i<mesh.num_vertices(); i++){
+		if(mesh.vrts()[i]->getPoint()->isExplicit3D()) mesh.vrts()[i]->mark<0>();
+	}
+	
+	std::vector<double> print_coords; // TMP
+	// The candidate optimal posotion for each tagged vertex is given 
+	// by the meah of the coordinates of its neighbour vertices that belong to the surface.
+	for (TetVertex* v : mesh.vrts()) if(v->isMarked<0>() && v->isMarked<1>()){
+		TetVertices vv;  v->VV(vv);
+		uint32_t n_constr_neighs = 0;
+		double x_virt=0.0, y_virt=0.0, z_virt=0.0;
+		for (TetVertex* w : vv) if(!w->isMarked<0>()){
+			n_constr_neighs++;
+			double x,y,z;  w->getPoint()->getApproxXYZCoordinates(x,y,z);
+			x_virt += x;  y_virt += y;  z_virt += z;
+		}
+		// NOTE. what happens to movable vertices sorrounded only by movable vertices??
+		// move the vertex to the new position only if the qulity of its incident tets
+		// remain acceptable, if it is not the case try to get new potion closer to the original one.
+		if(n_constr_neighs != 0){
+			double den = (double) n_constr_neighs;
+			x_virt /= den;  y_virt /= den;  z_virt /= den;
+			explicitPoint3D* origin_v = (explicitPoint3D*) &v->getPoint()->toExplicit3D();
+			double x,y,z; origin_v->getApproxXYZCoordinates(x,y,z);
+
+			uint32_t n_it = 0;
+			bool vt_quality_conserved = true;
+			double t=1;
+			while(n_it < 4){
+				explicitPoint3D* virt_v = new explicitPoint3D( (1-t)*x + t*x_virt, (1-t)*y + t*y_virt, (1-t)*z + t*z_virt );
+				v->setPoint(virt_v);
+				Tetrahedra vt;  v->VT(vt);
+				for(Tetrahedron* t : vt){
+					if( !mesh.isTetPositive(t) || mesh.computeTetCost(t,false) > optim_ratio ){ 
+						v->setPoint(origin_v);
+						vt_quality_conserved = false; 
+						delete virt_v;
+						break;
+					}
+				}
+				if(vt_quality_conserved){ 
+					// std::cout<<"SMOOTHED("<<n_it<<")\n";
+					// std::cout<<"ori: "<<origin_v->X()<<" "<<origin_v->Y()<<" "<<origin_v->Z()<<"\n";
+					// std::cout<<"new: "<<virt_v->X()<<" "<<virt_v->Y()<<" "<<virt_v->Z()<<"\n";
+					// std::cout<<"displ: "<<sqrt(vector3d(origin_v).dist_sq(vector3d(virt_v)))<<"\n\n";
+					// delete origin_v; WHY MAKE THE PROGRAM CRASH??
+					// TMP
+					// if(sqrt(vector3d(origin_v).dist_sq(vector3d(virt_v))) > 0){
+					// 	print_coords.push_back(virt_v->X());
+					// 	print_coords.push_back(virt_v->Y());
+					// 	print_coords.push_back(virt_v->Z());
+					// }
+					break;
+				}
+				t *= 0.5;
+				vt_quality_conserved = true;
+				n_it++;
+			}
+		}
+
+	}
+
+	// TMP
+	if(!print_coords.empty()){
+		FILE* fp = fopen("Mvrts.off", "w");
+        fprintf(fp, "OFF\n%zu 0 0\n", print_coords.size()/3);
+        for(size_t i=0; i<print_coords.size()/3; i++)
+        fprintf(fp, "%f %f %f\n", print_coords[3*i], print_coords[3*i+1], print_coords[3*i+2]);
+		fclose(fp);
+	}
+
+	for (TetVertex* v : mesh.vrts()){ v->unmark<0>(); v->unmark<1>();} // Reset
 }
 
 void markInternalTets(Tetrahedrization& mesh, TetMesh* cdt) {
@@ -163,7 +405,8 @@ void markInternalTets(Tetrahedrization& mesh, TetMesh* cdt) {
 	//for (Tetrahedron* t : mesh.tets()) t->is_internal = isTetInternal(t, cdt);
 
 	// Smarter method - exploit adjacencies to make location in CDT faster
-	for (Tetrahedron* t : mesh.tets()) t->unmark<0>();
+	// for (Tetrahedron* t : mesh.tets()) t->unmark<0>();
+	for (Tetrahedron* t : mesh.tets()){ t->unmark<0>(); t->unmark<1>(); } // TMP
 	Tetrahedra todo;
 	todo.reserve(mesh.tets().size());
 	Tetrahedron *s, *t = mesh.tets().front();
@@ -178,6 +421,8 @@ void markInternalTets(Tetrahedrization& mesh, TetMesh* cdt) {
 		s = t->t2(); if (s != NULL && !s->isMarked<0>()) { todo.push_back(s); s->mark<0>(); }
 		s = t->t3(); if (s != NULL && !s->isMarked<0>()) { todo.push_back(s); s->mark<0>(); }
 	}
+
+
 
 	for (Tetrahedron* t : mesh.tets()) t->unmark<0>();
 	for (TetVertex* v : mesh.vrts()) v->unmark<0>();
@@ -254,6 +499,8 @@ int main(int argc, char* argv[])
 	bool produce_output = (options.find('o') != std::string::npos);
 	bool lowBnd_onMeshDist = (options.find('a') != std::string::npos);
 
+	double optim_ratio = 2.0;
+
 	if (log_mode) startLogging(filename);
 
 	// Load a valid PLC from file
@@ -274,11 +521,12 @@ int main(int argc, char* argv[])
 	TetMesh tin;
 
 	std::vector<genericPoint*> chamf_vertices;
+	std::vector<uint32_t> to_close_ref_vrts;
 	std::vector<std::vector<uint32_t>> chamf_faces;
 	double epsilon = plc.bbDiag() / 1000.0;	// Use bounding-box-diagonal/1000 as chamfering distance
 
 	bool simplify_chamferd_plc = true; // try to remove uncessary edges while keeping non-acute angles
-	bool input_encloses_vol = chamferPLC(plc, epsilon, chamf_vertices, chamf_faces, simplify_chamferd_plc, options.find('v') != std::string::npos);
+	bool input_encloses_vol = chamferPLC(plc, epsilon, chamf_vertices, to_close_ref_vrts, chamf_faces, simplify_chamferd_plc, options.find('v') != std::string::npos);
 
 	if (log_mode) advance_ProcessLogging("chamfering");
 
@@ -300,7 +548,7 @@ int main(int argc, char* argv[])
 	TetMesh *cdt = NULL;  
 	if(lowBnd_onMeshDist){
 		double min_PLC_dist = DBL_MAX;
-		cdt = createSteinerCDT(plc, min_PLC_dist); // needed to compute lower bound on generic mesh elements distances
+		cdt = createSteinerCDT(plc, min_PLC_dist, false); // needed to compute lower bound on generic mesh elements distances
 		double mesh_BBox_len = euclideanDistance(mesh.vrts().back(), mesh.vrts()[mesh.num_vertices()-8]);
 		min_PLC_dist = min_PLC_dist / (3.0 * mesh_BBox_len); // the lower bound is 1/3 * min_PLC_dist normalized wrt mesh bounding box diagonal
 		std::cout << "Distance of closest generic mesh elements, relative to bb diagonal: " << min_PLC_dist << "\n";
@@ -349,9 +597,13 @@ int main(int argc, char* argv[])
 
 	// Tet optimization
 	std::cout << "Optimizing tets...\n";
-	mesh.optimizeTets(2.0, false, true);
+	mesh.optimizeTets(optim_ratio, false, true);
 
 	if (log_mode) advance_ProcessLogging("tet_optim");
+
+	// Creates a .off file with all optimized vertices and
+	// an optimized triangulation of the input plc, to be used as input for cdt
+	get_vrts_and_tris_for_cdt(mesh, to_close_ref_vrts);
 
 	// Remove external tets after chamfering
 	// In case the input edges has even number of incident input triangles,
@@ -362,13 +614,58 @@ int main(int argc, char* argv[])
 		std::cout<<"Input encloses a volume\n";
 		if(cdt==NULL){ 
 			double zero=0.0; 
-			cdt = createSteinerCDT(plc, zero);
+			cdt = createSteinerCDT(plc, zero, false);
 		}
 		markInternalTets(mesh, cdt);
 
 		if (log_mode) advance_ProcessLogging("IntExt_class");
 	}
 	else{ for (Tetrahedron* t : mesh.tets()) t->is_internal = true; }
+
+	// smoothing vertices
+	// smoothVertices(mesh, plc.numVertices()+8, optim_ratio);
+
+	// TMP start
+	// size_t num_v = 0, num_t = 0;
+	// for (TetVertex* v : mesh.vrts()) v->setInfo(0);
+	// for (TetFace* f : mesh.faces()) f->unmark<0>();
+	// for (Tetrahedron* t : mesh.tets()) if (t->isMarked<1>()) {
+	// 	t->f0()->mark<0>();
+	// 	t->f1()->mark<0>();
+	// 	t->f2()->mark<0>();
+	// 	t->f3()->mark<0>();
+	// }
+	// for (TetFace* f : mesh.faces()) if(f->isMarked<0>()){
+	// 	f->v0()->setInfo((void*)1);
+	// 	f->v1()->setInfo((void*)1);
+	// 	f->v2()->setInfo((void*)1);
+	// 	num_t++;
+	// }
+	// for (TetVertex* v : mesh.vrts()) if (v->getInfo()) {
+	// 	num_v++;
+	// 	v->setInfo((void*)(num_v));
+	// }
+	// FILE* fp;
+	// if ((fp = fopen("removed_bnd_tets.off", "w")) == NULL) ip_error("main TMP cannot open file\n");
+	// fprintf(fp, "OFF\n");
+	// fprintf(fp, "%zu %zu 0\n", num_v, num_t);
+	// for (TetVertex* v : mesh.vrts()) if (v->getInfo()) {
+	// 	const pointType* p = v->getPoint();
+	// 	double x, y, z; p->getApproxXYZCoordinates(x, y, z);
+	// 	fprintf(fp, "%f %f %f\n", x, y, z);
+	// }
+	// for (TetFace* f : mesh.faces()) if (f->isMarked<0>()) {
+	// 	size_t i1, i2, i3;
+	// 	i1 = (size_t)f->v0()->getInfo();
+	// 	i2 = (size_t)f->v1()->getInfo();
+	// 	i3 = (size_t)f->v2()->getInfo();
+	// 	fprintf(fp, "3 %zu %zu %zu\n", i1 - 1, i2 - 1, i3 - 1);
+	// }
+	// for (TetVertex* v : mesh.vrts()) v->setInfo(0);
+	// for (Tetrahedron* t : mesh.tets()) t->unmark<1>();
+	// for (TetFace* f : mesh.faces()) f->unmark<0>();
+	// fclose(fp);
+	// TMP end
 	
 	chrono_clock::time_point now = chrono_clock::now();
 	uint64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - time_point).count();

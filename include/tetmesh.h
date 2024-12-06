@@ -69,17 +69,19 @@ typedef std::vector<Tetrahedron*> Tetrahedra;
 uint32_t _TetVertexGlobalIndex = 0;
 #define GLOBAL_INDEX_DECL uint32_t _index
 #define INIT_GLOBAL_INDEX _index = _TetVertexGlobalIndex++
+#define DEINIT_GLOBAL_INDEX _index = _TetVertexGlobalIndex--
 #define TETVERTEX_INDEX _index
 #else
 #define GLOBAL_INDEX_DECL
 #define INIT_GLOBAL_INDEX
+#define DEINIT_GLOBAL_INDEX
 #define TETVERTEX_INDEX this
 #endif
 
 class TetVertex : public TetElement
 {
 	pointType *_p;
-
+	
 protected:
 	TetEdge* e0;
 	PLC_Segments* vs_rel;
@@ -90,11 +92,13 @@ public:
 	TetVertex() : TetElement(), _p(NULL), e0(NULL), vs_rel(NULL) { INIT_GLOBAL_INDEX; }
 	TetVertex(pointType* a) : TetElement(), _p(a), e0(NULL), vs_rel(NULL) { INIT_GLOBAL_INDEX; }
 	TetVertex(double x, double y, double z) : TetElement(), _p(new explicitPoint(x,y,z)), e0(NULL), vs_rel(NULL) { INIT_GLOBAL_INDEX; }
-
+	TetVertex(pointType* a, bool dont_index) : TetElement(), _p(a), e0(NULL), vs_rel(NULL) { }
+	//~TetVertex(){ DEINIT_GLOBAL_INDEX; }
 #ifdef USE_MEMORY_POOLS
 	void* operator new (std::size_t count);
 	void operator delete(void* pointer);
 #endif
+
 
 	uint64_t getIndex() const { return (uint64_t)TETVERTEX_INDEX; }
 
@@ -1247,6 +1251,7 @@ public:
 
 	const Tetrahedra& tets() const { return T; }
 	const TetVertices& vrts() const { return V; }
+	const TetFaces& faces() const { return F; }
 	const PLC_Segments& get_PLCsegs() const { return S; }
 	const PLC_Faces& get_PLCfaces() const { return G; }
 
@@ -1267,6 +1272,11 @@ public:
 		for (auto* e : E) if ((ad = euclideanDistance(e->v0(), e->v1())) < cp) cp = ad;
 
 		return cp / euclideanDistance(V.back(), V[V.size()-8]);
+	}
+
+	// replaceVertex : add by Lorenzo 15/11/2024
+	void replaceVertex(TetVertex* old_vrt_ptr, TetVertex* new_vrt_ptr){
+		std::replace(V.begin(), V.end(), old_vrt_ptr, new_vrt_ptr);
 	}
 
 	void delaunizePLCFaces() {
@@ -1770,7 +1780,7 @@ public:
 		explicitPoint3D cc(ccc[0], ccc[1], ccc[2]);
 
 		TETMESH_STATIC Tetrahedra cavity;
-		TetVertex vm(&cc);
+		TetVertex vm(&cc, true);
 		getCavity(&vm, cavity, t);
 
 		//   Check whether cc encroaches upon any segment
@@ -1797,6 +1807,16 @@ public:
 
 		cavity.clear();
 		return split;
+	}
+
+	// Add by Lorenzo 15/11/2024
+	// Calculate the cost of a virtual tetrahedron
+	static double computeVirtTetCost(const pointType* v0, const pointType* v1, const pointType* v2, const pointType* v3) {
+		double ccc[3];
+		const pointType* v[4] = { v0, v1, v2, v3 };
+		const double shortest_edge_sqlen = getTetShortestEdgeSqLength(v);
+		const double sqrad = circumsphere_ludecomp(v[0], v[1], v[2], v[3], ccc);
+		return sqrad / shortest_edge_sqlen;
 	}
 
 	//////////////////////////
