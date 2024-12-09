@@ -40,15 +40,15 @@ bool chamferPLC(inputPLC& _plc,
 	std::vector<genericPoint*>& _vertices,
 	std::vector<uint32_t>& _conn_vertices,
 	std::vector<std::vector<uint32_t>>& _faces,
-	bool simplify_cham_plc, bool verbose) {
+	bool simplify_cham_plc, bool print_surf,
+	bool verbose) {
 	
 	PLCc* cut_plc = new PLCc(_plc, _epsilon, true, verbose);
 
 	if (simplify_cham_plc) {
 		size_t num_edges = cut_plc->edges.size();
 		cut_plc->chamfered_plc_simplification();
-		// assert( cut_plc->checkup() );
-		// assert( cut_plc->check_acuteness() );
+		// assert( cut_plc->checkup() ); // DEBUG
 		if (verbose) std::cout << "Chamfered PLC simplication COMPLETED: " << num_edges - cut_plc->edges.size() << " edges removed.\n";
 	}
 
@@ -68,22 +68,17 @@ bool chamferPLC(inputPLC& _plc,
 	}
 
 	_faces.resize(out_tri.size() / 3);	
+	uint32_t v0, v1, v2;
 	for (size_t i = 0; i < out_tri.size() / 3; i++) {
-		_faces[i].push_back(used_vertex[out_tri[i * 3]]);
-		_faces[i].push_back(used_vertex[out_tri[i * 3 + 1]]);
-		_faces[i].push_back(used_vertex[out_tri[i * 3 + 2]]);
+		v0 = used_vertex[ out_tri[i * 3    ] ];
+		v1 = used_vertex[ out_tri[i * 3 + 1] ];
+		v2 = used_vertex[ out_tri[i * 3 + 2] ];
+		_faces[i].assign({v0,v1,v2});
 	}
 
-	bool get_complement = true;
-	if(get_complement){
-		std::vector<uint32_t> compl_tri;
-		cut_plc->get_complementar_tri(out_tri, compl_tri);
-		compl_tri.insert(compl_tri.end(), out_tri.begin(), out_tri.end());
-		cut_plc->saveTriangles(compl_tri, "all_tris_chamf.off");
-	}
-	
+	// cut_plc->save_rebuilded_input_after_chamfering(out_tri, "all_tris_chamf.off"); // DEBUG
 	// cut_plc->saveFaces(); // save polygonal faces
-	cut_plc->saveTriangles(out_tri, "chamfered_plc.off"); // save triangulated faces
+	if(print_surf) cut_plc->saveTriangles(out_tri, "chamfered_plc.off"); // save triangulated faces
 
 	return cut_plc->input_plc_defines_interior();
 }
@@ -460,15 +455,22 @@ int main(int argc, char* argv[])
 #ifndef DEBUG
 	if (argc < 2) {
 		std::cout << "Mesher - Create a well-shaped tetrahedral mesh out of a triangulated OFF file.\n";
-		std::cout << "USAGE: ./delmesher [-v][-l][-o][-t 60][-m 32000][-d 8] filename.off\n";
+		std::cout << "USAGE: ./delmesher [-v][-l][-o][-d 8] filename.off\n";
 		std::cout << "OPTIONS:\n";
+		std::cout << "\t[-a] -> extract from the Delaunay refined mesh a vaild input and gives it to a CDT algorithm that produces a conforming and quasi-optimal volume mesh (output see below) \n";
+		std::cout << "\t[-s] -> produce as output the constrained surface of the quasi-optimal-CDT (see below)\n";
+		std::cout << "\t[-i] -> (forces -a activation) if the input encloses a volume, uses only internal points and contrained faces as input for the quasi-optimal-CDT.\n";
 		std::cout << "\t[-v] -> verbose mode\n";
 		std::cout << "\t[-l] -> logging mode\n";
 		std::cout << "\t[-d exp (pos. integer)] -> avoid Delaunay Refinement if the min pt.s dist after chamfering is < 10^-exp\n";
-		std::cout << "\t[-a] -> computes the lower bound for minimum distance between mesh elements (point - segment - triangle), otherwise only point-point distances are computed.\n";
-		std::cout << "\t[-o] -> produces outputs (see below)\n";
+		std::cout << "\t[-b] -> computes the lower bound for minimum distance between mesh elements (point - segment - triangle), otherwise only point-point distances are computed.\n";
+		std::cout << "\t[-o] -> produces outputs related to Delaunay refinement algorithm (see below)\n";
+		std::cout << "\t[-c] -> produces an intermediate output (see below)\n";
 		std::cout << "OUTPUT:\n";
-		std::cout << "\t when [-o] is activated produces a volumetric (mesh.tet) and a surface (plcfaces.off) meshes.\n";
+		std::cout << "\t when [-a] is activated produces a volumetric (DRCDT_mesh.tet) meshe.\n";
+		std::cout << "\t when [-s] is activated produces a surface (DRCDT_plcfaces.off) meshes.\n";
+		std::cout << "\t when [-o] is activated produces a volumetric (DR_mesh.tet) and a surface (DR_plcfaces.off) meshes.\n";
+		std::cout << "\t when [-c] is activated produces a surface (chamfered_plc.off) mesh of the chamfered plc (intermediate construction).\n";
 		std::cout << "RETURNS:\n";
 		std::cout << "\t0 when the whole execution terminates correctly (also when an iperror occours)\n";
 		std::cout << "\t10 when option -d is activated and min dist. is violated\n";
@@ -496,8 +498,13 @@ int main(int argc, char* argv[])
 
 	bool log_mode = (options.find('l') != std::string::npos);
 	bool verbose_mode = (options.find('v') != std::string::npos);
-	bool produce_output = (options.find('o') != std::string::npos);
-	bool lowBnd_onMeshDist = (options.find('a') != std::string::npos);
+	bool output_cdt = (options.find('a') != std::string::npos);
+	bool only_interior_output_cdt = (options.find('i') != std::string::npos);
+	if(only_interior_output_cdt) output_cdt = true;
+	bool produce_outcdt_surf = (options.find('s') != std::string::npos);
+	bool produce_cahm_surf = (options.find('c') != std::string::npos);
+	bool produce_DR_output = (options.find('o') != std::string::npos);
+	bool lowBnd_onMeshDist = (options.find('b') != std::string::npos);
 
 	double optim_ratio = 2.0;
 
@@ -526,7 +533,7 @@ int main(int argc, char* argv[])
 	double epsilon = plc.bbDiag() / 1000.0;	// Use bounding-box-diagonal/1000 as chamfering distance
 
 	bool simplify_chamferd_plc = true; // try to remove uncessary edges while keeping non-acute angles
-	bool input_encloses_vol = chamferPLC(plc, epsilon, chamf_vertices, to_close_ref_vrts, chamf_faces, simplify_chamferd_plc, options.find('v') != std::string::npos);
+	bool input_encloses_vol = chamferPLC(plc, epsilon, chamf_vertices, to_close_ref_vrts, chamf_faces, simplify_chamferd_plc, produce_cahm_surf, verbose_mode);
 
 	if (log_mode) advance_ProcessLogging("chamfering");
 
@@ -624,48 +631,6 @@ int main(int argc, char* argv[])
 
 	// smoothing vertices
 	// smoothVertices(mesh, plc.numVertices()+8, optim_ratio);
-
-	// TMP start
-	// size_t num_v = 0, num_t = 0;
-	// for (TetVertex* v : mesh.vrts()) v->setInfo(0);
-	// for (TetFace* f : mesh.faces()) f->unmark<0>();
-	// for (Tetrahedron* t : mesh.tets()) if (t->isMarked<1>()) {
-	// 	t->f0()->mark<0>();
-	// 	t->f1()->mark<0>();
-	// 	t->f2()->mark<0>();
-	// 	t->f3()->mark<0>();
-	// }
-	// for (TetFace* f : mesh.faces()) if(f->isMarked<0>()){
-	// 	f->v0()->setInfo((void*)1);
-	// 	f->v1()->setInfo((void*)1);
-	// 	f->v2()->setInfo((void*)1);
-	// 	num_t++;
-	// }
-	// for (TetVertex* v : mesh.vrts()) if (v->getInfo()) {
-	// 	num_v++;
-	// 	v->setInfo((void*)(num_v));
-	// }
-	// FILE* fp;
-	// if ((fp = fopen("removed_bnd_tets.off", "w")) == NULL) ip_error("main TMP cannot open file\n");
-	// fprintf(fp, "OFF\n");
-	// fprintf(fp, "%zu %zu 0\n", num_v, num_t);
-	// for (TetVertex* v : mesh.vrts()) if (v->getInfo()) {
-	// 	const pointType* p = v->getPoint();
-	// 	double x, y, z; p->getApproxXYZCoordinates(x, y, z);
-	// 	fprintf(fp, "%f %f %f\n", x, y, z);
-	// }
-	// for (TetFace* f : mesh.faces()) if (f->isMarked<0>()) {
-	// 	size_t i1, i2, i3;
-	// 	i1 = (size_t)f->v0()->getInfo();
-	// 	i2 = (size_t)f->v1()->getInfo();
-	// 	i3 = (size_t)f->v2()->getInfo();
-	// 	fprintf(fp, "3 %zu %zu %zu\n", i1 - 1, i2 - 1, i3 - 1);
-	// }
-	// for (TetVertex* v : mesh.vrts()) v->setInfo(0);
-	// for (Tetrahedron* t : mesh.tets()) t->unmark<1>();
-	// for (TetFace* f : mesh.faces()) f->unmark<0>();
-	// fclose(fp);
-	// TMP end
 	
 	chrono_clock::time_point now = chrono_clock::now();
 	uint64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - time_point).count();
@@ -683,9 +648,9 @@ int main(int argc, char* argv[])
 		std::cout << std::endl;
 	}
 
-	if(produce_output){
-		mesh.saveTET("mesh.tet");
-		mesh.saveOFFInterface("plcfaces.off");
+	if(produce_DR_output){
+		mesh.saveTET("DR_mesh.tet");
+		mesh.saveOFFInterface("DR_plcfaces.off");
 	}
 	
 	std::cout << "Execution correctly COMPLETED.\n\n\n";

@@ -623,6 +623,13 @@ public:
         fclose(fp);
     }
 
+    void save_rebuilded_input_after_chamfering(const std::vector<uint32_t>& tri_cham_faces, const char* title){
+        std::vector<uint32_t> compl_tri;
+		get_complementar_tri(tri_cham_faces, compl_tri);
+		compl_tri.insert(compl_tri.end(), tri_cham_faces.begin(), tri_cham_faces.end());
+		saveTriangles(compl_tri, title);
+    }
+
 
     // Debug
 
