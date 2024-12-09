@@ -1542,14 +1542,14 @@ public:
 		while (!dirty_Triangles.empty()) {
 			#ifdef DISP_PROGRESS
 			if (verbose){ 
-				printf("\r\r\r\r\r\r\r\r\r%zu tris missing..                     ", dirty_Triangles.size()); fflush(stdout);
+				printf("\r%zu tris missing..                     ", dirty_Triangles.size()); fflush(stdout);
 			}
 			#endif
 			DelTriangle* t = dirty_Triangles.back();
 			dirty_Triangles.pop_back();
 			t->unsetDirty();
 			TetFace* h = getTriangle(t->v0(), t->v1(), t->v2());
-			if (h == NULL  || h->isEncroached()) {
+			if (h == NULL  || (h->isOnBoundary() && h->isEncroached())) {
 				PLC_Face* f = (PLC_Face*)t->getInfo();
 				recoverDelaunayTriangle(f, t);
 				rec = true;
@@ -1567,7 +1567,7 @@ public:
 		for (PLC_Face* f : G) {
 			for (DelTriangle* t : f->getTriangles()) if (t->is_internal) {
 				TetFace* h = getTriangle(t->v0(), t->v1(), t->v2());
-				if (h == NULL  || h->isEncroached()) queueDirtyTriangle(t);
+				if (h == NULL  || (h->isOnBoundary() && h->isEncroached())) queueDirtyTriangle(t);
 				else h->deltri = t;
 			}
 		}
@@ -1834,7 +1834,13 @@ public:
 	//
 	//////////////////////////
 	
-	void optimizeTets(double threshold_ratio = 2.0, bool remove_slivers =false, bool use_offcenters =true) {
+	void optimizeTets(double threshold_ratio = 2.0, bool remove_slivers =false, bool use_offcenters =true, uint32_t max_num_vertices =UINT32_MAX) {
+	
+		if (num_vertices() >= max_num_vertices) {
+			deleteVSRelation();
+			return;
+		}
+
 		threshold_ratio *= threshold_ratio; // Make it squared to account for squares everywhere
 		bool split;
 		const double offcenter_tr = (use_offcenters) ? (threshold_ratio) : (0);
@@ -1864,8 +1870,14 @@ public:
 				if (!t->isLinked()) continue;
 				size_t tets_before = T.size();
 
-				if (optimizeOneTet(t, offcenter_tr)) split = true;
-
+				if (optimizeOneTet(t, offcenter_tr)) {
+					if (num_vertices() >= max_num_vertices) {
+						split = false;
+						break;
+					}
+					split = true;
+				}
+				
 				for (size_t i = tets_before; i < T.size(); i++) if (T[i]->isLinked()) {
 					if (setAndGetTetCost(T[i], remove_slivers) > threshold_ratio) queue.push(T[i]);
 				}
