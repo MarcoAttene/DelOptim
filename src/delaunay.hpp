@@ -460,9 +460,11 @@ uint64_t TetMesh::searchTetrahedron(uint64_t tet, const uint32_t v_id)
         tet = getIthNeighbor(getTetNeighs(tet), 3);
 
     uint64_t i, f0 = 4;
+    uint64_t count = 0, maxcnt = numTets();
+
     do {
         const uint32_t* Node = getTetNodes(tet);
-        if (Node[3] == INFINITE_VERTEX) return tet;
+        if (Node[3] == INFINITE_VERTEX || count++ == maxcnt) return tet;
 
         const uint64_t* Neigh = getTetNeighs(tet);
         for (i = 0; i < 4; i++)
