@@ -290,6 +290,15 @@ bool TetMesh::saveConstrTrisToOFF(const char* filename, const std::vector<bool>&
     return true;
 }
 
+uint32_t TetMesh::countConstrTris(const std::vector<bool>& constrTris) const {
+
+    size_t num_tris = 0;
+    for (uint64_t i = 0; i < tet_node.size(); i++) 
+        if (i > tet_neigh[i] && constrTris[i] ) num_tris++;
+
+    return num_tris;
+}
+
 bool TetMesh::saveRationalTET(const char* filename, bool inner_only)
 {
 #ifdef USE_INDIRECT_PREDS
@@ -1301,5 +1310,9 @@ double TetMesh::compute_closest_features_dist(const std::vector<bool>& constr_tr
     }
 
     return sqrt(md);
+}
+
+void TetMesh::set_min_inputPLC_dist(const std::vector<bool>& constr_tri_asCorners){
+    min_inputPLC_dist = compute_closest_features_dist(constr_tri_asCorners);
 }
 

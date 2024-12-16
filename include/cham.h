@@ -214,6 +214,7 @@ class PLCc{
 private:
     bool verbose;
     bool def_interior;
+    bool manifold;
 
 public:
     const double epsilon;
@@ -237,7 +238,7 @@ public:
     std::vector<uint32_t> mark_edges;
     std::vector<uint32_t> mark_faces;
 
-    PLCc(const inputPLC& _plc, const double _epsilon, bool _def_interior, bool _verbose) : plc(_plc), epsilon(_epsilon), n_in_vrts(_plc.numVertices()), def_interior(_def_interior), verbose(_verbose) {
+    PLCc(const inputPLC& _plc, const double _epsilon, bool _verbose) : plc(_plc), epsilon(_epsilon), n_in_vrts(_plc.numVertices()), def_interior(true), manifold(true), verbose(_verbose) {
         
         #ifdef PLCC_VERBOSE_DEBUG
         verbose = true;
@@ -317,6 +318,7 @@ public:
     }
 
     bool input_plc_defines_interior() const { return def_interior; }
+    bool input_plc_is_manifold() const { return manifold; }
 
     // Search for acute angle between PLCc elements
     
@@ -625,7 +627,7 @@ public:
 
     void save_rebuilded_input_after_chamfering(const std::vector<uint32_t>& tri_cham_faces, const char* title){
         std::vector<uint32_t> compl_tri;
-		get_complementar_tri(tri_cham_faces, compl_tri);
+        get_complementar_tri(tri_cham_faces, compl_tri);
 		compl_tri.insert(compl_tri.end(), tri_cham_faces.begin(), tri_cham_faces.end());
 		saveTriangles(compl_tri, title);
     }

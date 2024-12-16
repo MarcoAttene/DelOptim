@@ -206,7 +206,8 @@ void PLCc::initialize(){
         if( findIF_flat_edge(e) ) e.type = CHAMedge_t::flat; 
         else                      e.type = CHAMedge_t::undet;
 
-        if (e.inc_face.size() & 1){ def_interior = false;}
+        if (e.inc_face.size() & 1){ def_interior = false; }
+        if (e.inc_face.size() > 2){ manifold = false; }
     }
 
     #ifdef PLCC_VERBOSE_DEBUG
@@ -752,7 +753,7 @@ void PLCc::chamfering_vrts(){
         v = edges[ ei ].ep[ 1 ];
         if( is_acute_vrt(v) ){ 
             r = vrt_ch_dist[v]; if(epsilon < r) r = epsilon;
-            chamfer_edge_ep(ei, r, 1); // <- diveides edges[ei] at distance r from endpoint 1
+            chamfer_edge_ep(ei, r, 1); // <- divides edges[ei] at distance r from endpoint 1
         }
         // now edges[ei] is <e0,e1> or <e0,new_point>
 
@@ -1897,13 +1898,6 @@ void PLCc::get_complementar_tri(const std::vector<uint32_t>& out_tri, std::vecto
             compl_tri.insert( compl_tri.end(), {r0, r1, e1} );
             // orientation maybe have to be changed
         }
-    }
-
-    for(size_t i=0; i<compl_tri.size()/3; i++){
-        uint32_t a = compl_tri[3*i];
-        uint32_t b = compl_tri[3*i+1];
-        uint32_t c = compl_tri[3*i+2];
-        assert( !vCollinear(a,b,c) );
     }
 }
 

@@ -1244,7 +1244,9 @@ public:
 	Tetrahedrization() : facesAreDelaunized(false) {}
 
 	size_t num_vertices() { return V.size(); } const
+	size_t num_vertices() const { return V.size(); } const
 	size_t num_tetrahedra() { return T.size(); } const
+	size_t num_faces() const { return F.size(); }
 
 	void queueDirtySegment(PLC_Segment* s) { if (!s->isDirty()) { s->setDirty(); dirty_Segments.push_back(s); } }
 	void queueDirtyTriangle(DelTriangle* s) { if (!s->isDirty()) { s->setDirty(); dirty_Triangles.push_back(s); } }
@@ -1930,6 +1932,42 @@ public:
 		return sqrt(min);
 	}
 
+	void averageAngles(double& av_min_faceEE, double& av_max_faceEE, double& av_min_tetFF, double& av_max_tetFF) {
+		av_min_faceEE = 0.0; av_max_faceEE = 0.0;
+		av_min_tetFF = 0.0; av_max_tetFF = 0.0;
+		double min=DBL_MAX-1.0, max=0.0, tmp;
+		for (Tetrahedron* tet : T) {
+			min=DBL_MAX; max=0.0;
+			const pointType* v[] = { tet->v0()->getPoint(), tet->v1()->getPoint(), tet->v2()->getPoint(), tet->v3()->getPoint() };
+			tmp = getDihedralAngle(v[0],v[1],v[2],v[3]); if(tmp<min) min=tmp; else if(tmp>max) max=tmp;
+			tmp = getDihedralAngle(v[0],v[2],v[3],v[1]); if(tmp<min) min=tmp; else if(tmp>max) max=tmp;
+			tmp = getDihedralAngle(v[0],v[3],v[1],v[2]); if(tmp<min) min=tmp; else if(tmp>max) max=tmp;
+			tmp = getDihedralAngle(v[1],v[2],v[0],v[3]); if(tmp<min) min=tmp; else if(tmp>max) max=tmp;
+			tmp = getDihedralAngle(v[1],v[3],v[2],v[0]); if(tmp<min) min=tmp; else if(tmp>max) max=tmp;
+			tmp = getDihedralAngle(v[2],v[3],v[0],v[1]); if(tmp<min) min=tmp; else if(tmp>max) max=tmp;
+			if(min<0.0 || min>360.0) min = 0.0; // CORRECTION for near degenerate tetrahedra
+			if(max<0.0 || max>360.0) max = 180.0; // CORRECTION for near degenerate tetrahedra
+			av_min_tetFF += min;
+			av_max_tetFF += max;
+		}
+		av_min_tetFF /= num_tetrahedra();
+		av_max_tetFF /= num_tetrahedra();
+
+		for (TetFace* tri : F) {
+			min=DBL_MAX; max=0.0;
+			const pointType* v[] = { tri->v0()->getPoint(), tri->v1()->getPoint(), tri->v2()->getPoint()};
+			tmp = getAngle(v[0],v[1],v[2]); if(tmp<min) min=tmp; else if(tmp>max) max=tmp;
+			tmp = getAngle(v[1],v[2],v[0]); if(tmp<min) min=tmp; else if(tmp>max) max=tmp;
+			tmp = getAngle(v[2],v[0],v[1]); if(tmp<min) min=tmp; else if(tmp>max) max=tmp;
+			if(min<0.0 || min>180.0) min = 0.0; // CORRECTION for near degenerate triangles
+			if(max<0.0 || max>180.0) max = 180.0; // CORRECTION for near degenerate triangles
+			av_min_faceEE += min;
+			av_max_faceEE += max;
+		}
+		av_min_faceEE /= num_faces();
+		av_max_faceEE /= num_faces();
+	}
+
 	void minMaxTetAngle(double& minEE_IN, double& maxEE_IN, double& minEE_EX, double& maxEE_EX, double& minFF_IN, double& maxFF_IN, double& minFF_EX, double& maxFF_EX) const {
 		minEE_IN = DBL_MAX; minEE_EX = DBL_MAX;
 		maxEE_IN = 0.0; maxEE_EX = 0.0;
@@ -1962,8 +2000,9 @@ public:
 		}
 	}
 
-	void printReport(bool input_encloses_vol) const {
-		printf("\nMesh has %zu vertices and %zu tetrahedra\n", V.size(), T.size());
+	void printReport(bool input_encloses_vol, const char *mesh_name) {
+		printf("\n-- %s --\n", mesh_name);
+		printf("Mesh has %zu vertices and %zu tetrahedra\n", V.size(), T.size());
 
 		double mai, mae;
 		maxTetEnergy(mai, mae);
@@ -1982,6 +2021,14 @@ public:
 		if(input_encloses_vol) printf("\tExternal mesh: %f\n", minPlanEX);
 		printf("Max face angle:\n\tInternal mesh: %f\n", maxPlanIN);
 		if(input_encloses_vol) printf("\tExternal mesh: %f\n", maxPlanEX);
+		double avMinPlan, avMaxPlan, avMinDihed, avMaxDihed;
+		averageAngles(avMinPlan, avMaxPlan, avMinDihed, avMaxDihed);
+		printf("\nAverage angles (DEGs)\n");
+		printf("Average min per-face face angle: %f\n", avMinPlan);
+		printf("Average max per-face face angle: %f\n", avMaxPlan);
+		printf("Average min per-tet dihedral angle: %f\n", avMinDihed);
+		printf("Average max per-tet dihedral angle: %f\n", avMaxDihed);
+
 	}
 	// -----------------------------------
 	void insertExistingVertex(TetVertex* vm, Tetrahedron *st) {
@@ -2681,6 +2728,27 @@ protected:
 
 	void checkAllFaces() {
 		for (PLC_Face* f : G) f->check();
+	}
+
+	// Added by Lorenzo 12/12/2024
+	void export_DelTris_asTriVrtsInds(std::vector<uint32_t>& del_tri, bool exclude_bbtris) const {
+		del_tri.reserve(F.size());
+		for(const TetFace* tri : F) if(tri->deltri != NULL){
+			if(exclude_bbtris && (tri->t1()==NULL || tri->t2()==NULL) ) continue; // do not use bounding box boundary faces
+			const DelTriangle* t = tri->deltri;
+			del_tri.insert(del_tri.end(), 
+					{ (uint32_t) t->v0()->getIndex(), 
+					  (uint32_t) t->v1()->getIndex(), 
+					  (uint32_t) t->v2()->getIndex() } );
+		}
+	}
+	size_t count_DelTris(bool exclude_bbtris) const {
+		size_t counter = 0;
+		for(const TetFace* tri : F) if(tri->deltri != NULL){
+			if(exclude_bbtris && (tri->t1()==NULL || tri->t2()==NULL) ) continue; // do not count bounding box boundary faces
+			counter++;
+		}
+		return counter;
 	}
 };
 

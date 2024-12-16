@@ -8,13 +8,25 @@ inline void startLogging(const char* fn) {
     char log_prog_file_name[] = "delOpt_log_completed_steps.txt";
     
     char log_file_name[] = "delOpt_log.csv";
-    char first_line[] = "Input_File, chamPLC_minVrtsDist, num_vrts, num_tets, "
-                        "Elapsed_time(ms), Shortest_Edge, " 
-                        "max_Energy_int, max_Energy_ext, "
-                        "min_Face_Ang_int(DEG), max_Face_Ang_int(DEG), "
-                        "min_Face_Ang_ext(DEG), max_Face_Ang_ext(DEG), "
-                        "min_Dihed_Ang_int(DEG), max_Dihed_Ang_int(DEG), "
-                        "min_Dihed_Ang_ext(DEG), max_Dihed_Ang_ext(DEG)";
+    char first_line[] = "Input_File, Input_nV, Input_nTri, T_init(ms), manifold, open, "
+                        "cham_nV, cham_nTri, T_cham, cham_minDist, T_minDist, "
+                        "T_DRinit, T_DRer, T_DRfr, T_DRopt, T_DRie, "
+                        "DR_nV, DR_nTet, DR_nConTri, DR_Short_Edge, "
+                        "DR_ME_int, DR_ME_ext, "
+                        "DR_mFA_int(DEG), DR_MFA_int(DEG), "
+                        "DR_mFA_ext(DEG), DR_MFA_ext(DEG), "
+                        "DR_mDA_int(DEG), DR_MDA_int(DEG), "
+                        "DR_mDA_ext(DEG), DR_MDA_ext(DEG), "
+                        "DR_av_mFA(DEG), DR_av_MFA(DEG), "
+                        "DR_av_mDA(DEG), DR_av_MDA(DEG), "
+                        "T_CDT, CDT_nV, CDT_nTet, CDT_nConTri, "
+                        "CDT_ME_int, CDT_ME_ext, "
+                        "CDT_mFA_int(DEG), CDT_MFA_int(DEG), "
+                        "CDT_mFA_ext(DEG), CDT_MFA_ext(DEG), "
+                        "CDT_mDA_int(DEG), CDT_MDA_int(DEG), "
+                        "CDT_mDA_ext(DEG), CDT_MDA_ext(DEG), "
+                        "CDT_av_mFA(DEG), CDT_av_MFA(DEG), "
+                        "CDT_av_mDA(DEG), CDT_av_MDA(DEG)";
 
     if (fn != NULL) {
 

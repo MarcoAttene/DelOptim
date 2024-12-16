@@ -42,6 +42,9 @@
 // Tetrahedral mesh data structure
 
 class TetMesh {
+
+    double min_inputPLC_dist;
+
 public:
     // General purpose fields
     std::vector<pointType*> vertices; // Vertices
@@ -60,8 +63,8 @@ public:
     const bool has_outer_vertices; // This is TRUE if mesh vertices must survive after destruction
 
     // Constructor and destructor
-    TetMesh() : has_outer_vertices(false) {};
-    TetMesh(bool h) : has_outer_vertices(h) {};
+    TetMesh() : has_outer_vertices(false), min_inputPLC_dist(DBL_MAX) {};
+    TetMesh(bool h) : has_outer_vertices(h), min_inputPLC_dist(DBL_MAX) {};
     ~TetMesh() { if (!has_outer_vertices) flushVertices(); };
 
 
@@ -77,6 +80,8 @@ public:
     uint32_t countNonGhostTets() const {
         return numTets() - (uint32_t)std::count(tet_node.begin(), tet_node.end(), INFINITE_VERTEX);
     }
+
+    double get_min_inputPLC_dist() const { return min_inputPLC_dist; }
 
     // Fill the vertex vector with newly-created genericPoints
     void init_vertices(std::vector<genericPoint *>& pts);
@@ -107,6 +112,8 @@ public:
     // Save the interface between DT_IN and DT_OUT as an OFF file
     bool saveBoundaryToOFF(const char* filename) const;
     bool saveConstrTrisToOFF(const char* filename, const std::vector<bool>& constrTris) const;
+
+    uint32_t countConstrTris(const std::vector<bool>& constrTris) const;
 
     // As above, but saves rational coordinates and distinguishes between inner and outer tets
     bool saveRationalTET(const char* filename, bool inner_only = false);
@@ -381,6 +388,7 @@ public:
 
     bool is_constrained_edge(uint32_t ep0, uint32_t ep1, const std::vector<bool>& constr_tri_asCorners);
     double compute_closest_features_dist(const std::vector<bool>& constr_tri_asCorners);
+    void set_min_inputPLC_dist(const std::vector<bool>& constr_tri_asCorners);
 };
 
 
