@@ -2157,6 +2157,42 @@ public:
 		return true;
 	}
 
+	bool saveMEDIT(const char* filename)
+	{
+		uint64_t idx = 0;
+		for (TetVertex* v : V) v->setInfo((void*)idx++);
+		FILE* fp;
+		if ((fp = fopen(filename, "w")) == NULL) return false;
+
+		fprintf(fp, "MeshVersionFormatted 2\nDimension\n3\n");
+		fprintf(fp, "Vertices %zu\n", V.size());
+
+		double x, y, z;
+		for (TetVertex* v : V) {
+			const pointType* p = v->getPoint();
+			p->getApproxXYZCoordinates(x, y, z);
+			fprintf(fp, "%f %f %f 1\n", x, y, z);
+		}
+
+		fprintf(fp, "Tetrahedra %zu\n", T.size());
+
+		bool use_inner = true;
+		for (int i = 0; i < 2; i++) {
+			for (Tetrahedron* t : T) if (t->is_internal == use_inner) {
+				size_t i1 = (size_t)t->v0()->getInfo();
+				size_t i2 = (size_t)t->v1()->getInfo();
+				size_t i3 = (size_t)t->v2()->getInfo();
+				size_t i4 = (size_t)t->v3()->getInfo();
+				fprintf(fp, "%zu %zu %zu %zu %d\n", ++i1, ++i2, ++i3, ++i4, i+1);
+			}
+			use_inner = false;
+		}
+
+		for (TetVertex* v : V) v->setInfo(NULL);
+		fclose(fp);
+		return true;
+	}
+
 	bool saveOFFBoundary(const char* filename)
 	{
 		size_t num_v = 0, num_t = 0;
