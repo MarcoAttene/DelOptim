@@ -653,6 +653,7 @@ int main(int argc, char* argv[])
 		std::cout << "Mesher - Create a well-shaped tetrahedral mesh out of a triangulated OFF file.\n";
 		std::cout << "USAGE: ./delmesher [-v][-l][-o][-d 8] filename.off\n";
 		std::cout << "OPTIONS:\n";
+		std::cout << "\t[-m max_vrt] -> set to max_vrt the maximum number of vertices of the mesh during the Delaunay refinement stage.\n";
 		std::cout << "\t[-a] -> extract from the Delaunay refined mesh a vaild input and gives it to a CDT algorithm that produces a conforming and quasi-optimal volume mesh (output see below) \n";
 		std::cout << "\t[-s] -> produce as output the constrained surface of the quasi-optimal-CDT (see below)\n";
 		std::cout << "\t[-i] -> (forces -a activation) if the input encloses a volume, uses only internal points and constrained faces as input for the quasi-optimal-CDT.\n";
@@ -684,10 +685,12 @@ int main(int argc, char* argv[])
 	// Manage options
 	std::string options = "";
 	uint32_t min_dist_exp = UINT32_MAX;
+	uint32_t max_vrts = UINT32_MAX;
 
 	for (int i = 1; i < argc; i++)
 		if (argv[i][0] == '-') {
 			if (argv[i][1] == 'd') { min_dist_exp = atoi(argv[++i]); continue; }
+			if (argv[i][1] == 'm') { max_vrts = atoi(argv[++i]); continue; }
 			for (int j = 1; j < strlen(argv[i]); j++) options += argv[i][j];
 		}
 		else memcpy(filename, argv[i], strlen(argv[i]) + 1);
@@ -850,8 +853,11 @@ int main(int argc, char* argv[])
 
 	
 	// Tet optimization
-	if (verbose_mode) std::cout << "Optimizing tets...\n";
-	mesh.optimizeTets(optim_ratio, true, true, 100000);
+	if (verbose_mode) {
+		if(max_vrts==UINT32_MAX) std::cout << "Optimizing tets...\n";
+		else std::cout << "Optimizing tets (max number of vertices = "<<max_vrts<<") ...\n";
+	}
+	mesh.optimizeTets(optim_ratio, true, true, max_vrts);
 
 	now = chrono_clock::now();
 	uint64_t time_DRopt = std::chrono::duration_cast<std::chrono::milliseconds>(now - time_point).count();
