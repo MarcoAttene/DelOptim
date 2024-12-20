@@ -1837,11 +1837,8 @@ public:
 	//////////////////////////
 	
 	void optimizeTets(double threshold_ratio = 2.0, bool remove_slivers =false, bool use_offcenters =true, uint32_t max_num_vertices =UINT32_MAX) {
-	
-		if (num_vertices() >= max_num_vertices) {
-			deleteVSRelation();
-			return;
-		}
+
+		if (max_num_vertices < UINT32_MAX) max_num_vertices += num_vertices();
 
 		threshold_ratio *= threshold_ratio; // Make it squared to account for squares everywhere
 		bool split;
