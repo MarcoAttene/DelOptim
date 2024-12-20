@@ -26,7 +26,15 @@ inline void startLogging(const char* fn) {
                         "CDT_mDA_int(DEG), CDT_MDA_int(DEG), "
                         "CDT_mDA_ext(DEG), CDT_MDA_ext(DEG), "
                         "CDT_av_mFA(DEG), CDT_av_MFA(DEG), "
-                        "CDT_av_mDA(DEG), CDT_av_MDA(DEG)";
+                        "CDT_av_mDA(DEG), CDT_av_MDA(DEG), "
+                        "T_IN, IN_nV, IN_nTet, IN_nConTri, "
+                        "IN_ME_int, IN_ME_ext, "
+                        "IN_mFA_int(DEG), IN_MFA_int(DEG), "
+                        "IN_mFA_ext(DEG), IN_MFA_ext(DEG), "
+                        "IN_mDA_int(DEG), IN_MDA_int(DEG), "
+                        "IN_mDA_ext(DEG), IN_MDA_ext(DEG), "
+                        "IN_av_mFA(DEG), IN_av_MFA(DEG), "
+                        "IN_av_mDA(DEG), IN_av_MDA(DEG)";
 
     if (fn != NULL) {
 

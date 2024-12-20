@@ -82,7 +82,7 @@ bool chamferPLC(inputPLC& _plc, double _epsilon,
 	}
 
 	// Produce some intermediate output mesh and save .off files 
-	// cut_plc->save_rebuilded_input_after_chamfering(out_tri, "all_tris_chamf.off"); // Save chamfered input + complementar triangles to rebuild the input PLC
+	//cut_plc->save_rebuilded_input_after_chamfering(out_tri, "all_tris_chamf.off"); // Save chamfered input + complementar triangles to rebuild the input PLC
 	// cut_plc->saveFaces(); // save polygonal faces
 	if(print_surf) cut_plc->saveTriangles(out_tri, "chamfered_plc.off"); // save triangulated faces
 
@@ -119,9 +119,8 @@ TetMesh* createSteinerCDT(inputPLC& plc, bool min_PLC_dist, bool produce_output,
 
 // OPTIONAL: Compute the minum distance between any two mesh elements (vertices, edges, triangles)
 //			 A cdt is needed to make this computation efficient.
-double get_lower_bound_on_delRef_mesh_min_dist(inputPLC& plc, const Tetrahedrization& mesh, double closest_dist, TetMesh* cdt){
-	uint32_t tmp;
-	cdt = createSteinerCDT(plc, true, false, tmp); // needed to compute lower bound on generic mesh elements distances
+double get_lower_bound_on_delRef_mesh_min_dist(inputPLC& plc, const Tetrahedrization& mesh, double closest_dist, TetMesh* cdt, uint32_t& nct){
+	cdt = createSteinerCDT(plc, true, false, nct); // needed to compute lower bound on generic mesh elements distances
 	double mesh_BBox_len = euclideanDistance(mesh.vrts().back(), mesh.vrts()[mesh.num_vertices()-8]);
 	double min_PLC_dist = cdt->get_min_inputPLC_dist() / (3.0 * mesh_BBox_len); // the lower bound is 1/3 * min_PLC_dist normalized wrt mesh bounding box diagonal
 	// std::cout << "Distance of closest generic mesh elements, relative to bb diagonal: " << min_PLC_dist << "\n";
@@ -194,10 +193,258 @@ class bnd_vrt_chain {
 	bool operator<(const bnd_vrt_chain& c) const { return (r0 < c.r0 || ( r0 == c.r0 && r1 < c.r1 )); }
 };
 
+// Find the closest implicit vertex to 'p' and its distance 'd'
+// Mark all explicit vertices within distance 'd' from 'v'
+double markChamferExplicitNeighbors(Tetrahedrization& mesh, const pointType *p, double d) {
+	// Search the tet containing 'p'
+	Tetrahedron *t0 = mesh.searchTet(p);
+	if (t0 == NULL) ip_error("markChamferExplicitNeighbors: could not find 'p' in  'mesh'\n");
+
+	// Set 'mind' to the distance of the closest implicit vertex to p
+	const pointType* tp;
+	double mind = DBL_MAX, d0, d1, d2, d3;
+
+	Tetrahedra cavity;
+	Tetrahedron* s, * t;
+	const TetVertex* w;
+	cavity.push_back(t0); t0->mark<7>();
+	// for (size_t i = 0; i < cavity.size(); i++) {
+	// 	t = cavity[i];
+	// 	tp = t->v0()->getPoint(); d0 = sqEuclideanDistance(tp, p); if (!tp->isExplicit3D() && d0 < mind) mind = d0;
+	// 	tp = t->v1()->getPoint(); d1 = sqEuclideanDistance(tp, p); if (!tp->isExplicit3D() && d0 < mind) mind = d1;
+	// 	tp = t->v2()->getPoint(); d2 = sqEuclideanDistance(tp, p); if (!tp->isExplicit3D() && d0 < mind) mind = d2;
+	// 	tp = t->v3()->getPoint(); d3 = sqEuclideanDistance(tp, p); if (!tp->isExplicit3D() && d0 < mind) mind = d3;
+
+	// 	s = t->t0(); if (s != NULL && !s->isMarked<7>() && (d1 <= mind || d2 <= mind || d3 <= mind)) { cavity.push_back(s); s->mark<7>(); }
+	// 	s = t->t1(); if (s != NULL && !s->isMarked<7>() && (d0 <= mind || d2 <= mind || d3 <= mind)) { cavity.push_back(s); s->mark<7>(); }
+	// 	s = t->t2(); if (s != NULL && !s->isMarked<7>() && (d1 <= mind || d0 <= mind || d3 <= mind)) { cavity.push_back(s); s->mark<7>(); }
+	// 	s = t->t3(); if (s != NULL && !s->isMarked<7>() && (d1 <= mind || d2 <= mind || d0 <= mind)) { cavity.push_back(s); s->mark<7>(); }
+	// }
+
+	// mind *= 1.1;
+	// // Mark <0> any neighboring explicit vertex which is closest than 'mind' to p
+	// for (Tetrahedron* t : cavity) {
+	// 	t->unmark<7>();
+	// 	w = t->v0(); tp = w->getPoint(); if (tp->isExplicit3D() && sqEuclideanDistance(tp, p) < mind) { t->v0()->mark<0>(); }
+	// 	w = t->v1(); tp = w->getPoint(); if (tp->isExplicit3D() && sqEuclideanDistance(tp, p) < mind) { t->v1()->mark<0>(); }
+	// 	w = t->v2(); tp = w->getPoint(); if (tp->isExplicit3D() && sqEuclideanDistance(tp, p) < mind) { t->v2()->mark<0>(); }
+	// 	w = t->v3(); tp = w->getPoint(); if (tp->isExplicit3D() && sqEuclideanDistance(tp, p) < mind) { t->v3()->mark<0>(); }
+	// }
+
+	// return mind;
+
+	mind = d;
+	for (size_t i = 0; i < cavity.size(); i++) {
+		t = cavity[i];
+		tp = t->v0()->getPoint(); d0 = sqEuclideanDistance(tp, p); if (tp->isExplicit3D() && d0 < mind) { t->v0()->mark<0>(); }
+		tp = t->v1()->getPoint(); d1 = sqEuclideanDistance(tp, p); if (tp->isExplicit3D() && d1 < mind) { t->v1()->mark<0>(); } 
+		tp = t->v2()->getPoint(); d2 = sqEuclideanDistance(tp, p); if (tp->isExplicit3D() && d2 < mind) { t->v2()->mark<0>(); } 
+		tp = t->v3()->getPoint(); d3 = sqEuclideanDistance(tp, p); if (tp->isExplicit3D() && d3 < mind) { t->v3()->mark<0>(); }
+
+		s = t->t0(); if (s != NULL && !s->isMarked<7>() && (d1 <= mind || d2 <= mind || d3 <= mind)) { cavity.push_back(s); s->mark<7>(); }
+		s = t->t1(); if (s != NULL && !s->isMarked<7>() && (d0 <= mind || d2 <= mind || d3 <= mind)) { cavity.push_back(s); s->mark<7>(); }
+		s = t->t2(); if (s != NULL && !s->isMarked<7>() && (d1 <= mind || d0 <= mind || d3 <= mind)) { cavity.push_back(s); s->mark<7>(); }
+		s = t->t3(); if (s != NULL && !s->isMarked<7>() && (d1 <= mind || d2 <= mind || d0 <= mind)) { cavity.push_back(s); s->mark<7>(); }
+	}
+	for (Tetrahedron* t : cavity) { t->unmark<7>(); }
+
+	return mind;
+}
+
+
+inline double squaredDistanceFromSegment(const vector3d vv, const vector3d x1v, const vector3d x2v)
+{
+	vector3d x21((x2v)-(x1v));
+	vector3d x10((x1v)-(vv));
+	vector3d x20((x2v)-(vv));
+	if (x10 * x21 >= 0) return vv.dist_sq(x1v);
+	if (x20 * x21 <= 0) return vv.dist_sq(x2v);
+	x10 = x21 & x10;
+	return (x10 * x10) / (x21 * x21);
+}
+
+// Find the closest implicit vertex to 'p1' and 'p2' and its minimum distance 'd'
+// Mark all explicit vertices within distance 'd' from segment p1-p2.
+void markChamferExplicitNeighbors(Tetrahedrization& mesh, const pointType* p1, const pointType* p2, double d) {
+	// // Search the tet containing 'p1'
+	// Tetrahedron* t0 = mesh.searchTet(p1);
+	// if (t0 == NULL) ip_error("markChamferExplicitNeighbors: could not find 'p1' in 'mesh'\n");
+
+	// // Set 'mind'
+	// const pointType* tp;
+	// double d0, d1, d2, d3;
+	// d0 = markChamferExplicitNeighbors(mesh, p1, d);
+	// d1 = markChamferExplicitNeighbors(mesh, p2, d);
+	// double mind = (d0 > d1) ? (d0) : (d1);
+
+	// Tetrahedra cavity;
+	// Tetrahedron* s, * t;
+	// const TetVertex* w;
+	// cavity.push_back(t0); t0->mark<7>();
+	// for (size_t i = 0; i < cavity.size(); i++) {
+	// 	t = cavity[i];
+	// 	tp = t->v0()->getPoint(); d0 = squaredDistanceFromSegment(tp, p1, p2);
+	// 	tp = t->v1()->getPoint(); d1 = squaredDistanceFromSegment(tp, p1, p2);
+	// 	tp = t->v2()->getPoint(); d2 = squaredDistanceFromSegment(tp, p1, p2);
+	// 	tp = t->v3()->getPoint(); d3 = squaredDistanceFromSegment(tp, p1, p2);
+
+	// 	s = t->t0(); if (s != NULL && !s->isMarked<7>() && (d1 <= mind || d2 <= mind || d3 <= mind)) { cavity.push_back(s); s->mark<7>(); }
+	// 	s = t->t1(); if (s != NULL && !s->isMarked<7>() && (d0 <= mind || d2 <= mind || d3 <= mind)) { cavity.push_back(s); s->mark<7>(); }
+	// 	s = t->t2(); if (s != NULL && !s->isMarked<7>() && (d1 <= mind || d0 <= mind || d3 <= mind)) { cavity.push_back(s); s->mark<7>(); }
+	// 	s = t->t3(); if (s != NULL && !s->isMarked<7>() && (d1 <= mind || d2 <= mind || d0 <= mind)) { cavity.push_back(s); s->mark<7>(); }
+	// }
+
+	// // Mark <0> any neighboring explicit vertex which is closest than 'mind' to p1-p2
+	// for (Tetrahedron* t : cavity) {
+	// 	t->unmark<7>();
+	// 	w = t->v0(); tp = w->getPoint(); if (tp->isExplicit3D() && squaredDistanceFromSegment(tp, p1, p2) < mind) { t->v0()->mark<0>(); }
+	// 	w = t->v1(); tp = w->getPoint(); if (tp->isExplicit3D() && squaredDistanceFromSegment(tp, p1, p2) < mind) { t->v1()->mark<0>(); }
+	// 	w = t->v2(); tp = w->getPoint(); if (tp->isExplicit3D() && squaredDistanceFromSegment(tp, p1, p2) < mind) { t->v2()->mark<0>(); }
+	// 	w = t->v3(); tp = w->getPoint(); if (tp->isExplicit3D() && squaredDistanceFromSegment(tp, p1, p2) < mind) { t->v3()->mark<0>(); }
+	// }
+
+	// Search the tet containing 'p1'
+	Tetrahedron* t0 = mesh.searchTet(p1);
+	if (t0 == NULL) ip_error("markChamferExplicitNeighbors: could not find 'p1' in 'mesh'\n");
+
+	// Set 'mind'
+	const pointType* tp;
+	double d0, d1, d2, d3;
+	double mind = d;
+
+	Tetrahedra cavity;
+	Tetrahedron* s, * t;
+	const TetVertex* w;
+	cavity.push_back(t0); t0->mark<7>();
+	for (size_t i = 0; i < cavity.size(); i++) {
+		t = cavity[i];
+		tp = t->v0()->getPoint(); d0 = squaredDistanceFromSegment(tp, p1, p2); if (tp->isExplicit3D() && d0 < mind) { t->v0()->mark<0>(); }
+		tp = t->v1()->getPoint(); d1 = squaredDistanceFromSegment(tp, p1, p2); if (tp->isExplicit3D() && d1 < mind) { t->v1()->mark<0>(); }
+		tp = t->v2()->getPoint(); d2 = squaredDistanceFromSegment(tp, p1, p2); if (tp->isExplicit3D() && d2 < mind) { t->v2()->mark<0>(); }
+		tp = t->v3()->getPoint(); d3 = squaredDistanceFromSegment(tp, p1, p2); if (tp->isExplicit3D() && d3 < mind) { t->v3()->mark<0>(); }
+
+		s = t->t0(); if (s != NULL && !s->isMarked<7>() && (d1 <= mind || d2 <= mind || d3 <= mind)) { cavity.push_back(s); s->mark<7>(); }
+		s = t->t1(); if (s != NULL && !s->isMarked<7>() && (d0 <= mind || d2 <= mind || d3 <= mind)) { cavity.push_back(s); s->mark<7>(); }
+		s = t->t2(); if (s != NULL && !s->isMarked<7>() && (d1 <= mind || d0 <= mind || d3 <= mind)) { cavity.push_back(s); s->mark<7>(); }
+		s = t->t3(); if (s != NULL && !s->isMarked<7>() && (d1 <= mind || d2 <= mind || d0 <= mind)) { cavity.push_back(s); s->mark<7>(); }
+	}
+
+	for (Tetrahedron* t : cavity) { t->unmark<7>(); }
+}
+
+bool check_overlaps(const std::vector<const pointType *> vrts, const std::vector<uint32_t>& tri){
+	bool passed = true;
+	std::vector<bnd_edge> e;
+	const uint32_t* t;
+	for(size_t i=0; i<tri.size()/3; i++){
+		t = tri.data() + 3*i;
+		e.push_back( bnd_edge(*t     , *(t+1)) ); e.back().count = i;
+		e.push_back( bnd_edge(*(t+1) , *(t+2)) ); e.back().count = i;
+		e.push_back( bnd_edge(*(t+2) , *t	 ) ); e.back().count = i;
+	}
+
+	uint32_t u0, u1, v, w;
+	std::vector<uint32_t> otri;
+	for(size_t i=0; i<e.size()-1; i++) for(size_t j=i+1; j<e.size(); j++){
+		if( e[i].same_ep(e[j]) ){
+			u0 = e[i].e0; u1 = e[i].e1;
+			t = tri.data() + 3*e[i].count;
+			v = *t; if(v==u0 || v==u1){ v = *(t+1); if(v==u0 || v==u1) v = *(t+2); }
+			if(v==u0 || v==u1) std::cout<<"tri["<<i<<"] = <"<<*t<<" "<<*(t+1)<<" "<<*(t+2)<<">\n";
+			t = tri.data() + 3*e[j].count;
+			w = *t; if(w==u0 || w==u1){ w = *(t+1); if(w==u0 || w==u1) w = *(t+2); }
+			if(w==u0 || w==u1 || w==v) std::cout<<"tri["<<j<<"] = <"<<*t<<" "<<*(t+1)<<" "<<*(t+2)<<">\n";
+			if(v==w){
+				t = tri.data() + 3*e[i].count;
+				std::cout<<"tri["<<i<<"] = <"<<*t<<" "<<*(t+1)<<" "<<*(t+2)<<">\n";
+				std::cout<<"v="<<v<<" w="<<w<<"\n";
+				std::cout<<"u0="<<u0<<" u1="<<u1<<"\n";
+			}
+			assert(v!=u0 && v!=u1 && w!=u0 && w!=u1 && v!=w);
+			int o3d = pointType::orient3D(*vrts[u0],*vrts[u1],*vrts[v],*vrts[w]);
+			if(o3d == 0 && isAcuteDihedral_exact( vrts[u0], vrts[u1], vrts[v], vrts[w])){
+				std::cout<<"ERROR overlapping founded\n";
+				t = tri.data() + 3*e[i].count;
+				otri.insert(otri.end(),{*t,*(t+1),*(t+2)});
+				std::cout<<"tri["<<i<<"] = <"<<*t<<" "<<*(t+1)<<" "<<*(t+2)<<">\n";
+				t = tri.data() + 3*e[j].count;
+				otri.insert(otri.end(),{*t,*(t+1),*(t+2)});
+				std::cout<<"tri["<<i<<"] = <"<<*t<<" "<<*(t+1)<<" "<<*(t+2)<<">\n";
+				passed = false;
+			}
+		}
+	}
+
+	if(passed) std::cout<<"overlap check passed\n";
+	else{
+		FILE* fp = fopen("overlaps.off", "w");
+		fprintf(fp, "OFF\n%u %u 0\n", vrts.size(), (uint32_t) otri.size() / 3);
+
+		for(uint32_t i=0; i<vrts.size(); i++) {
+			double x,y,z;
+			vrts[i]->getApproxXYZCoordinates(x,y,z);
+			fprintf(fp, "%f %f %f\n", x, y, z);
+		}
+
+		for(size_t i=0; i<otri.size()/3; i++) {
+			std::vector<uint32_t> v;
+			v.assign(otri.begin() + 3*i, otri.begin() +3*i +3);
+			fprintf(fp, "3 %u %u %u \n", v[0], v[1], v[2]);
+		}
+			
+		fclose(fp);
+	}
+
+	return passed;
+}
+
+// bool check_overlaps(const std::vector<double>& ex3D_vrts, const std::vector<uint32_t>& tri){
+// 	std::vector<bnd_edge> e;
+// 	const uint32_t* t;
+// 	for(size_t i=0; i<tri.size()/3; i++){
+// 		t = tri.data() + 3*i;
+// 		e.push_back( bnd_edge(*t     , *(t+1)) ); e.back().count = i;
+// 		e.push_back( bnd_edge(*(t+1) , *(t+2)) ); e.back().count = i;
+// 		e.push_back( bnd_edge(*(t+2) , *t	 ) ); e.back().count = i;
+// 	}
+
+// 	uint32_t u0, u1, v, w;
+// 	const double* c;
+// 	for(size_t i=0; i<e.size()-1; i++) for(size_t j=i+1; j<e.size(); j++){
+// 		if( e[i].same_ep(e[j]) ){
+// 			u0 = e[i].e0; u1 = e[i].e1;
+// 			c = ex3D_vrts.data() + 3*u0; const explicitPoint3D U0(*c,*(c+1),*(c+2));
+// 			c = ex3D_vrts.data() + 3*u1; const explicitPoint3D U1(*c,*(c+1),*(c+2));
+// 			t = tri.data() + 3*e[i].count;
+// 			v = *t; if(v==u0 || v==u1){ v = *(t+1); if(v==u0 || v==u1) v = *(t+2); }
+// 			if(v==u0 || v==u1) std::cout<<"tri["<<i<<"] = <"<<*t<<" "<<*(t+1)<<" "<<*(t+2)<<">\n";
+// 			t = tri.data() + 3*e[j].count;
+// 			w = *t; if(w==u0 || w==u1){ w = *(t+1); if(w==u0 || w==u1) w = *(t+2); }
+// 			if(w==u0 || w==u1 || w==v) std::cout<<"tri["<<j<<"] = <"<<*t<<" "<<*(t+1)<<" "<<*(t+2)<<">\n";
+// 			if(v==w){
+// 				t = tri.data() + 3*e[i].count;
+// 				std::cout<<"tri["<<i<<"] = <"<<*t<<" "<<*(t+1)<<" "<<*(t+2)<<">\n";
+// 				std::cout<<"v="<<v<<" w="<<w<<"\n";
+// 			}
+// 			assert(v!=u0 && v!=u1 && w!=u0 && w!=u1 && v!=w);
+// 			c = ex3D_vrts.data() + 3*v; const explicitPoint3D V(*c,*(c+1),*(c+2));
+// 			c = ex3D_vrts.data() + 3*w; const explicitPoint3D W(*c,*(c+1),*(c+2));
+// 			int o3d = pointType::orient3D(U0,U1,V,W);
+// 			if(o3d == 0 && isAcuteDihedral_exact( &U0, &U1, &V, &W)){
+// 				std::cout<<"ERROR overlapping founded\n";
+// 				return false;
+// 			}
+// 		}
+// 	}
+
+// 	std::cout<<"overlap check passed\n";
+// 	return true;
+// }
+
 //
 bool get_vrts_and_tris_for_cdt(Tetrahedrization& mesh, std::vector<uint32_t>& ref_vrts, 
 							   std::vector<double>& cdt_vrts, std::vector<uint32_t>& cdt_tris,
-							   const char* filename){
+							   const char* filename, bool verbose){
 	
 	// Exctract triangles of the optimized mesh that are part of the chamfered surface (deltri)
 	std::vector<uint32_t> constr_tri;
@@ -233,6 +480,7 @@ bool get_vrts_and_tris_for_cdt(Tetrahedrization& mesh, std::vector<uint32_t>& re
 
 	std::vector< bnd_edge* > chain;
 	std::vector<bnd_vrt_chain> half_strip_bnd;
+	std::vector<std::pair<uint32_t,uint32_t>> chain_ep;
 	uint32_t v0,v1,v2, r0,r1;
 	for(size_t vi=0; vi<n_cham_vrts; vi++) if(ref_vrts[vi]!=UINT32_MAX){
 		// Consider each boundary edge incident at vi (at least 2)
@@ -259,6 +507,9 @@ bool get_vrts_and_tris_for_cdt(Tetrahedrization& mesh, std::vector<uint32_t>& re
 				chain.push_back( &(be[curr]) ); be[curr].visited = true;
 			}
 			if( chain.size() > 0 ){
+
+				chain_ep.push_back(std::pair<uint32_t,uint32_t>(vi,v1));
+
 				// vi is the "firts" vertex of the chain, while v1 is the "last".
 				if(ref_vrts[vi] == ref_vrts[v1]) {
 					assert(vi!=v1);
@@ -310,7 +561,16 @@ bool get_vrts_and_tris_for_cdt(Tetrahedrization& mesh, std::vector<uint32_t>& re
 		
 		r0 = ref_vrts[c1.e0()]; r1 = ref_vrts[c1.e1()];
 		if(r0==ref_vrts[c2.e1()]) c2.reverse_v();
-		uint32_t n_pts = floor( (uint32_t)(c1.size_v() + c2.size_v()) * 0.5 );
+		
+		const pointType* pol1 = vertices[c1.e0()];
+		const pointType* pol2 = vertices[c2.e0()];
+		const pointType* ln1 = vertices[ref_vrts[c1.e0()]];
+		const pointType* ln2 = vertices[ref_vrts[c1.e1()]];
+		const double dist_line_1 = sqrt(pointSqDistanceFromLine(pol1, ln1, ln2));
+		const double dist_line_2 = sqrt(pointSqDistanceFromLine(pol2, ln1, ln2));
+		const double won1 = dist_line_2 / (dist_line_2 + dist_line_1);
+		uint32_t n_pts = (uint32_t)floor((c1.size_v()*won1 + c2.size_v()*(1.0-won1)));
+
 		assert(n_pts > 1);
 		const size_t init_vert_size = vertices.size();
 		const pointType* P = vertices[r0];
@@ -405,9 +665,50 @@ bool get_vrts_and_tris_for_cdt(Tetrahedrization& mesh, std::vector<uint32_t>& re
 	constr_tri.insert(constr_tri.end(), compl_tri.begin(), compl_tri.end());
 	assert( (constr_tri.size() % 3) == 0 );
 
+	assert( check_overlaps(vertices, constr_tri) );
+
+	// Remove Delaunay refined mesh vertices too close to CDT vertices
+	uint32_t n_input_exp_vrts = 0;
+	double d;
+	while(vertices[n_input_exp_vrts]->isExplicit3D()) n_input_exp_vrts++;
+	std::vector<double> ch_dist(n_input_exp_vrts, 0.0);
+	for(size_t i=n_input_exp_vrts; i<n_cham_vrts; i++) {
+		assert( ref_vrts[i] != UINT32_MAX );
+		d = vector3d( vertices[ ref_vrts[i] ] ).dist_sq(vector3d( vertices[i] ));
+		ch_dist[ ref_vrts[i] ] = max(ch_dist[ ref_vrts[i] ], d);
+	}
+	for(TetVertex* v : mesh.vrts()) v->unmark<0>(); // reset markers
+	for(size_t i=0; i<n_input_exp_vrts; i++) markChamferExplicitNeighbors(mesh, vertices[i], ch_dist[i]);
+	for(const bnd_vrt_chain& strip : half_strip_bnd){ 
+		assert(strip.r0 < n_input_exp_vrts && strip.r1 < n_input_exp_vrts );
+		d = max(ch_dist[strip.r0], ch_dist[strip.r1]);
+		markChamferExplicitNeighbors(mesh, vertices[ strip.r0 ], vertices[ strip.r1 ], d); 
+	}
+	std::vector<uint32_t> uv(vertices.size(), 1); // Used Vertex 
+	size_t count_removed = 0;
+	//for(size_t i = n_cham_vrts; i < n_optimMesh_vrts; i++) if(mesh.vrts()[i]->getPoint()->isExplicit3D()){
+	for(size_t i = n_cham_vrts; i < n_optimMesh_vrts; i++) if(mesh.vrts()[i]->isMarked<0>()){ 
+		// do not use marked vertices inserted by the optimizer
+		uv[i] = UINT32_MAX;
+		if(verbose) count_removed++;
+	} 
+	if(verbose) std::cout<<count_removed<<" vertices removed.\n";
+	if(verbose){
+		size_t count_marked = 0;
+		for(size_t i = 0; i < n_cham_vrts; i++) if(mesh.vrts()[i]->isMarked<0>()){ 
+			count_marked++;
+		} 
+		if(count_marked) std::cout<<count_marked<<" vertices marked but not removed.\n";
+	}
+	for(TetVertex* v : mesh.vrts()) v->unmark<0>(); // reset markers
+	
+	uint32_t idx = 0;
+	for (size_t i = 0; i < uv.size(); i++) if (uv[i] != UINT32_MAX) uv[i] = idx++; // now uv stores new indexing
+	for (size_t i=0; i<constr_tri.size(); i++) constr_tri[i] = uv[ constr_tri[i] ];
+
 	double x, y, z;
-	for(uint32_t i=0; i<vertices.size(); i++) {
-		vertices[i]->getApproxXYZCoordinates(x, y, z);
+	for(uint32_t i=0; i<vertices.size(); i++) if(uv[i]!=UINT32_MAX) {
+		vertices[i]->getApproxXYZCoordinates(x, y, z, true);
 		cdt_vrts.insert(cdt_vrts.end(),{x,y,z});
 	}
 	cdt_tris.assign(constr_tri.begin(), constr_tri.end());
@@ -422,23 +723,22 @@ bool get_vrts_and_tris_for_cdt(Tetrahedrization& mesh, std::vector<uint32_t>& re
 		strcat(out_filename, "_rebuilt.off");
 		// ----------------------------------------
 		FILE* fp = fopen(out_filename, "w");
-		fprintf(fp, "OFF\n%u %u 0\n", vertices.size(), (uint32_t) constr_tri.size() / 3);
+		fprintf(fp, "OFF\n%u %u 0\n", cdt_vrts.size()/3, (uint32_t) cdt_tris.size() / 3);
 
-		for(uint32_t i=0; i<vertices.size(); i++) {
-			if(i<n_optimMesh_vrts) assert( i == (uint32_t)mesh.vrts()[i]->getIndex() );
-			double x, y, z;
-			vertices[i]->getApproxXYZCoordinates(x, y, z);
-			fprintf(fp, "%f %f %f\n", x, y, z);
+		for(uint32_t i=0; i<cdt_vrts.size()/3; i++) {
+			fprintf(fp, "%.18f %.18f %.18f\n", cdt_vrts[i*3], cdt_vrts[i*3+1], cdt_vrts[i*3+2]);
 		}
 
-		for(size_t i=0; i<constr_tri.size()/3; i++) {
+		for(size_t i=0; i<cdt_tris.size()/3; i++) {
 			std::vector<uint32_t> v;
-			v.assign(constr_tri.begin() + 3*i, constr_tri.begin() +3*i +3);
+			v.assign(cdt_tris.begin() + 3*i, cdt_tris.begin() +3*i +3);
 			fprintf(fp, "3 %u %u %u \n", v[0], v[1], v[2]);
 		}
 			
 		fclose(fp);
 	}
+
+	//check_overlaps(cdt_vrts, cdt_tris); // DEBUG
 
 	return true;
 }
@@ -665,7 +965,7 @@ int main(int argc, char* argv[])
 		std::cout << "\t[-c] -> produces an intermediate output (see below)\n";
 		std::cout << "OUTPUT:\n";
 		std::cout << "\t when [-a] is activated produces a volumetric (DRCDT_mesh.tet) mesh.\n";
-		std::cout << "\t when [-s] is activated produces a surface (DRCDT_plcfaces.off) meshes.\n";
+		std::cout << "\t when [-s] is activated produces a surface (constrainedFaces.off) meshes.\n";
 		std::cout << "\t when [-o] is activated produces a volumetric (DR_mesh.tet) and a surface (DR_plcfaces.off) meshes.\n";
 		std::cout << "\t when [-c] is activated produces a surface (chamfered_plc.off) mesh of the chamfered plc (intermediate construction).\n";
 		std::cout << "RETURNS:\n";
@@ -777,8 +1077,10 @@ int main(int argc, char* argv[])
 	time_point = now;
 
 	TetMesh *input_cdt = NULL;  
+	uint64_t time_INcdt = 0;
+	uint32_t INnct;
 	if (lowBnd_onMeshDist){ 
-		closest_dist = get_lower_bound_on_delRef_mesh_min_dist(plc, mesh, closest_dist, input_cdt);
+		closest_dist = get_lower_bound_on_delRef_mesh_min_dist(plc, mesh, closest_dist, input_cdt, INnct);
 		if (verbose_mode) std::cout << "Distance of closest elems relative to bb diagonal: " << closest_dist << "\n";
 	}
 
@@ -876,8 +1178,11 @@ int main(int argc, char* argv[])
 	if(input_encloses_vol){
 		if (verbose_mode) std::cout<<"Input encloses a volume\n";
 		if (input_cdt == NULL){ 
-			uint32_t tmp;
-			input_cdt = createSteinerCDT(plc, false, false, tmp);
+			input_cdt = createSteinerCDT(plc, false, false, INnct);
+
+			now = chrono_clock::now();
+			time_INcdt = std::chrono::duration_cast<std::chrono::milliseconds>(now - time_point).count();
+			time_point = now;
 		}
 		markInternalTets(mesh, input_cdt);
 
@@ -927,14 +1232,14 @@ int main(int argc, char* argv[])
 	std::vector<double> cdt_vrts;
 	std::vector<uint32_t> cdt_tris;
 	char empty_str[] = "";
-	get_vrts_and_tris_for_cdt(mesh, to_close_ref_vrts, cdt_vrts, cdt_tris, empty_str);
+	get_vrts_and_tris_for_cdt(mesh, to_close_ref_vrts, cdt_vrts, cdt_tris, empty_str, verbose_mode);
 
 	// computes a quasi-optimized CDT
 	if(true){
 		inputPLC qo_plc; 
 		qo_plc.initFromVectors(cdt_vrts.data(), cdt_vrts.size()/3, cdt_tris.data(), cdt_tris.size()/3, false);
 		uint32_t nct=0;
-		TetMesh* qo_cdt = createSteinerCDT(qo_plc, false, false, nct);
+		TetMesh* qo_cdt = createSteinerCDT(qo_plc, false, produce_outcdt_surf, nct);
 		Tetrahedrization stat_mesh;
 		stat_mesh.initFromVerticesAndTets(qo_cdt->vertices, qo_cdt->tet_node);
 		for (Tetrahedron* t : stat_mesh.tets()) t->is_internal = true;
@@ -949,6 +1254,16 @@ int main(int argc, char* argv[])
 			logUInteger( nct );
 			logFinalStats(stat_mesh, time_CDT, false);
 			advance_ProcessLogging("final_CDT");
+			// input CDT stats
+			Tetrahedrization stat_INmesh;
+			stat_INmesh.initFromVerticesAndTets(input_cdt->vertices, input_cdt->tet_node);
+			for (Tetrahedron* t : stat_INmesh.tets()) t->is_internal = true;
+			logDouble(time_INcdt);
+			logUInteger( stat_INmesh.num_vertices() );
+			logUInteger( stat_INmesh.num_tetrahedra() );
+			logUInteger( INnct );
+			logFinalStats(stat_INmesh, time_INcdt, false);
+			advance_ProcessLogging("reg_inCDT_stats");
 		}
 		else { stat_mesh.printReport(false, "CDT of partially Delaunay refined mesh"); std::cout << std::endl; }
 		// stat_mesh.saveOFFInterface("DRCDT_plcfaces.off");
@@ -962,6 +1277,7 @@ int main(int argc, char* argv[])
 		}
 	}
 	
+	if(log_mode) finishLogging();
 	std::cout << "Execution correctly COMPLETED.\n\n\n";
 
 #endif
