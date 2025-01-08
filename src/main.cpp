@@ -297,6 +297,18 @@ void markInternalTets(Tetrahedrization& mesh, TetMesh* cdt) {
 	for (TetVertex* v : mesh.vrts()) v->unmark<0>();
 }
 
+void make_histogram(Tetrahedrization& mesh, const char* name){
+	std::vector<uint32_t> fah, dah;
+	mesh.makeFaceAngleHistogram(fah, 12);
+	mesh.makeDihedralAngleHistogram(dah, 12);
+	std::cout << name << " FACE ANGLE HISTOGRAM\n";
+	for (auto x : fah) std::cout << x << "\t";
+	std::cout << "\n";
+	std::cout << name << " DIHEDRAL ANGLE HISTOGRAM\n";
+	for (auto x : dah) std::cout << x << "\t";
+	std::cout << "\n";
+}
+
 inline void logFinalStats(Tetrahedrization& mesh, uint64_t ms, bool input_encloses_vol){
 	//logUInteger((uint32_t)mesh.num_vertices());
 	//logUInteger((uint32_t)mesh.num_tetrahedra());
@@ -604,6 +616,7 @@ int main(int argc, char* argv[])
 		mesh.printReport(input_encloses_vol, "DelRef Mesh");
 		std::cout << std::endl;
 	}
+	make_histogram(mesh, "DR");
 
 	if(produce_DR_output){
 		mesh.saveTET("DR_mesh.tet");
@@ -652,6 +665,10 @@ int main(int argc, char* argv[])
 		}
 		else { stat_mesh.printReport(false, "CDT of partially Delaunay refined mesh"); std::cout << std::endl; }
 		// stat_mesh.saveOFFInterface("DRCDT_plcfaces.off");
+		make_histogram(mesh, "CDT");
+		make_histogram(mesh, "DR+CDT");
+
+
 	}
 	else{
 		if(log_mode){

@@ -1083,3 +1083,13 @@ double circumsphere_ludecomp(const pointType* pap, const pointType* pbp, const p
 
 	return (b[0] * b[0] + b[1] * b[1] + b[2] * b[2]);
 }
+
+void getTriangleAngles(const pointType* vi0, const pointType* vi1, const pointType* vi2, double& a0, double& a1, double& a2) {
+	double l0, l1, l2;
+	l0 = sqrt((vector3d(vi1) - vector3d(vi2)).sq_length());
+	l1 = sqrt((vector3d(vi2) - vector3d(vi0)).sq_length());
+	l2 = sqrt((vector3d(vi0) - vector3d(vi1)).sq_length());
+	a0 = getAngle(l1, l2, l0);
+	a1 = getAngle(l2, l0, l1);
+	a2 = getAngle(l0, l1, l2);
+}

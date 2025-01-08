@@ -1920,6 +1920,52 @@ public:
 	// 	return ma;
 	// }
 
+	// Subdivide the range (0,180) into numbins equal bins.
+	// For each bin 'i' count the percentage of face angles in the subrange, and fill h[i] with this number.
+	void makeFaceAngleHistogram(std::vector<uint32_t>& h, uint32_t numbins) {
+		h.resize(numbins, 0);
+		uint32_t bin;
+		for (TetFace* f : F) {
+			double a0, a1, a2;
+			getTriangleAngles(f->v0()->getPoint(), f->v1()->getPoint(), f->v2()->getPoint(), a0, a1, a2);
+			bin = (uint32_t)((a0 * numbins) / 180); h[bin]++;
+			bin = (uint32_t)((a1 * numbins) / 180); h[bin]++;
+			bin = (uint32_t)((a2 * numbins) / 180); h[bin]++;
+		}
+
+		// Normalize into percentage
+		uint32_t tn = F.size() * 3;
+		for (uint32_t& b : h) {	b *= 100; b /= tn; }
+	}
+
+	// Subdivide the range (0,180) into numbins equal bins.
+	// For each bin 'i' count the percentage of dihedral angles in the subrange, and fill h[i] with this number.
+	void makeDihedralAngleHistogram(std::vector<uint32_t>& h, uint32_t numbins) {
+		h.resize(numbins, 0);
+		uint32_t bin;
+		for (Tetrahedron* t : T) {
+			const pointType* v[] = { t->v0()->getPoint(), t->v1()->getPoint(), t->v2()->getPoint(), t->v3()->getPoint() };
+			double a1, a2, a3, a4, a5, a6;
+			a1 = getDihedralAngle(v[0], v[1], v[2], v[3]);
+			a2 = getDihedralAngle(v[0], v[2], v[3], v[1]);
+			a3 = getDihedralAngle(v[0], v[3], v[1], v[2]);
+			a4 = getDihedralAngle(v[1], v[2], v[0], v[3]);
+			a5 = getDihedralAngle(v[1], v[3], v[2], v[0]);
+			a6 = getDihedralAngle(v[2], v[3], v[0], v[1]);
+
+			bin = (uint32_t)((a1 * numbins) / 180); h[bin]++;
+			bin = (uint32_t)((a2 * numbins) / 180); h[bin]++;
+			bin = (uint32_t)((a3 * numbins) / 180); h[bin]++;
+			bin = (uint32_t)((a4 * numbins) / 180); h[bin]++;
+			bin = (uint32_t)((a5 * numbins) / 180); h[bin]++;
+			bin = (uint32_t)((a6 * numbins) / 180); h[bin]++;
+		}
+
+		// Normalize into percentage
+		uint32_t tn = T.size() * 6;
+		for (uint32_t& b : h) { b *= 100; b /= tn; }
+	}
+
 	double minEdgeLength() const {
 		double min = DBL_MAX, t_min;
 		for (Tetrahedron* t : T) {
