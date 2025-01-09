@@ -76,7 +76,8 @@ inline void logTimeChunk() {
 }
 
 inline void logBoolean(bool b) { fprintf(log_fp, ", %s", b ? "True" : "False"); fflush(log_fp);  }
-inline void logUInteger(uint32_t n) { fprintf(log_fp, ", %u", n); fflush(log_fp); }
+inline void logInteger(uint32_t n) { fprintf(log_fp, ", %u", n); fflush(log_fp); }
+inline void logInteger(uint64_t n) { fprintf(log_fp, ", %lu", n); fflush(log_fp); }
 inline void logDouble(double d) { fprintf(log_fp, ", %g", d); fflush(log_fp); }
 inline void logEmpty() { fprintf(log_fp, ", "); fflush(log_fp); }
 

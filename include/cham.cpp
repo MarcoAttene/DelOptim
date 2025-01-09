@@ -1307,7 +1307,7 @@ implicitPoint3D_BPT* move_BPT_toward_LNC(pointType* bpt, pointType* lnc, double 
 }
 
 //
-uint32_t PLCc::chamfering_face(uint32_t fi, bool safe){
+uint32_t PLCc::chamfering_face(uint32_t fi){
 
     #ifdef PLCC_VERBOSE_DEBUG
     std::cout<<"\nchamfering "; print_face_edges(fi);
@@ -1426,7 +1426,7 @@ uint32_t PLCc::chamfering_face(uint32_t fi, bool safe){
     // NOTE. This step is necessary only in theory to guarantee the elimination
     // of all acute angles; practically havs no
     // measurable effects so it is deactivated by default. 
-    if(safe){
+    if(safe_mode){
         bool has_acute_edge = false;
         for(size_t i=0; i < fbnd.size(); i++ ) if( fbnd[i] != EMPTY_PLACE ){
             if( edges[ fbnd[i] ].isAcute() ){ has_acute_edge = true; break; }
@@ -1548,7 +1548,7 @@ void PLCc::chamfering(){
     #endif
 
     uint32_t n_fbs = 0;
-    for(uint32_t fi=0; fi<faces.size(); fi++){ n_fbs += chamfering_face(fi, true); }
+    for(uint32_t fi=0; fi<faces.size(); fi++){ n_fbs += chamfering_face(fi); }
 
     // Delete junk edges (and all isoleted edges) from edges vector
     for(CHAMedge& e : edges) if( e.isJunk() ){ e.inc_face.clear(); }

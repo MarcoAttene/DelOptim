@@ -1799,7 +1799,6 @@ public:
 		}
 		//   If cc does not encroach upon any triangle, just insert it in the mesh
 		else if (!cavity.empty()) {
-			EXIT_ON_THRESHOLD_NUMVERTICES;
 			TetVertex* vm = new TetVertex(new explicitPoint3D(cc));
 			V.push_back(vm);
 			retetrahedrizeCavity(vm, cavity);

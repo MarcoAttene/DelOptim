@@ -215,6 +215,7 @@ private:
     bool verbose;
     bool def_interior;
     bool manifold;
+    bool safe_mode;
 
 public:
     const double epsilon;
@@ -238,7 +239,9 @@ public:
     std::vector<uint32_t> mark_edges;
     std::vector<uint32_t> mark_faces;
 
-    PLCc(const inputPLC& _plc, const double _epsilon, bool _verbose) : plc(_plc), epsilon(_epsilon), n_in_vrts(_plc.numVertices()), def_interior(true), manifold(true), verbose(_verbose) {
+    PLCc(const inputPLC& _plc, const double _epsilon, bool _safe, bool _verbose) : 
+            plc(_plc), epsilon(_epsilon), n_in_vrts(_plc.numVertices()), 
+            def_interior(true), manifold(true), safe_mode(_safe), verbose(_verbose) {
         
         #ifdef PLCC_VERBOSE_DEBUG
         verbose = true;
@@ -351,7 +354,7 @@ public:
     void remove_junk_edges_from_face(uint32_t fi);
     void get_edge_ch_dist(std::vector<double>& edge_ch_dist);
     void chamfer_acute_edge_from_inc_face(uint32_t ei, uint32_t fi, double d);
-    uint32_t chamfering_face(uint32_t fi, bool safe);
+    uint32_t chamfering_face(uint32_t fi);
 
     // Simplification (Post-Processing)
 
