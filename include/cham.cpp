@@ -1265,7 +1265,49 @@ void PLCc::inputTriangleChamfering(uint32_t fi){
 // --------------------- //
 
 //
-uint32_t PLCc::chamfering_face(uint32_t fi){
+implicitPoint3D_BPT* move_BPT_toward_LNC(pointType* bpt, pointType* lnc, double min_d){
+    
+    assert(bpt->isBPT() && lnc->isLNC());
+
+    const explicitPoint3D* R = &(bpt->toBPT().R());
+    const explicitPoint3D* P = &(bpt->toBPT().P());
+    const explicitPoint3D* Q = &(bpt->toBPT().Q());
+    double old_u = bpt->toBPT().U();
+    double old_v = bpt->toBPT().V();
+
+    // bpt = old_v * P + old_u * Q + (1 - old_u - old_v) * R
+
+    assert(lnc->toLNC().P() == *R || lnc->toLNC().Q() == *R);
+
+    vector3d OP(P), OQ(Q), OR(R);
+    double distsq_PR = OP.dist_sq(OR);
+    double distsq_QR = OQ.dist_sq(OR);
+    double dotprod_PR_QR = (OP-OR).dot(OQ-OR);
+
+    double t = lnc->toLNC().T();
+    if(lnc->toLNC().Q() == *R) t = 1.0 - t;
+
+    double a, b;
+    if(lnc->toLNC().P()==*P || lnc->toLNC().Q()==*P){
+        a = (t-old_v);  b = old_u;
+    }
+    else{ a = old_v;  b = (t-old_u); }
+
+    double k = a*a * distsq_PR + b*b * distsq_QR - 2*a*b * dotprod_PR_QR;
+    k = sqrt( abs(k) ); // avoid rounding errors when close to 0
+
+    double c = min_d / k;
+    double u, v;
+    if(lnc->toLNC().P()==*P || lnc->toLNC().Q()==*P){
+        v = t - c * a;  u = c * b;
+    }
+    else{  v = c * a;  u = t - c * b; }
+
+    return new implicitPoint3D_BPT(*P,*Q,*R,v,u);
+}
+
+//
+uint32_t PLCc::chamfering_face(uint32_t fi, bool safe){
 
     #ifdef PLCC_VERBOSE_DEBUG
     std::cout<<"\nchamfering "; print_face_edges(fi);
@@ -1377,6 +1419,56 @@ uint32_t PLCc::chamfering_face(uint32_t fi){
         return 1; 
     }
 
+    // Part 1/2: face normalization
+    // if the face has an acute edge
+    // all the edges connecting a BPT with an LNC are considered "normalized"
+    // in order to have all the same (minimum) length.
+    // NOTE. This step is necessary only in theory to guarantee the elimination
+    // of all acute angles; practically havs no
+    // measurable effects so it is deactivated by default. 
+    if(safe){
+        bool has_acute_edge = false;
+        for(size_t i=0; i < fbnd.size(); i++ ) if( fbnd[i] != EMPTY_PLACE ){
+            if( edges[ fbnd[i] ].isAcute() ){ has_acute_edge = true; break; }
+        }
+
+        if(has_acute_edge){
+            // a) compute minimum length d of edges having LNC and BPT as endpoints
+            double sq_min_d = DBL_MAX;
+            for(size_t i=0; i < fbnd.size(); i++ ) if( fbnd[i] != EMPTY_PLACE ){
+                const pointType* ep0 = vertices[ edges[ fbnd[i] ].ep[0] ];
+                const pointType* ep1 = vertices[ edges[ fbnd[i] ].ep[1] ];
+                if( (ep0->isLNC() && ep1->isBPT()) || (ep1->isLNC() && ep0->isBPT()) ){ 
+                    sq_min_d = min(sq_min_d, eEdgeSqLen(fbnd[i]) );
+                }
+            }
+
+            // b) normalize to d such edges modifing the "position" of the BPT 
+            //    keeping them on their orthogonal line.
+            double sq_d, min_d = sqrt(sq_min_d);
+            for(size_t i=0; i < fbnd.size(); i++ ) if( fbnd[i] != EMPTY_PLACE ){
+                pointType* ep0 = vertices[ edges[ fbnd[i] ].ep[0] ];
+                pointType* ep1 = vertices[ edges[ fbnd[i] ].ep[1] ];
+                if( (ep0->isLNC() && ep1->isBPT()) || (ep1->isLNC() && ep0->isBPT()) ){ 
+                    sq_d = eEdgeSqLen(fbnd[i]);
+                    if(sq_d > sq_min_d){ 
+                        if(ep0->isBPT()){ 
+                            add_vertex( move_BPT_toward_LNC(ep0, ep1, min_d), ref_exp3D_vrt[edges[ fbnd[i] ].ep[0]] );
+                            // vertices.push_back( move_BPT_toward_LNC(ep0, ep1, min_d) );
+                            std::swap( vertices[ edges[ fbnd[i] ].ep[0] ], vertices.back() );
+                        }
+                        else{ 
+                            add_vertex( move_BPT_toward_LNC(ep1, ep0, min_d), ref_exp3D_vrt[edges[ fbnd[i] ].ep[1]] );
+                            // vertices.push_back( move_BPT_toward_LNC(ep1, ep0, min_d) );
+                            std::swap( vertices[ edges[ fbnd[i] ].ep[1] ], vertices.back() );
+                        }
+                    }
+                }
+            }
+
+        }
+    }
+
     // Part 2:
     // each acute edge will be "moved in to the face" by
     // replacing it and its two incident edges with a unique new edge.
@@ -1456,7 +1548,7 @@ void PLCc::chamfering(){
     #endif
 
     uint32_t n_fbs = 0;
-    for(uint32_t fi=0; fi<faces.size(); fi++){ n_fbs += chamfering_face(fi); }
+    for(uint32_t fi=0; fi<faces.size(); fi++){ n_fbs += chamfering_face(fi, true); }
 
     // Delete junk edges (and all isoleted edges) from edges vector
     for(CHAMedge& e : edges) if( e.isJunk() ){ e.inc_face.clear(); }

@@ -84,7 +84,7 @@ bool chamferPLC(inputPLC& _plc, double _epsilon,
 
 	// Produce some intermediate output mesh and save .off files 
 	//cut_plc->save_rebuilded_input_after_chamfering(out_tri, "all_tris_chamf.off"); // Save chamfered input + complementar triangles to rebuild the input PLC
-	// cut_plc->saveFaces(); // save polygonal faces
+	cut_plc->saveFaces(); // save polygonal faces
 	if(print_surf) cut_plc->saveTriangles(out_tri, "chamfered_plc.off"); // save triangulated faces
 
 	is_manifold = cut_plc->input_plc_is_manifold();
