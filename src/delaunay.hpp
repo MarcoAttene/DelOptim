@@ -14,7 +14,7 @@ void TetMesh::init_vertices(std::vector<genericPoint*>& pts) {
     marked_vertex.resize(vertices.size(), 0);
 }
 
-void TetMesh::addBoundingBoxVertices(double dist) {
+double TetMesh::addBoundingBoxVertices(double dist) {
     double bbmin[3] = { DBL_MAX, DBL_MAX, DBL_MAX };
     double bbmax[3] = { -DBL_MAX, -DBL_MAX, -DBL_MAX };
     for (genericPoint* p : vertices) {
@@ -40,6 +40,8 @@ void TetMesh::addBoundingBoxVertices(double dist) {
 
     inc_tet.resize(vertices.size(), UINT64_MAX);
     marked_vertex.resize(vertices.size(), 0);
+
+    return sqrt(vector3d(vertices.back()).dist_sq(vector3d(vertices[vertices.size()-8]))); // bb-diag length
 }
 
 void TetMesh::init(uint32_t& unswap_k, uint32_t& unswap_l){
@@ -1314,7 +1316,7 @@ double TetMesh::compute_closest_features_dist(const std::vector<bool>& constr_tr
     return sqrt(md);
 }
 
-void TetMesh::set_min_inputPLC_dist(const std::vector<bool>& constr_tri_asCorners){
+void TetMesh::compute_min_inputPLC_dist(const std::vector<bool>& constr_tri_asCorners){
     min_inputPLC_dist = compute_closest_features_dist(constr_tri_asCorners);
 }
 

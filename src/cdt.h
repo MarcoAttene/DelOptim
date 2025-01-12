@@ -87,7 +87,7 @@ public:
     void init_vertices(std::vector<genericPoint *>& pts);
     void init_vertices(const double* coords, uint32_t num_v);
 
-    void addBoundingBoxVertices(double dist = 1.0);
+    double addBoundingBoxVertices(double dist = 1.0);
 
     // Destroy vertices
     void flushVertices() { for (pointType* p : vertices) delete p; }
@@ -388,7 +388,7 @@ public:
 
     bool is_constrained_edge(uint32_t ep0, uint32_t ep1, const std::vector<bool>& constr_tri_asCorners);
     double compute_closest_features_dist(const std::vector<bool>& constr_tri_asCorners);
-    void set_min_inputPLC_dist(const std::vector<bool>& constr_tri_asCorners);
+    void compute_min_inputPLC_dist(const std::vector<bool>& constr_tri_asCorners);
 };
 
 
