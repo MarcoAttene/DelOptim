@@ -116,7 +116,7 @@ class cdt_interface{
 	cdt_interface() : mesh(NULL), time_cdt(0) {}
 
 	// 'plc' is a valid input PLC to the process. Validity is assumed but not verified!
-	void createSteinerCDT(inputPLC& plc, bool comp_min_PLC_dist, bool produce_output, bool verbose =false) {
+	void createSteinerCDT(inputPLC& plc, bool comp_min_PLC_dist, bool verbose =false) {
 		
 		chrono_clock::time_point time_zero = chrono_clock::now(); // start timing
 
@@ -135,36 +135,25 @@ class cdt_interface{
 		time_cdt = std::chrono::duration_cast<std::chrono::milliseconds>(now - time_zero).count();
 
 		num_constr_tris = mesh->countConstrTris(constr_tri_asCorners);
-		
-		if (produce_output) mesh->saveConstrTrisToOFF("constrainedFaces.off", constr_tri_asCorners);
 
 		if (comp_min_PLC_dist) mesh->compute_min_inputPLC_dist(constr_tri_asCorners); // minimum distance between cdt elemnts constrained on the PLC
 	}
 
 	inline bool is_defined() const { return mesh!=NULL; }
 	inline double min_inputPLC_dist(){ return mesh->get_min_inputPLC_dist(); }
+	inline void save_skin_toOFF(const char* out_name){ 
+		if(!is_defined()) return;
+		char name[2048];  strcpy(name, out_name);
+		strcat(name, "_constrainedFaces.off");
+		mesh->saveConstrTrisToOFF(name, constr_tri_asCorners); 
+	}
+	inline void save_mesh_toTET(const char* out_name){
+		if(!is_defined()) return;
+		char name[2048];  strcpy(name, out_name);  
+		strcat(name, "_mesh.tet");
+		mesh->saveTET(name); 
+	}
 };
-
-// 'plc' is a valid input PLC to the process. Validity is assumed but not verified!
-// TetMesh* createSteinerCDT(inputPLC& plc, bool min_PLC_dist, bool produce_output, uint32_t& nct, bool verbose =false) {
-
-// 	// Build a delaunay tetrahedrization of the vertices
-// 	TetMesh* tin = new TetMesh;
-// 	tin->init_vertices(plc.coordinates.data(), plc.numVertices());
-// 	tin->tetrahedrize();
-
-// 	// Build a structured PLC linked to the Delaunay tetrahedrization
-// 	PLCx Steiner_plc(*tin, plc.triangle_vertices.data(), plc.numTriangles());
-// 	Steiner_plc.segmentRecovery_HSi(!verbose);
-// 	Steiner_plc.faceRecovery(!verbose);
-// 	std::vector<bool> constr_tri_asCorners;
-// 	Steiner_plc.markInnerTets_andGetConstrFaces(constr_tri_asCorners);
-// 	if (produce_output) tin->saveConstrTrisToOFF("constrainedFaces.off", constr_tri_asCorners);
-// 	nct = tin->countConstrTris(constr_tri_asCorners);
-// 	if (min_PLC_dist) tin->compute_min_inputPLC_dist(constr_tri_asCorners); // minimum distance between cdt elemnts constrained on the PLC
-
-// 	return tin;
-// }
 
 // ---------------------------------- //
 // Internal / External classification //
@@ -294,6 +283,8 @@ inline void log_mesh_stats(Tetrahedrization& mesh,
 
 inline void log_empty_mesh_stats(){ for(size_t i=0; i< 4 + 14; i++) logEmpty(); }
 
+char empty_str[] = "";
+
 int main(int argc, char* argv[])
 {
 	initFPU();
@@ -301,27 +292,41 @@ int main(int argc, char* argv[])
 	char filename[2048];
 #ifndef DEBUG
 	if (argc < 2) {
-		std::cout << "Mesher - Create a well-shaped tetrahedral mesh out of a triangulated OFF file.\n";
-		std::cout << "USAGE: ./delmesher [-v][-l][-o][-d 8] filename.off\n";
+		std::cout << "Mesher - Create a well-shaped tetrahedral mesh out of a triangulated closed surface.\n";
+		std::cout << "INPUT: an OFF file (filename.off) containing a closed triangulated surface.\n";
+		std::cout << "USAGE: ./delmesher [-v][-l][-e 8] filename.off\n";
 		std::cout << "OPTIONS:\n";
-		std::cout << "\t[-m max_vrt] -> set to max_vrt the maximum number of vertices of the mesh during the Delaunay refinement stage.\n";
-		std::cout << "\t[-a] -> extract from the Delaunay refined mesh a vaild input and gives it to a CDT algorithm that produces a conforming and quasi-optimal volume mesh (output see below) \n";
-		std::cout << "\t[-s] -> produce as output the constrained surface of the quasi-optimal-CDT (see below)\n";
-		std::cout << "\t[-i] -> (forces -a activation) if the input encloses a volume, uses only internal points and constrained faces as input for the quasi-optimal-CDT.\n";
-		std::cout << "\t[-v] -> verbose mode\n";
-		std::cout << "\t[-l] -> logging mode\n";
-		std::cout << "\t[-d exp (pos. integer)] -> avoid Delaunay Refinement if the min pt.s dist after chamfering is < 10^-exp\n";
-		std::cout << "\t[-b] -> computes the lower bound for minimum distance between mesh elements (point - segment - triangle), otherwise only point-point distances are computed.\n";
-		std::cout << "\t[-o] -> produces outputs related to Delaunay refinement algorithm (see below)\n";
-		std::cout << "\t[-c] -> produces an intermediate output (see below)\n";
+		std::cout << "[-a]\tafter the Delaunay refined mesh is created a CDT algorithm is used\n"
+				  << "\tto produce a quasi-optimal volume mesh.\n";
+		std::cout << "[-b]\textracts from the Delaunay refined mesh a triangulaed surface\n"
+				  << "\tconforming the input surface, which can be used as input for\n"
+				  << "\ta CDT algorithm (see OUTPUT).\n";
+		std::cout << "[-c]\tcomputes the lower bound for minimum distance between\n"
+				  << "\tmesh elements (point - segment - triangle),\n"
+				  << "\totherwise only point-point distances is used.\n";
+		std::cout << "[-d]\tenables sliver removal during Delaunay refinement stage.\n";
+		std::cout << "[-e exp]\t(exp is positive integer) exit the program before Delaunay\n"
+				  << "\trefinement if the minimum distance between mesh elements is < 10^-exp.\n";
+		std::cout << "[-m mv]\t(mv is a positive integer) interrupts Delaunay refinament\n" 
+				  << "\tas soon as the number of mesh vertices exceed max_vrt.\n";
+		std::cout << "[-h]\t(terminal) display angles histograms.\n";
+		std::cout << "[-l]\tlogging mode.\n";
+		std::cout << "[-v]\tverbose mode.\n";
+		std::cout << "[-u]\tenables chamfering output (see OUTPUT).\n";
+		std::cout << "[-w]\tenables surface Delaunay refinement output (see OUTPUT).\n";
+		std::cout << "[-x]\tenables volumetric Delaunay refinement output (see OUTPUT).\n";
+		std::cout << "[-y]\t(needs [-a]) enables surface CDT of Delauny refinement output (see OUTPUT).\n";
+		std::cout << "[-z]\t(needs [-a]) enables volumetric CDT of Delauny refinement output (see OUTPUT).\n";
 		std::cout << "OUTPUT:\n";
-		std::cout << "\t when [-a] is activated produces a volumetric (DRCDT_mesh.tet) mesh.\n";
-		std::cout << "\t when [-s] is activated produces a surface (constrainedFaces.off) meshes.\n";
-		std::cout << "\t when [-o] is activated produces a volumetric (DR_mesh.tet) and a surface (DR_plcfaces.off) meshes.\n";
-		std::cout << "\t when [-c] is activated produces a surface (chamfered_plc.off) mesh of the chamfered plc (intermediate construction).\n";
+		std::cout << "\t when [-b] is activated produces a surface mesh. ('filename'_rebuilt.off)\n";
+		std::cout << "\t when [-u] is activated produces a surface mesh. (chamfered_plc.off)\n";
+		std::cout << "\t when [-w] is activated produces a surface mesh. (DR_interface.off)\n";
+		std::cout << "\t when [-y] is activated produces a surface mesh. (DRCDT_constrainedFaces.off)\n";
+		std::cout << "\t when [-x] is activated produces a volumetric mesh. (DR_mesh.tet)\n";
+		std::cout << "\t when [-z] is activated produces a volumetric mesh. (DRCDT_mesh.tet)\n";
 		std::cout << "RETURNS:\n";
-		std::cout << "\t0 when the whole execution terminates correctly (also when an iperror occours)\n";
-		std::cout << "\t10 when option -d is activated and min dist. is violated\n";
+		std::cout << "\t0 when the whole execution terminates correctly (or when iperror occours)\n";
+		std::cout << "\t10 when option -e is activated and min dist. is violated\n";
 		std::cout << std::endl;
 		return 0;
 	}
@@ -337,34 +342,34 @@ int main(int argc, char* argv[])
 	std::string options = "";
 	uint32_t min_dist_exp = UINT32_MAX;
 	uint32_t max_vrts = UINT32_MAX;
+	char out4CDT_name[] = "";
 
 	for (int i = 1; i < argc; i++)
 		if (argv[i][0] == '-') {
-			if (argv[i][1] == 'd') { min_dist_exp = atoi(argv[++i]); continue; }
+			if (argv[i][1] == 'e') { min_dist_exp = atoi(argv[++i]); continue; }
 			if (argv[i][1] == 'm') { max_vrts = atoi(argv[++i]); continue; }
 			for (int j = 1; j < strlen(argv[i]); j++) options += argv[i][j];
 		}
 		else memcpy(filename, argv[i], strlen(argv[i]) + 1);
 
-	bool log_mode = (options.find('l') != std::string::npos);
-	bool verbose_mode = (options.find('v') != std::string::npos);
-	bool output_cdt = (options.find('a') != std::string::npos);
-	bool only_interior_output_cdt = (options.find('i') != std::string::npos);
-	if(only_interior_output_cdt) output_cdt = true;
-	bool produce_outcdt_surf = (options.find('s') != std::string::npos);
-	bool produce_cahm_surf = (options.find('c') != std::string::npos);
-	bool produce_DR_output = (options.find('o') != std::string::npos);
-	bool lowBnd_onMeshDist = (options.find('b') != std::string::npos);
-
+	if(options.find('b') !=  std::string::npos) strcpy(out4CDT_name, filename);
+	bool comp_DelRef_CDT = 	 (options.find('a') != std::string::npos);
+	bool fullLowBnd = 		 (options.find('c') != std::string::npos);
+	bool remove_slivers = 	 (options.find('d') != std::string::npos);
+	bool display_histogram = (options.find('h') != std::string::npos);
+	bool log_mode = 		 (options.find('l') != std::string::npos);
+	bool verbose_mode = 	 (options.find('v') != std::string::npos);
+	bool cahm_out = 		 (options.find('u') != std::string::npos);
+	bool DR_skin = 			 (options.find('w') != std::string::npos);
+	bool DR_outmesh = 		 (options.find('x') != std::string::npos);
+	bool DRCDT_skin = 		 (options.find('y') != std::string::npos);
+	bool DRCDT_outmesh = 	 (options.find('z') != std::string::npos);
+	
 	// Internal parameters ---
 	double epsilon; // chamfering distance; set just before chamfering below.
-	bool simplify_chamferd_plc = true; // DEFAULT: true. Try to remove uncessary edges while keeping non-acute angles
-	bool safe_chamfering = false; // DEFAULT: false. If true use "safe" chamfering, but creates shorter edges
+	bool cham_simpl = true; // DEFAULT: true. Try to remove uncessary edges while keeping non-acute angles
+	bool cham_safe = false; // DEFAULT: false. If true use "safe" chamfering, but creates shorter edges
 	double optim_ratio = 2.0; // DEFAULT: 2.0. Delaunay Refinement "tetrhadron shape"
-	bool remove_slivers = true; // DEFAULT: true
-	bool display_histogram = false; // If true prints (on the shell) angles histograms.
-	char out4CDT_name[] = ""; // If not empty an input for a cdt is saved on an off file with this string name.
-	bool comp_DelRef_CDT = true; // runs a CDT algorithm using the Delauny Refinement enriched skin.
 	bool log_inputCDT_stats = true; // if log_mode is ON register stats of the CDT of the input PLC
 	// ------------------------
 
@@ -390,7 +395,7 @@ int main(int argc, char* argv[])
 
 	// Chamfering of the input PLC
 	epsilon = plc.bbDiag() / 1000.0;	// Use bounding-box-diagonal/1000 as chamfering distance
-	chamfering_interface cham(plc, epsilon, safe_chamfering, simplify_chamferd_plc, produce_cahm_surf, verbose_mode);
+	chamfering_interface cham(plc, epsilon, cham_safe, cham_simpl, cahm_out, verbose_mode);
 	bool input_enclose_vol = cham.input_has_interior;
 	if (log_mode) log_chamferPLC_stats(cham, time_point);
 
@@ -414,10 +419,10 @@ int main(int argc, char* argv[])
 	if(log_mode) time_DRinit = take_time(time_point);
 
 	cdt_interface input_cdt;
-	if (lowBnd_onMeshDist){ 
+	if (fullLowBnd){ 
 		// OPTIONAL: Compute the minum distance between any two mesh elements (vertices, edges, triangles)
 		//			 A cdt is needed to make this computation efficient.
-		input_cdt.createSteinerCDT(plc, true, false); // needed to compute lower bound on generic mesh elements distances
+		input_cdt.createSteinerCDT(plc, true); // needed to compute lower bound on generic mesh elements distances
 		double min_PLC_dist = input_cdt.min_inputPLC_dist() / (3.0 * BBox_len); // the lower bound is 1/3 * min_PLC_dist normalized wrt mesh bounding box diagonal
 		closest_dist = min(closest_dist, min_PLC_dist);
 		if (verbose_mode) std::cout << "Distance of closest elems relative to bb diagonal: " << closest_dist << "\n";
@@ -498,7 +503,7 @@ int main(int argc, char* argv[])
 	// is internal(fully contained) or external(not fully contained) wrt the input surface.
 	if(input_enclose_vol){
 		if (verbose_mode) std::cout<<"Input encloses a volume\n";
-		if (!input_cdt.is_defined()) input_cdt.createSteinerCDT(plc, false, false); 
+		if (!input_cdt.is_defined()) input_cdt.createSteinerCDT(plc, false); 
 		markInternalTets(mesh, input_cdt.mesh);
 		if (log_mode) advance_ProcessLogging("IntExt_class");
 	}
@@ -515,11 +520,8 @@ int main(int argc, char* argv[])
 	else mesh.printReport(input_enclose_vol, "DelRef Mesh");
 	
 	if(display_histogram) make_histogram(mesh, "DR");
-
-	if(produce_DR_output){
-		mesh.saveTET("DR_mesh.tet");
-		mesh.saveOFFInterface("DR_plcfaces.off");
-	}
+	if(DR_skin) mesh.saveOFFInterface("DR_interface.off");
+	if(DR_outmesh) mesh.saveTET("DR_mesh.tet");
 
 	// Delaunay Refinement + CDT
 
@@ -541,7 +543,7 @@ int main(int argc, char* argv[])
 			inputPLC qo_plc; 
 			qo_plc.initFromVectors(cdt_vrts.data(), cdt_vrts.size()/3, cdt_tris.data(), cdt_tris.size()/3, false);
 			cdt_interface DR_cdt; 
-			DR_cdt.createSteinerCDT(qo_plc, false, produce_outcdt_surf);
+			DR_cdt.createSteinerCDT(qo_plc, false);
 			Tetrahedrization stat_mesh;
 			stat_mesh.initFromVerticesAndTets(DR_cdt.mesh->vertices, DR_cdt.mesh->tet_node);
 			markAllTetAsInternal( stat_mesh );
@@ -551,8 +553,9 @@ int main(int argc, char* argv[])
 				advance_ProcessLogging("final_CDT");
 			}
 			else stat_mesh.printReport(false, "CDT of partially Delaunay refined mesh");
-			if(display_histogram) make_histogram(mesh, "CDT");
 			if(display_histogram) make_histogram(mesh, "DR+CDT");
+			if(DRCDT_skin) DR_cdt.save_skin_toOFF("DRCDT");
+			if(DRCDT_outmesh) DR_cdt.save_mesh_toTET("DRCDT");
 		}
 		else{ if(log_mode) log_empty_mesh_stats(); }
 
@@ -565,6 +568,7 @@ int main(int argc, char* argv[])
 		if(strlen(out4CDT_name) != 0 && !comp_DelRef_CDT) log_empty_mesh_stats(); 
 		log_mesh_stats(stat_INmesh, input_cdt.time_cdt, input_cdt.num_constr_tris);
 		advance_ProcessLogging("reg_inCDT_stats");
+		if(display_histogram) make_histogram(mesh, "input CDT");
 	}
 	else{ if(log_mode) log_empty_mesh_stats();  }
 	
