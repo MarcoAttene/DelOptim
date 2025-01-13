@@ -216,6 +216,7 @@ private:
     bool def_interior;
     bool manifold;
     bool safe_mode;
+    bool simplify;
 
 public:
     const double epsilon;
@@ -239,9 +240,9 @@ public:
     std::vector<uint32_t> mark_edges;
     std::vector<uint32_t> mark_faces;
 
-    PLCc(const inputPLC& _plc, const double _epsilon, bool _safe, bool _verbose) : 
+    PLCc(const inputPLC& _plc, const double _epsilon, bool _safe, bool _simplify, bool _verbose) : 
             plc(_plc), epsilon(_epsilon), n_in_vrts(_plc.numVertices()), 
-            def_interior(true), manifold(true), safe_mode(_safe), verbose(_verbose) {
+            def_interior(true), manifold(true), safe_mode(_safe), simplify(_simplify), verbose(_verbose) {
         
         #ifdef PLCC_VERBOSE_DEBUG
         verbose = true;
@@ -270,7 +271,13 @@ public:
         
         if(verbose) std::cout<<"[PLCc] - chamfering COMPLETED\n";
 
-        // if( !check_acuteness() ) exit(99); // DEBUG
+        if(simplify) {
+		    size_t old_num_edges = edges.size(); // verbose
+		    chamfered_plc_simplification();
+		    if(verbose) std::cout << "Chamfered PLC simplication COMPLETED: " 
+                                   << old_num_edges - edges.size() 
+                                   << " edges removed.\n";
+	    }
     };
 
     inline bool isSteinerVertex(uint32_t v) const { return v >= n_in_vrts; }
