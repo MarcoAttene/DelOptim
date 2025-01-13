@@ -425,7 +425,6 @@ inline pointType* createMidPoint(const pointType* v0, const pointType* v1)
 			return new implicitPoint_LNC(l0.P().toExplicit3D(), l0.Q().toExplicit3D(), (l0.T() + l1.T()) / 2);
 		else if (&l0.P() == &l1.Q() && &l0.Q() == &l1.P()) // opposite orientations
 			return new implicitPoint_LNC(l0.P().toExplicit3D(), l0.Q().toExplicit3D(), (l0.T() + 1.0 - l1.T()) / 2);
-		// start ADDED by Lorenzo 20/08/2024
 		else {
 			double u, v;
 			const explicitPoint3D* A = NULL;
@@ -455,7 +454,6 @@ inline pointType* createMidPoint(const pointType* v0, const pointType* v1)
 
 			return new implicitPoint3D_BPT(*A, *B, *C, u / 2, v / 2);
 		}
-		// end ADDED by Lorenzo 20/08/2024
 	}
 
 	// LB

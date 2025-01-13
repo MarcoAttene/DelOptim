@@ -905,8 +905,6 @@ public:
 					ref_t[1] = &v1->toExplicit3D();
 					ref_t[2] = &v2->toExplicit3D();
 				}
-
-				// start ADDED by Lorenzo 20/08/2024
 				else if (v0->isLNC() || v1->isLNC() || v2->isLNC()) {
 
 					const explicitPoint3D* p[6];
@@ -939,8 +937,6 @@ public:
 					ref_t[2] = p[2];
 
 				}
-				// end ADDED by Lorenzo 20/08/2024
-
 				else continue;
 				break;
 			}
@@ -1276,7 +1272,6 @@ public:
 		return cp / bb_diag_len;
 	}
 
-	// replaceVertex : add by Lorenzo 15/11/2024
 	void replaceVertex(TetVertex* old_vrt_ptr, TetVertex* new_vrt_ptr){
 		std::replace(V.begin(), V.end(), old_vrt_ptr, new_vrt_ptr);
 	}
@@ -1810,7 +1805,6 @@ public:
 		return split;
 	}
 
-	// Add by Lorenzo 15/11/2024
 	// Calculate the cost of a virtual tetrahedron
 	static double computeVirtTetCost(const pointType* v0, const pointType* v1, const pointType* v2, const pointType* v3) {
 		double ccc[3];
@@ -2808,7 +2802,6 @@ protected:
 		for (PLC_Face* f : G) f->check();
 	}
 
-	// Added by Lorenzo 12/12/2024
 	void export_DelTris_asTriVrtsInds(std::vector<uint32_t>& del_tri, bool exclude_bbtris) const {
 		del_tri.reserve(F.size());
 		for(const TetFace* tri : F) if(tri->deltri != NULL){

@@ -208,7 +208,7 @@ public:
     // Starting from 'tet', move by adjacencies until a tet is found that
     // contains vi. Return that tet.
     uint64_t searchTetrahedron(uint64_t tet, const uint32_t v_id);
-    uint64_t searchTetrahedron(uint64_t tet, const pointType* pt); // Add by Lorenzo on 06 Nov 2024
+    uint64_t searchTetrahedron(uint64_t tet, const pointType* pt);
 
     // Incident tetrahedra at a vertex
     void VT(uint32_t v, std::vector<uint64_t>& vt) const;

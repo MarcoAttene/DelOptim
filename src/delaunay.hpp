@@ -480,7 +480,6 @@ uint64_t TetMesh::searchTetrahedron(uint64_t tet, const uint32_t v_id)
     return tet;
 }
 
-// Added by Lorenzo on 06 Nov 2024
 uint64_t TetMesh::searchTetrahedron(uint64_t tet, const pointType* pt)
 {
     if (tet_node[tet + 3] == INFINITE_VERTEX)
