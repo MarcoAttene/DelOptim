@@ -1259,7 +1259,7 @@ public:
 
 	void initWithTetgen(int num_vertices, double vertices[], int num_triangles, uint32_t triangles[], bool quality, bool no_erosion);
 
-	double initFromVerticesAndTets(const std::vector<pointType*>& vertices, const std::vector<uint32_t>& tet_nodes) {
+	double initFromVerticesAndTets(const std::vector<pointType*>& vertices, const std::vector<uint32_t>& tet_nodes, double bb_diag_len=1.0) {
 		initVertices(vertices);
 
 		for (uint32_t t = 0; t < (uint32_t)tet_nodes.size(); t += 4)
@@ -1273,7 +1273,7 @@ public:
 		double ad, cp = DBL_MAX;
 		for (auto* e : E) if ((ad = euclideanDistance(e->v0(), e->v1())) < cp) cp = ad;
 
-		return cp / euclideanDistance(V.back(), V[V.size()-8]);
+		return cp / bb_diag_len;
 	}
 
 	// replaceVertex : add by Lorenzo 15/11/2024
@@ -2070,7 +2070,7 @@ public:
 		printf("Average max per-face face angle: %f\n", avMaxPlan);
 		printf("Average min per-tet dihedral angle: %f\n", avMinDihed);
 		printf("Average max per-tet dihedral angle: %f\n", avMaxDihed);
-
+		printf("\n");
 	}
 	// -----------------------------------
 	void insertExistingVertex(TetVertex* vm, Tetrahedron *st) {
