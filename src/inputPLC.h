@@ -270,6 +270,7 @@ public:
         uint32_t* tri_vertices_p;
         read_OFF_file(filename, &vertex_p, &npts, &tri_vertices_p, &ntri, verbose);
         if (verbose) printf("File read\n");
+        else printf("input file %s read.\n", filename);
         if (npts == 0) ip_error("Input file has no vertices\n");
         if (ntri == 0) ip_error("Input file has no triangles\n");
 
