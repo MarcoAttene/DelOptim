@@ -30,6 +30,13 @@ using namespace std;
 
 typedef std::chrono::steady_clock chrono_clock;
 
+uint64_t take_time(chrono_clock::time_point& time_point){
+	chrono_clock::time_point now = chrono_clock::now();
+	uint64_t time_laps = std::chrono::duration_cast<std::chrono::milliseconds>(now - time_point).count();
+	time_point = now;
+	return time_laps;
+}
+
 // -------------------------- //
 // -- CHAMFERING INTERFACE -- //
 //--------------------------- //
@@ -45,6 +52,9 @@ class chamfering_interface{
 	PLCc* cut_plc;
 	std::vector<uint32_t> out_tri; // to save triangles of the triangulated chamfered-PLC (as consecutive triple of indices wrt cut_plc->vertices)
 	std::vector<uint32_t> uv; // Used Vertex 
+	bool safe;
+	bool simplify;
+	bool save_output;
 
 	public:
 	std::vector<genericPoint*> out_vertices;
@@ -53,10 +63,10 @@ class chamfering_interface{
 	bool input_is_manifold;
 	bool input_has_interior;
 
-	chamfering_interface(inputPLC& _plc, double _epsilon, 
-						 bool safe = false, bool simplify_cham_plc = true, 
-						 bool print_surf = false, bool verbose = false) {
-		cut_plc = new PLCc(_plc, _epsilon, safe, simplify_cham_plc, verbose);
+	chamfering_interface(bool _safe = false, bool _simplify = true, bool _save_output_surf = false) : safe(_safe), simplify(_simplify), save_output(_save_output_surf) {}
+
+	void perform_chamfering(inputPLC& _plc, double _epsilon, bool verbose = false) {
+		cut_plc = new PLCc(_plc, _epsilon, safe, simplify, verbose);
 
 		cut_plc->get_triangles(out_tri); // computes a trinagulation of cut_plc (without modifing it) 
 		if (verbose) std::cout << "Chamfered PLC triangulation COMPLETED\n\n";
@@ -85,7 +95,7 @@ class chamfering_interface{
 		// Produce some intermediate output mesh and save .off files 
 		// cut_plc->save_rebuilded_input_after_chamfering(out_tri, "all_tris_chamf.off"); // Save chamfered input + complementar triangles to rebuild the input PLC
 		// cut_plc->saveFaces(); // save polygonal faces
-		if(print_surf) cut_plc->saveTriangles(out_tri, "chamfered_plc.off"); // save triangulated faces
+		if(save_output) cut_plc->saveTriangles(out_tri, "chamfered_plc.off"); // save triangulated faces
 
 		input_is_manifold = cut_plc->input_plc_is_manifold();
 		input_has_interior = cut_plc->input_plc_defines_interior();
@@ -197,16 +207,142 @@ void markInternalTets(Tetrahedrization& mesh, TetMesh* cdt) {
 
 inline void markAllTetAsInternal(Tetrahedrization& m){ for(Tetrahedron* t : m.tets()) t->is_internal = true; }
 
-// ------------------ //
-// Collect statistics //
-// ------------------ //
+// ----------------------------- //
+// Delaunay refinement interface //
+// ----------------------------- //
 
-uint64_t take_time(chrono_clock::time_point& time_point){
-	chrono_clock::time_point now = chrono_clock::now();
-	uint64_t time_laps = std::chrono::duration_cast<std::chrono::milliseconds>(now - time_point).count();
-	time_point = now;
-	return time_laps;
-}
+class delRef_interface {
+	private:
+	inputPLC& plc;
+	TetMesh tin;
+	chamfering_interface& cham;
+
+	chrono_clock::time_point& time_point;
+	bool verbose, log;
+
+	public:
+	Tetrahedrization mesh;
+	cdt_interface input_cdt;
+	double BBox_len;
+	double closest_dist;
+
+	delRef_interface(inputPLC& _plc, chamfering_interface& _cham, chrono_clock::time_point& _time_point, bool _verbose, bool _log) : 
+					 plc(_plc), verbose(_verbose), log(_log), cham(_cham), time_point(_time_point){};
+
+	void init(bool fullLowBnd, uint32_t min_dist_exp){
+		tin.init_vertices(cham.out_vertices);
+
+		if (verbose) std::cout << "Delaunizing vertices...\n";
+		BBox_len = tin.addBoundingBoxVertices(); // Adds to tin.vertices 8 new vertices defining a bounding box, by default dist = 1.0
+		tin.tetrahedrize();
+
+		if (log) advance_ProcessLogging("Del_vertices");
+
+		// Copy the DT to the Delaunay Refinement data structure
+		closest_dist = mesh.initFromVerticesAndTets(tin.vertices, tin.tet_node, BBox_len);
+		// now closest_dist take into account only vertex-vertex diatnce
+		if (verbose) std::cout << "Distance of closest points relative to bb diagonal: " << closest_dist << "\n";
+
+		uint64_t time_DRinit = 0;
+		if(log) time_DRinit = take_time(time_point);
+
+		if (fullLowBnd){ 
+			// OPTIONAL: Compute the minum distance between any two mesh elements (vertices, edges, triangles)
+			//			 A cdt is needed to make this computation efficient.
+			input_cdt.createSteinerCDT(plc, true); // needed to compute lower bound on generic mesh elements distances
+			double min_PLC_dist = input_cdt.min_inputPLC_dist() / (3.0 * BBox_len); // the lower bound is 1/3 * min_PLC_dist normalized wrt mesh bounding box diagonal
+			closest_dist = min(closest_dist, min_PLC_dist);
+			if (verbose) std::cout << "Distance of closest elems relative to bb diagonal: " << closest_dist << "\n";
+		}
+
+		if (log){ 
+			logDouble( closest_dist );
+			logInteger( take_time(time_point) );
+		}
+
+		// OPTIONAL: if min_dist_exp has been given (!=UINT32_MAX) as user defined parameter,
+		// avoid Delaunay Refinement and exit, if the min closest_dist is < 10^-min_dist_exp.
+		if (min_dist_exp != UINT32_MAX){
+			double min_dist = std::pow(10.0, (double)min_dist_exp * (-1.0));
+			if (closest_dist < min_dist){ 
+				if(log) finishLogging();
+				std::cout<<"\nPROGRAM ABORTED: Closest points are too close ( < "<< min_dist <<")\n\n\n";
+				exit(10);
+			}
+		}
+		
+		if (log) advance_ProcessLogging("DelRef_init");
+
+		// Add PLC faces - at this stage faces are just collections of input triangles
+		if (verbose) std::cout << "Adding PLC faces...\n";
+		mesh.addPLCFaces(cham.out_faces);
+
+		if (log){ 
+			time_DRinit += take_time(time_point);
+			logDouble(time_DRinit);
+			advance_ProcessLogging("add_PLCfaces");
+		}
+	}
+
+	void recover_segments(){
+		// pt.1 - Split all missing segments while no more remain.
+		// This does not modify the triangles in PLC faces, but updates their edges with
+		// the subedges being computed.
+		if (verbose) std::cout << "Recovering segments...\n";
+		mesh.recoverAllSegments();
+		if (log){ 
+			logInteger( take_time(time_point) );
+			advance_ProcessLogging("rec_seg");
+		}
+		// pt.2 - Create a local 2D Delaunay triangulation for each PLC face
+		if (verbose) std::cout << "Delaunizing faces...\n";
+		mesh.delaunizePLCFaces();
+		if (log) advance_ProcessLogging("Del_faces");
+	}
+
+	void recover_faces(){
+		if (verbose) std::cout << "Recovering faces...\n";
+		mesh.recoverAllFaces();
+		if (log){ 
+			logInteger( take_time(time_point) );
+			advance_ProcessLogging("rec_faces");
+		}
+	}
+	
+	void optimize_tetrahedra(double optim_ratio, bool remove_slivers, uint32_t max_vrts = UINT32_MAX){
+		if (verbose) {
+			if(max_vrts==UINT32_MAX) std::cout << "Optimizing tets...\n";
+			else std::cout << "Optimizing tets (max number of vertices = "<<max_vrts<<") ...\n";
+		}
+		mesh.optimizeTets(optim_ratio, remove_slivers, true, max_vrts);
+		if (log){ 
+			logInteger( take_time(time_point) );
+			advance_ProcessLogging("tet_optim");
+		}
+	}
+
+	void intExt_classification(){
+		// In case the input edges has even number of incident input triangles,
+		// i.e. the input surface defines an "interior",
+		// we create a CDT (or use an existing one) of the input surface 
+		// to decide wherever an "otimized mesh" tetrahedron
+		// is internal(fully contained) or external(not fully contained) wrt the input surface.
+		if(cham.input_has_interior){
+			if (verbose) std::cout<<"Input encloses a volume\n";
+			if (!input_cdt.is_defined()) input_cdt.createSteinerCDT(plc, false); 
+			markInternalTets(mesh, input_cdt.mesh);
+			if (log) advance_ProcessLogging("IntExt_class");
+		}
+		else markAllTetAsInternal(mesh); 
+
+		if(log) logInteger( input_cdt.time_cdt );
+	}
+
+};
+
+// ------------------------------ //
+// Logging and Collect statistics //
+// ------------------------------ //
 
 inline void log_inputPLC_stats(inputPLC& plc, chrono_clock::time_point& time_point){
 	logInteger(plc.numVertices());
@@ -283,7 +419,11 @@ inline void log_mesh_stats(Tetrahedrization& mesh,
 
 inline void log_empty_mesh_stats(){ for(size_t i=0; i< 4 + 14; i++) logEmpty(); }
 
-char empty_str[] = "";
+// -------------- //
+// main functions //
+// -------------- //
+
+void optimizeChamferedInputPLC(){}
 
 int main(int argc, char* argv[])
 {
@@ -359,18 +499,18 @@ int main(int argc, char* argv[])
 	bool display_histogram = (options.find('h') != std::string::npos);
 	bool log_mode = 		 (options.find('l') != std::string::npos);
 	bool verbose_mode = 	 (options.find('v') != std::string::npos);
-	bool cahm_out = 		 (options.find('u') != std::string::npos);
+	bool cham_out = 		 (options.find('u') != std::string::npos);
 	bool DR_skin = 			 (options.find('w') != std::string::npos);
 	bool DR_outmesh = 		 (options.find('x') != std::string::npos);
 	bool DRCDT_skin = 		 (options.find('y') != std::string::npos);
 	bool DRCDT_outmesh = 	 (options.find('z') != std::string::npos);
 	
 	// Internal parameters ---
-	double epsilon; // chamfering distance; set just before chamfering below.
-	bool cham_simpl = true; // DEFAULT: true. Try to remove uncessary edges while keeping non-acute angles
-	bool cham_safe = false; // DEFAULT: false. If true use "safe" chamfering, but creates shorter edges
-	double optim_ratio = 2.0; // DEFAULT: 2.0. Delaunay Refinement "tetrhadron shape"
-	bool log_inputCDT_stats = true; // if log_mode is ON register stats of the CDT of the input PLC
+	double epsilon; // chamfering distance; set later beacause depends on bounding box diagonal.
+	bool cham_simpl = true; // DEFAULT: true. Try to remove uncessary edges while keeping non-acute angles.
+	bool cham_safe = false; // DEFAULT: false. If true use "safe" chamfering, but creates shorter edges.
+	double optim_ratio = 2.0; // DEFAULT: 2.0. Delaunay Refinement "tetrhadron shape".
+	bool log_inputCDT_stats = true; // if log_mode is ON register stats of the CDT of the input PLC.
 	// ------------------------
 
 	chrono_clock::time_point time_point = chrono_clock::now(); // start timing
@@ -382,7 +522,6 @@ int main(int argc, char* argv[])
 	inputPLC plc;
 	plc.initFromFile(filename, verbose_mode);
 
-	if (!verbose_mode) std::cout<<"\ninput_file: "<<filename<<"\n";
 	if (log_mode) log_inputPLC_stats(plc, time_point);
 
 #ifdef USE_TETGEN
@@ -395,133 +534,30 @@ int main(int argc, char* argv[])
 
 	// Chamfering of the input PLC
 	epsilon = plc.bbDiag() / 1000.0;	// Use bounding-box-diagonal/1000 as chamfering distance
-	chamfering_interface cham(plc, epsilon, cham_safe, cham_simpl, cahm_out, verbose_mode);
+	chamfering_interface cham(cham_safe, cham_simpl, cham_out);
+	cham.perform_chamfering(plc, epsilon, verbose_mode);
 	bool input_enclose_vol = cham.input_has_interior;
 	if (log_mode) log_chamferPLC_stats(cham, time_point);
 
-	TetMesh tin; // Dealunay Tetrahedrization of the set of vertices of the chamfered PLC
-	tin.init_vertices(cham.out_vertices);
-
-	if (verbose_mode) std::cout << "Delaunizing vertices...\n";
-	double BBox_len = tin.addBoundingBoxVertices(); // Adds to tin.vertices 8 new vertices defining a bounding box, by default dist = 1.0
-	tin.tetrahedrize();
-
-	if (log_mode) advance_ProcessLogging("Del_vertices");
-
-	Tetrahedrization mesh; // Delaunay Refinement data structure
-
-	// Copy the DT to the Delaunay Refinement data structure
-	double closest_dist = mesh.initFromVerticesAndTets(tin.vertices, tin.tet_node, BBox_len);
-	// now closest_dist take into account only vertex-vertex diatnce
-	if (verbose_mode) std::cout << "Distance of closest points relative to bb diagonal: " << closest_dist << "\n";
-
-	uint64_t time_DRinit = 0;
-	if(log_mode) time_DRinit = take_time(time_point);
-
-	cdt_interface input_cdt;
-	if (fullLowBnd){ 
-		// OPTIONAL: Compute the minum distance between any two mesh elements (vertices, edges, triangles)
-		//			 A cdt is needed to make this computation efficient.
-		input_cdt.createSteinerCDT(plc, true); // needed to compute lower bound on generic mesh elements distances
-		double min_PLC_dist = input_cdt.min_inputPLC_dist() / (3.0 * BBox_len); // the lower bound is 1/3 * min_PLC_dist normalized wrt mesh bounding box diagonal
-		closest_dist = min(closest_dist, min_PLC_dist);
-		if (verbose_mode) std::cout << "Distance of closest elems relative to bb diagonal: " << closest_dist << "\n";
-	}
-
-	if (log_mode){ 
-		logDouble( closest_dist );
-		logInteger( take_time(time_point) );
-	}
-
-	// OPTIONAL: if min_dist_exp has been given (!=UINT32_MAX) as user defined parameter,
-	// avoid Delaunay Refinement and exit, if the min closest_dist is < 10^-min_dist_exp.
-	if (min_dist_exp != UINT32_MAX){
-		double min_dist = std::pow(10.0, (double)min_dist_exp * (-1.0));
-		if (closest_dist < min_dist){ 
-			if(log_mode) finishLogging();
-			std::cout<<"\nPROGRAM ABORTED: Closest points are too close ( < "<< min_dist <<")\n\n\n";
-			exit(10);
-		}
-	}
-	
-	if (log_mode) advance_ProcessLogging("DelRef_init");
-
-	// Add PLC faces - at this stage faces are just collections of input triangles
-	if (verbose_mode) std::cout << "Adding PLC faces...\n";
-	mesh.addPLCFaces(cham.out_faces);
-
-	if (log_mode){ 
-		time_DRinit += take_time(time_point);
-		logDouble(time_DRinit);
-		advance_ProcessLogging("add_PLCfaces");
-	}
-
-	// Delaunay refinement algorithm
-	// DR.1 - Split all missing segments while no more remain.
-	// This does not modify the triangles in PLC faces, but updates their edges with
-	// the subedges being computed.
-	if (verbose_mode) std::cout << "Recovering segments...\n";
-	
-	mesh.recoverAllSegments();
-
-	if (log_mode){ 
-		logInteger( take_time(time_point) );
-		advance_ProcessLogging("rec_seg");
-	}
-
-	// DR.2 - Create a local 2D Delaunay triangulation for each PLC face
-	if (verbose_mode) std::cout << "Delaunizing faces...\n";
-	mesh.delaunizePLCFaces();
-	if (log_mode) advance_ProcessLogging("Del_faces");
-
-	// DR.3 - Face recovery
-	if (verbose_mode) std::cout << "Recovering faces...\n";
-	mesh.recoverAllFaces();
-
-	if (log_mode){ 
-		logInteger( take_time(time_point) );
-		advance_ProcessLogging("rec_faces");
-	}
-
-	// DR.4 - Tet optimization
-	if (verbose_mode) {
-		if(max_vrts==UINT32_MAX) std::cout << "Optimizing tets...\n";
-		else std::cout << "Optimizing tets (max number of vertices = "<<max_vrts<<") ...\n";
-	}
-	mesh.optimizeTets(optim_ratio, remove_slivers, true, max_vrts);
-
-	if (log_mode){ 
-		logInteger( take_time(time_point) );
-		advance_ProcessLogging("tet_optim");
-	}
-
-	// DR.5 - Classify internal/external tets after optimization
-	// In case the input edges has even number of incident input triangles,
-	// i.e. the input surface defines an "interior",
-	// we create a CDT (or use an existing one) of the input surface 
-	// to decide wherever an "otimized mesh" tetrahedron
-	// is internal(fully contained) or external(not fully contained) wrt the input surface.
-	if(input_enclose_vol){
-		if (verbose_mode) std::cout<<"Input encloses a volume\n";
-		if (!input_cdt.is_defined()) input_cdt.createSteinerCDT(plc, false); 
-		markInternalTets(mesh, input_cdt.mesh);
-		if (log_mode) advance_ProcessLogging("IntExt_class");
-	}
-	else markAllTetAsInternal(mesh); 
-
-	if(log_mode) logInteger( input_cdt.time_cdt );
+	// Delaunay Refinement of the chamfered PLC
+	delRef_interface DR(plc, cham, time_point, verbose_mode, log_mode);
+	DR.init(fullLowBnd, min_dist_exp);
+	DR.recover_segments();
+	DR.recover_faces();
+	DR.optimize_tetrahedra(optim_ratio, remove_slivers, max_vrts);
+	DR.intExt_classification();
 	
 	if(verbose_mode){ 
 		std::cout << "Elapsed time (ms): " << take_time(time_zero) << "\n";
 		uint64_t bmem = getPeakRSS();
 		std::cout << "Peak memory RSS (byte): " << bmem << "\n";
 	}
-	if (log_mode)  log_DelRef_mesh_stats(mesh, input_enclose_vol);
-	else mesh.printReport(input_enclose_vol, "DelRef Mesh");
+	if (log_mode)  log_DelRef_mesh_stats(DR.mesh, input_enclose_vol);
+	else DR.mesh.printReport(input_enclose_vol, "DelRef Mesh");
 	
-	if(display_histogram) make_histogram(mesh, "DR");
-	if(DR_skin) mesh.saveOFFInterface("DR_interface.off");
-	if(DR_outmesh) mesh.saveTET("DR_mesh.tet");
+	if(display_histogram) make_histogram(DR.mesh, "DR");
+	if(DR_skin) DR.mesh.saveOFFInterface("DR_interface.off");
+	if(DR_outmesh) DR.mesh.saveTET("DR_mesh.tet");
 
 	// Delaunay Refinement + CDT
 
@@ -534,7 +570,8 @@ int main(int argc, char* argv[])
 		// to be used as input for cdt
 		std::vector<double> cdt_vrts;
 		std::vector<uint32_t> cdt_tris;
-		get_vrts_and_tris_for_cdt(mesh, cham.out_conn_vertices, cdt_vrts, cdt_tris, out4CDT_name, verbose_mode);
+		// get_vrts_and_tris_for_cdt(mesh, cham.out_conn_vertices, cdt_vrts, cdt_tris, out4CDT_name, verbose_mode);
+		get_vrts_and_tris_for_cdt(DR.mesh, cham.out_conn_vertices, cdt_vrts, cdt_tris, out4CDT_name, verbose_mode);
 
 		if( comp_DelRef_CDT ){
 
@@ -553,7 +590,7 @@ int main(int argc, char* argv[])
 				advance_ProcessLogging("final_CDT");
 			}
 			else stat_mesh.printReport(false, "CDT of partially Delaunay refined mesh");
-			if(display_histogram) make_histogram(mesh, "DR+CDT");
+			if(display_histogram) make_histogram(stat_mesh, "DR+CDT");
 			if(DRCDT_skin) DR_cdt.save_skin_toOFF("DRCDT");
 			if(DRCDT_outmesh) DR_cdt.save_mesh_toTET("DRCDT");
 		}
@@ -561,14 +598,17 @@ int main(int argc, char* argv[])
 
 	}
 
-	if(log_mode && input_cdt.is_defined() && log_inputCDT_stats){
+	// if(log_mode && input_cdt.is_defined() && log_inputCDT_stats){
+	if(log_mode && DR.input_cdt.is_defined() && log_inputCDT_stats){
 		Tetrahedrization stat_INmesh;
-		stat_INmesh.initFromVerticesAndTets(input_cdt.mesh->vertices, input_cdt.mesh->tet_node);
+		// stat_INmesh.initFromVerticesAndTets(input_cdt.mesh->vertices, input_cdt.mesh->tet_node);
+		stat_INmesh.initFromVerticesAndTets(DR.input_cdt.mesh->vertices, DR.input_cdt.mesh->tet_node);
 		markAllTetAsInternal( stat_INmesh ); 
 		if(strlen(out4CDT_name) != 0 && !comp_DelRef_CDT) log_empty_mesh_stats(); 
-		log_mesh_stats(stat_INmesh, input_cdt.time_cdt, input_cdt.num_constr_tris);
+		// log_mesh_stats(stat_INmesh, input_cdt.time_cdt, input_cdt.num_constr_tris);
+		stat_INmesh.initFromVerticesAndTets(DR.input_cdt.mesh->vertices, DR.input_cdt.mesh->tet_node);
 		advance_ProcessLogging("reg_inCDT_stats");
-		if(display_histogram) make_histogram(mesh, "input CDT");
+		if(display_histogram) make_histogram(stat_INmesh, "input CDT");
 	}
 	else{ if(log_mode) log_empty_mesh_stats();  }
 	
