@@ -581,13 +581,11 @@ int main(int argc, char* argv[])
 
 	chrono_clock::time_point time_point = chrono_clock::now(); // start timing
 	chrono_clock::time_point time_zero = time_point;
-
 	if (log_mode) startLogging(filename);
 
 	// Load a valid PLC from file
 	inputPLC plc;
 	plc.initFromFile(filename, verbose_mode);
-
 	if (log_mode) log_inputPLC_stats(plc, time_point);
 
 #ifdef USE_TETGEN
@@ -611,13 +609,11 @@ int main(int argc, char* argv[])
 	DR.recover_faces();
 	DR.optimize_tetrahedra(optim_ratio, remove_slivers, max_vrts);
 	DR.intExt_classification();
-	
 	if(verbose_mode){ 
 		std::cout << "Elapsed time (ms): " << take_time(time_zero) << "\n";
 		uint64_t bmem = getPeakRSS();
 		std::cout << "Peak memory RSS (byte): " << bmem << "\n";
 	}
-
 	DR.get_mesh_statistics(log_mode, histo, DR_skin, DR_outmesh);
 
 	// Delaunay Refinement + CDT
