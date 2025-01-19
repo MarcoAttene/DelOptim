@@ -207,6 +207,85 @@ void markInternalTets(Tetrahedrization& mesh, TetMesh* cdt) {
 
 inline void markAllTetAsInternal(Tetrahedrization& m){ for(Tetrahedron* t : m.tets()) t->is_internal = true; }
 
+// ------------------------------ //
+// Logging and Collect statistics //
+// ------------------------------ //
+
+inline void log_inputPLC_stats(inputPLC& plc, chrono_clock::time_point& time_point){
+	logInteger(plc.numVertices());
+	logInteger(plc.numTriangles());
+	logInteger( take_time(time_point) );
+	advance_ProcessLogging("load_input");
+}
+
+inline void log_chamferPLC_stats(chamfering_interface& cham, chrono_clock::time_point& time_point){
+	logBoolean(cham.input_is_manifold);
+	logBoolean(!cham.input_has_interior);
+	logInteger(cham.get_num_out_vrts());
+	logInteger(cham.get_num_out_faces());
+	logInteger( take_time(time_point) );
+	advance_ProcessLogging("chamfering");
+}
+
+void make_histogram(Tetrahedrization& mesh, const char* name){
+	std::vector<uint32_t> fah, dah;
+	mesh.makeFaceAngleHistogram(fah, 12);
+	mesh.makeDihedralAngleHistogram(dah, 12);
+	std::cout << name << " FACE ANGLE HISTOGRAM\n";
+	for (auto x : fah) std::cout << x << "\t";
+	std::cout << "\n";
+	std::cout << name << " DIHEDRAL ANGLE HISTOGRAM\n";
+	for (auto x : dah) std::cout << x << "\t";
+	std::cout << "\n";
+}
+
+inline void logAngleStats(Tetrahedrization& mesh, bool input_encloses_vol = false){
+	double maxEneIN, maxEneEX;
+	mesh.maxTetEnergy(maxEneIN, maxEneEX);
+	logDouble(maxEneIN); 
+	if(input_encloses_vol) logDouble(maxEneEX); else logEmpty();
+	
+	double minFAIN, maxFAIN, minFAEX, maxFAEX, minDAIN, maxDAIN, minDAEX, maxDAEX;
+	mesh.minMaxTetAngle(minFAIN, maxFAIN, minFAEX, maxFAEX, minDAIN, maxDAIN, minDAEX, maxDAEX);
+	logDouble(minFAIN); 
+	logDouble(maxFAIN); 
+	if(input_encloses_vol) logDouble(minFAEX); else logEmpty();
+	if(input_encloses_vol) logDouble(maxFAEX); else logEmpty();
+	logDouble(minDAIN); 
+	logDouble(maxDAIN); 
+	if(input_encloses_vol) logDouble(minDAEX); else logEmpty();
+	if(input_encloses_vol) logDouble(maxDAEX); else logEmpty();
+
+	double avMinPlan, avMaxPlan, avMinDihed, avMaxDihed;
+	mesh.averageAngles(avMinPlan, avMaxPlan, avMinDihed, avMaxDihed);
+	logDouble(avMinPlan);
+	logDouble(avMaxPlan);
+	logDouble(avMinDihed);
+	logDouble(avMaxDihed);
+}
+
+inline void log_DelRef_mesh_stats(Tetrahedrization& mesh, bool input_enclose_vol = false){
+	logInteger( (uint32_t)mesh.num_vertices() );
+	logInteger( (uint32_t)mesh.num_tetrahedra() );
+	logInteger( (uint32_t)mesh.count_DelTris(true) ); // only constrained triangles
+	logDouble( mesh.minEdgeLength() );
+	logAngleStats(mesh, input_enclose_vol);
+	advance_ProcessLogging("Optim");
+}
+
+inline void log_mesh_stats(Tetrahedrization& mesh, 
+						   uint64_t time_ms,
+						   uint32_t num_constr_tris,
+						   bool input_enclose_vol = false){
+	logInteger( time_ms );
+	logInteger( (uint64_t) mesh.num_vertices() );
+	logInteger( (uint64_t) mesh.num_tetrahedra() );
+	logInteger( num_constr_tris );
+	logAngleStats( mesh, input_enclose_vol );
+}
+
+inline void log_empty_mesh_stats(){ for(size_t i=0; i< 4 + 14; i++) logEmpty(); }
+
 // ----------------------------- //
 // Delaunay refinement interface //
 // ----------------------------- //
@@ -338,92 +417,79 @@ class delRef_interface {
 		if(log) logInteger( input_cdt.time_cdt );
 	}
 
+	void get_mesh_statistics(bool log, bool histo, bool DR_skin, bool DR_outmesh){
+		bool input_enclose_vol = cham.input_has_interior;
+		if (log)  log_DelRef_mesh_stats(mesh, input_enclose_vol);
+		else mesh.printReport(input_enclose_vol, "DelRef Mesh");
+		if(histo) make_histogram(mesh, "DR");
+		if(DR_skin) mesh.saveOFFInterface("DR_interface.off");
+		if(DR_outmesh) mesh.saveTET("DR_mesh.tet");
+	}
+
+	void get_inputCDT_statistics(bool display_histogram, bool log){
+		if(!display_histogram && !log) return;
+		if(!input_cdt.is_defined()){
+			if(log) log_empty_mesh_stats();
+			return;
+		}
+		Tetrahedrization stat_INmesh;
+		stat_INmesh.initFromVerticesAndTets(input_cdt.mesh->vertices, input_cdt.mesh->tet_node);
+		markAllTetAsInternal( stat_INmesh ); 
+		if(log) {
+			log_mesh_stats(stat_INmesh, input_cdt.time_cdt, input_cdt.num_constr_tris);
+			advance_ProcessLogging("reg_inCDT_stats");
+		}
+		else log_empty_mesh_stats();
+		if(display_histogram) make_histogram(stat_INmesh, "input CDT");
+	}
+
 };
 
-// ------------------------------ //
-// Logging and Collect statistics //
-// ------------------------------ //
+// ---------------------------- //
+// CDT of Delaunay refined mesh //
+// ---------------------------- //
 
-inline void log_inputPLC_stats(inputPLC& plc, chrono_clock::time_point& time_point){
-	logInteger(plc.numVertices());
-	logInteger(plc.numTriangles());
-	logInteger( take_time(time_point) );
-	advance_ProcessLogging("load_input");
+void get_CDT_of_DRmesh( delRef_interface& DR, chamfering_interface& cham, const char* out4CDT_name,
+						bool display_histogram, bool DRCDT_skin, bool DRCDT_outmesh,
+						bool computeCDT, bool verbose, bool log,
+						chrono_clock::time_point& _time_point){
+
+	if (verbose) std::cout << "\nClosing chamfered PLC.\n";
+
+		// Collects all Delaunay Refinement vertices and 
+		// a Delaunay Refined triangulation of the chamfered plc, 
+		// to be used as input for cdt
+		std::vector<double> cdt_vrts;
+		std::vector<uint32_t> cdt_tris;
+		get_vrts_and_tris_for_cdt(DR.mesh, cham.out_conn_vertices, cdt_vrts, cdt_tris, out4CDT_name, verbose);
+
+		if( computeCDT ){
+
+			if (verbose) std::cout << "\nComputing Delaunay Refined CDT.\n";
+
+			inputPLC qo_plc; 
+			qo_plc.initFromVectors(cdt_vrts.data(), cdt_vrts.size()/3, cdt_tris.data(), cdt_tris.size()/3, false);
+			cdt_interface DR_cdt; 
+			DR_cdt.createSteinerCDT(qo_plc, false);
+			Tetrahedrization stat_mesh;
+			stat_mesh.initFromVerticesAndTets(DR_cdt.mesh->vertices, DR_cdt.mesh->tet_node);
+			markAllTetAsInternal( stat_mesh );
+
+			if(log){
+				log_mesh_stats(stat_mesh, take_time(time_point), DR_cdt.num_constr_tris);
+				advance_ProcessLogging("final_CDT");
+			}
+			else stat_mesh.printReport(false, "CDT of partially Delaunay refined mesh");
+			if(display_histogram) make_histogram(stat_mesh, "DR+CDT");
+			if(DRCDT_skin) DR_cdt.save_skin_toOFF("DRCDT");
+			if(DRCDT_outmesh) DR_cdt.save_mesh_toTET("DRCDT");
+		}
+		else{ if(log) log_empty_mesh_stats(); }
 }
 
-inline void log_chamferPLC_stats(chamfering_interface& cham, chrono_clock::time_point& time_point){
-	logBoolean(cham.input_is_manifold);
-	logBoolean(!cham.input_has_interior);
-	logInteger(cham.get_num_out_vrts());
-	logInteger(cham.get_num_out_faces());
-	logInteger( take_time(time_point) );
-	advance_ProcessLogging("chamfering");
-}
-
-void make_histogram(Tetrahedrization& mesh, const char* name){
-	std::vector<uint32_t> fah, dah;
-	mesh.makeFaceAngleHistogram(fah, 12);
-	mesh.makeDihedralAngleHistogram(dah, 12);
-	std::cout << name << " FACE ANGLE HISTOGRAM\n";
-	for (auto x : fah) std::cout << x << "\t";
-	std::cout << "\n";
-	std::cout << name << " DIHEDRAL ANGLE HISTOGRAM\n";
-	for (auto x : dah) std::cout << x << "\t";
-	std::cout << "\n";
-}
-
-inline void logAngleStats(Tetrahedrization& mesh, bool input_encloses_vol = false){
-	double maxEneIN, maxEneEX;
-	mesh.maxTetEnergy(maxEneIN, maxEneEX);
-	logDouble(maxEneIN); 
-	if(input_encloses_vol) logDouble(maxEneEX); else logEmpty();
-	
-	double minFAIN, maxFAIN, minFAEX, maxFAEX, minDAIN, maxDAIN, minDAEX, maxDAEX;
-	mesh.minMaxTetAngle(minFAIN, maxFAIN, minFAEX, maxFAEX, minDAIN, maxDAIN, minDAEX, maxDAEX);
-	logDouble(minFAIN); 
-	logDouble(maxFAIN); 
-	if(input_encloses_vol) logDouble(minFAEX); else logEmpty();
-	if(input_encloses_vol) logDouble(maxFAEX); else logEmpty();
-	logDouble(minDAIN); 
-	logDouble(maxDAIN); 
-	if(input_encloses_vol) logDouble(minDAEX); else logEmpty();
-	if(input_encloses_vol) logDouble(maxDAEX); else logEmpty();
-
-	double avMinPlan, avMaxPlan, avMinDihed, avMaxDihed;
-	mesh.averageAngles(avMinPlan, avMaxPlan, avMinDihed, avMaxDihed);
-	logDouble(avMinPlan);
-	logDouble(avMaxPlan);
-	logDouble(avMinDihed);
-	logDouble(avMaxDihed);
-}
-
-inline void log_DelRef_mesh_stats(Tetrahedrization& mesh, bool input_enclose_vol = false){
-	logInteger( (uint32_t)mesh.num_vertices() );
-	logInteger( (uint32_t)mesh.num_tetrahedra() );
-	logInteger( (uint32_t)mesh.count_DelTris(true) ); // only constrained triangles
-	logDouble( mesh.minEdgeLength() );
-	logAngleStats(mesh, input_enclose_vol);
-	advance_ProcessLogging("Optim");
-}
-
-inline void log_mesh_stats(Tetrahedrization& mesh, 
-						   uint64_t time_ms,
-						   uint32_t num_constr_tris,
-						   bool input_enclose_vol = false){
-	logInteger( time_ms );
-	logInteger( (uint64_t) mesh.num_vertices() );
-	logInteger( (uint64_t) mesh.num_tetrahedra() );
-	logInteger( num_constr_tris );
-	logAngleStats( mesh, input_enclose_vol );
-}
-
-inline void log_empty_mesh_stats(){ for(size_t i=0; i< 4 + 14; i++) logEmpty(); }
-
-// -------------- //
-// main functions //
-// -------------- //
-
-void optimizeChamferedInputPLC(){}
+// ---- //
+// main //
+// ---- //
 
 int main(int argc, char* argv[])
 {
@@ -493,24 +559,24 @@ int main(int argc, char* argv[])
 		else memcpy(filename, argv[i], strlen(argv[i]) + 1);
 
 	if(options.find('b') !=  std::string::npos) strcpy(out4CDT_name, filename);
-	bool comp_DelRef_CDT = 	 (options.find('a') != std::string::npos);
-	bool fullLowBnd = 		 (options.find('c') != std::string::npos);
-	bool remove_slivers = 	 (options.find('d') != std::string::npos);
-	bool display_histogram = (options.find('h') != std::string::npos);
-	bool log_mode = 		 (options.find('l') != std::string::npos);
-	bool verbose_mode = 	 (options.find('v') != std::string::npos);
-	bool cham_out = 		 (options.find('u') != std::string::npos);
-	bool DR_skin = 			 (options.find('w') != std::string::npos);
-	bool DR_outmesh = 		 (options.find('x') != std::string::npos);
-	bool DRCDT_skin = 		 (options.find('y') != std::string::npos);
-	bool DRCDT_outmesh = 	 (options.find('z') != std::string::npos);
+	bool comp_DelRef_CDT = (options.find('a') != std::string::npos);
+	bool fullLowBnd = 	   (options.find('c') != std::string::npos);
+	bool remove_slivers =  (options.find('d') != std::string::npos);
+	bool histo = 		   (options.find('h') != std::string::npos);
+	bool log_mode = 	   (options.find('l') != std::string::npos);
+	bool verbose_mode =    (options.find('v') != std::string::npos);
+	bool cham_out = 	   (options.find('u') != std::string::npos);
+	bool DR_skin = 		   (options.find('w') != std::string::npos);
+	bool DR_outmesh = 	   (options.find('x') != std::string::npos);
+	bool DRCDT_skin = 	   (options.find('y') != std::string::npos);
+	bool DRCDT_outmesh =   (options.find('z') != std::string::npos);
 	
 	// Internal parameters ---
 	double epsilon; // chamfering distance; set later beacause depends on bounding box diagonal.
 	bool cham_simpl = true; // DEFAULT: true. Try to remove uncessary edges while keeping non-acute angles.
 	bool cham_safe = false; // DEFAULT: false. If true use "safe" chamfering, but creates shorter edges.
 	double optim_ratio = 2.0; // DEFAULT: 2.0. Delaunay Refinement "tetrhadron shape".
-	bool log_inputCDT_stats = true; // if log_mode is ON register stats of the CDT of the input PLC.
+	bool log_inputCDT_stats = (log_mode && true); // DEFAULT: true. If true register stats of the CDT of the input PLC.
 	// ------------------------
 
 	chrono_clock::time_point time_point = chrono_clock::now(); // start timing
@@ -536,7 +602,6 @@ int main(int argc, char* argv[])
 	epsilon = plc.bbDiag() / 1000.0;	// Use bounding-box-diagonal/1000 as chamfering distance
 	chamfering_interface cham(cham_safe, cham_simpl, cham_out);
 	cham.perform_chamfering(plc, epsilon, verbose_mode);
-	bool input_enclose_vol = cham.input_has_interior;
 	if (log_mode) log_chamferPLC_stats(cham, time_point);
 
 	// Delaunay Refinement of the chamfered PLC
@@ -552,65 +617,15 @@ int main(int argc, char* argv[])
 		uint64_t bmem = getPeakRSS();
 		std::cout << "Peak memory RSS (byte): " << bmem << "\n";
 	}
-	if (log_mode)  log_DelRef_mesh_stats(DR.mesh, input_enclose_vol);
-	else DR.mesh.printReport(input_enclose_vol, "DelRef Mesh");
-	
-	if(display_histogram) make_histogram(DR.mesh, "DR");
-	if(DR_skin) DR.mesh.saveOFFInterface("DR_interface.off");
-	if(DR_outmesh) DR.mesh.saveTET("DR_mesh.tet");
+
+	DR.get_mesh_statistics(log_mode, histo, DR_skin, DR_outmesh);
 
 	// Delaunay Refinement + CDT
+	if( comp_DelRef_CDT || strlen(out4CDT_name) != 0 )
+		get_CDT_of_DRmesh(DR, cham, out4CDT_name, histo, DRCDT_skin, DRCDT_outmesh, comp_DelRef_CDT, verbose_mode, log_mode, time_point);
 
-	if( comp_DelRef_CDT || strlen(out4CDT_name) != 0 ){
-
-		if (verbose_mode) std::cout << "\nClosing chamfered PLC.\n";
-
-		// Collects all Delaunay Refinement vertices and 
-		// a Delaunay Refined triangulation of the chamfered plc, 
-		// to be used as input for cdt
-		std::vector<double> cdt_vrts;
-		std::vector<uint32_t> cdt_tris;
-		// get_vrts_and_tris_for_cdt(mesh, cham.out_conn_vertices, cdt_vrts, cdt_tris, out4CDT_name, verbose_mode);
-		get_vrts_and_tris_for_cdt(DR.mesh, cham.out_conn_vertices, cdt_vrts, cdt_tris, out4CDT_name, verbose_mode);
-
-		if( comp_DelRef_CDT ){
-
-			if (verbose_mode) std::cout << "\nComputing Delaunay Refined CDT.\n";
-
-			inputPLC qo_plc; 
-			qo_plc.initFromVectors(cdt_vrts.data(), cdt_vrts.size()/3, cdt_tris.data(), cdt_tris.size()/3, false);
-			cdt_interface DR_cdt; 
-			DR_cdt.createSteinerCDT(qo_plc, false);
-			Tetrahedrization stat_mesh;
-			stat_mesh.initFromVerticesAndTets(DR_cdt.mesh->vertices, DR_cdt.mesh->tet_node);
-			markAllTetAsInternal( stat_mesh );
-
-			if(log_mode){
-				log_mesh_stats(stat_mesh, take_time(time_point), DR_cdt.num_constr_tris);
-				advance_ProcessLogging("final_CDT");
-			}
-			else stat_mesh.printReport(false, "CDT of partially Delaunay refined mesh");
-			if(display_histogram) make_histogram(stat_mesh, "DR+CDT");
-			if(DRCDT_skin) DR_cdt.save_skin_toOFF("DRCDT");
-			if(DRCDT_outmesh) DR_cdt.save_mesh_toTET("DRCDT");
-		}
-		else{ if(log_mode) log_empty_mesh_stats(); }
-
-	}
-
-	// if(log_mode && input_cdt.is_defined() && log_inputCDT_stats){
-	if(log_mode && DR.input_cdt.is_defined() && log_inputCDT_stats){
-		Tetrahedrization stat_INmesh;
-		// stat_INmesh.initFromVerticesAndTets(input_cdt.mesh->vertices, input_cdt.mesh->tet_node);
-		stat_INmesh.initFromVerticesAndTets(DR.input_cdt.mesh->vertices, DR.input_cdt.mesh->tet_node);
-		markAllTetAsInternal( stat_INmesh ); 
-		if(strlen(out4CDT_name) != 0 && !comp_DelRef_CDT) log_empty_mesh_stats(); 
-		// log_mesh_stats(stat_INmesh, input_cdt.time_cdt, input_cdt.num_constr_tris);
-		stat_INmesh.initFromVerticesAndTets(DR.input_cdt.mesh->vertices, DR.input_cdt.mesh->tet_node);
-		advance_ProcessLogging("reg_inCDT_stats");
-		if(display_histogram) make_histogram(stat_INmesh, "input CDT");
-	}
-	else{ if(log_mode) log_empty_mesh_stats();  }
+	// Get statistics or agnles histogram of the input-CDT
+	DR.get_inputCDT_statistics(histo, log_inputCDT_stats);
 	
 	if(log_mode) finishLogging();
 	std::cout << "Execution correctly COMPLETED.\n\n\n";

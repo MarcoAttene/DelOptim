@@ -361,7 +361,7 @@ public:
     void remove_junk_edges_from_face(uint32_t fi);
     void get_edge_ch_dist(std::vector<double>& edge_ch_dist);
     void chamfer_acute_edge_from_inc_face(uint32_t ei, uint32_t fi, double d);
-    uint32_t chamfering_face(uint32_t fi);
+    void chamfering_face(uint32_t fi);
 
     // Simplification (Post-Processing)
 

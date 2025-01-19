@@ -1307,7 +1307,7 @@ implicitPoint3D_BPT* move_BPT_toward_LNC(pointType* bpt, pointType* lnc, double 
 }
 
 //
-uint32_t PLCc::chamfering_face(uint32_t fi){
+void PLCc::chamfering_face(uint32_t fi){
 
     #ifdef PLCC_VERBOSE_DEBUG
     std::cout<<"\nchamfering "; print_face_edges(fi);
@@ -1328,7 +1328,7 @@ uint32_t PLCc::chamfering_face(uint32_t fi){
         if(is_acute_vrt(edges[ei].ep[0]) || is_acute_vrt(edges[ei].ep[1])) n_acute_vrts++;
     n_acute_vrts = n_acute_vrts / 2; // each vertex have been counted two times. 
 
-    if(n_acute_vrts == 0) return 0;
+    if(n_acute_vrts == 0) return;
 
     faces[fi].bounding_edges.resize( faces[fi].bounding_edges.size() + n_acute_vrts, EMPTY_PLACE);
 
@@ -1398,25 +1398,13 @@ uint32_t PLCc::chamfering_face(uint32_t fi){
 
     if(impossible){ 
 
-        // DEBUG
-        const uint32_t* tv = plc.triangle_vertices.data() + faces[fi].triangle*3;
-        std::cout<<"chamfering failed for face["<< fi <<"] (input tri #"
-                 << faces[fi].triangle <<" <"<<*(tv)<<","<<*(tv+1)<<","<<*(tv+2)<<">) - fallback solution\n";
-        
-        if(verbose) std::cout<<"chamfering failed for face["<< fi <<"] -> fallback solution\n";
-
-        // STUCTURAL-DEBUG
-        for(const uint32_t& ei : faces[fi].bounding_edges){ 
-            if(ei!=EMPTY_PLACE && edges[ei].isFlat()){
-                std::cout<<"ERROR this face has the a sub edge of flat edge "<<ei<<" <"<<edges[ei].oep[0]<<","<<edges[ei].oep[1]<<"> on its boundary.\n";
-               // ip_error("it is not possible to fallback chamfer - CLEVER SOLUTION NEED TO BE IMPLEMENTED\n");
-               std::cout<<"[cham.cpp - chamfering_face()] ERROR Impossible to fallback chamfer\n"; exit(1);
-            }
+        if(verbose){
+            const uint32_t* tv = plc.triangle_vertices.data() + faces[fi].triangle*3;
+            std::cout<<"chamfering failed for face["<< fi <<"] (input tri #"
+                     << faces[fi].triangle <<" <"<<*(tv)<<","<<*(tv+1)<<","<<*(tv+2)<<">)\n";
         }
 
-        inputTriangleChamfering(fi); 
-
-        return 1; 
+        ip_error("ERROR: chamfering failed, a BPT cannot be build\n.");
     }
 
     // Part 1/2: face normalization
@@ -1531,7 +1519,6 @@ uint32_t PLCc::chamfering_face(uint32_t fi){
     std::cout<<"after removing..\n"; print_face_edges(fi);
     #endif
 
-    return 0;
 }
 
 // --------------- //
@@ -1547,14 +1534,12 @@ void PLCc::chamfering(){
     checkEdges_beforeJunkDeletion();
     #endif
 
-    uint32_t n_fbs = 0;
-    for(uint32_t fi=0; fi<faces.size(); fi++){ n_fbs += chamfering_face(fi); }
+    for(uint32_t fi=0; fi<faces.size(); fi++) chamfering_face(fi);
 
     // Delete junk edges (and all isoleted edges) from edges vector
     for(CHAMedge& e : edges) if( e.isJunk() ){ e.inc_face.clear(); }
     cleanUp_edges();
 
-    if(n_fbs) std::cout<<n_fbs<<" (on "<<faces.size()<<") faces have be fall-back chamfered.\n";
     if(verbose) std::cout<<"[chamfering()] edge chamfering COMPLETED\n";
 }
 
