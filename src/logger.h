@@ -8,42 +8,12 @@ inline void startLogging(const char* fn) {
     char log_prog_file_name[] = "delOpt_log_completed_steps.txt";
     
     char log_file_name[] = "delOpt_log.csv";
-    char first_line[] = "Input_File, Input_nV, Input_nTri, T_init(ms), manifold, open, "
-                        "cham_nV, cham_nTri, T_cham, cham_minDist, T_minDist, "
-                        "T_DRinit, T_DRer, T_DRfr, T_DRopt, T_DRie, "
-                        "DR_nV, DR_nTet, DR_nConTri, DR_Short_Edge, "
-                        "DR_ME_int, DR_ME_ext, "
-                        "DR_mFA_int(DEG), DR_MFA_int(DEG), "
-                        "DR_mFA_ext(DEG), DR_MFA_ext(DEG), "
-                        "DR_mDA_int(DEG), DR_MDA_int(DEG), "
-                        "DR_mDA_ext(DEG), DR_MDA_ext(DEG), "
-                        "DR_av_mFA(DEG), DR_av_MFA(DEG), "
-                        "DR_av_mDA(DEG), DR_av_MDA(DEG), "
-                        "T_CDT, CDT_nV, CDT_nTet, CDT_nConTri, "
-                        "CDT_ME_int, CDT_ME_ext, "
-                        "CDT_mFA_int(DEG), CDT_MFA_int(DEG), "
-                        "CDT_mFA_ext(DEG), CDT_MFA_ext(DEG), "
-                        "CDT_mDA_int(DEG), CDT_MDA_int(DEG), "
-                        "CDT_mDA_ext(DEG), CDT_MDA_ext(DEG), "
-                        "CDT_av_mFA(DEG), CDT_av_MFA(DEG), "
-                        "CDT_av_mDA(DEG), CDT_av_MDA(DEG), "
-                        "T_IN, IN_nV, IN_nTet, IN_nConTri, "
-                        "IN_ME_int, IN_ME_ext, "
-                        "IN_mFA_int(DEG), IN_MFA_int(DEG), "
-                        "IN_mFA_ext(DEG), IN_MFA_ext(DEG), "
-                        "IN_mDA_int(DEG), IN_MDA_int(DEG), "
-                        "IN_mDA_ext(DEG), IN_MDA_ext(DEG), "
-                        "IN_av_mFA(DEG), IN_av_MFA(DEG), "
-                        "IN_av_mDA(DEG), IN_av_MDA(DEG)";
 
     if (fn != NULL) {
 
         // open a .csv file to collect statistics
         log_fp = fopen(log_file_name, "r");
-        if (log_fp == NULL) {
-            log_fp = fopen(log_file_name, "w");
-            fprintf(log_fp, "%s", first_line);  fflush(log_fp);
-        }
+        if (log_fp == NULL) { log_fp = fopen(log_file_name, "w"); }
         else {
             fclose(log_fp);
             log_fp = fopen(log_file_name, "a");
@@ -52,35 +22,42 @@ inline void startLogging(const char* fn) {
 
         // open a .txt file to monitor execution progresses (usefull for models that do not convege)
         log_prog = fopen(log_prog_file_name, "a");
+        if (log_prog == NULL) { log_prog = fopen(log_prog_file_name, "w"); }
+        else {
+            fclose(log_prog);
+            log_prog = fopen(log_prog_file_name, "a");
+        }
         if (log_prog == NULL) ip_error("Can't open the file for logging progresses!\n");
 
+        // get input model name
         size_t i;
         for (i = strlen(fn); i > 0; i--) if (fn[i - 1] == '\\' || fn[i - 1] == '/') break;
-        fprintf(log_fp, "\n%s", fn + i); 
-        fprintf(log_prog, "\n%s", fn + i); fflush(log_fp);
+        fprintf(log_fp, "\nInput_File, %s", fn + i); fflush(log_fp);
+        fprintf(log_prog, "\n%s", fn + i); fflush(log_prog);
     }
     else {
         log_prog = stdout;
         log_fp = stdout;
-        fprintf(log_fp, "%s", first_line);  fflush(log_fp);
     }
 
     time_point = std::chrono::steady_clock::now(); // set "time zero"
 }
 
-inline void logTimeChunk() {
+inline void logTimeChunk(const char* name) {
     std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
     uint64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - time_point).count();
     time_point = now;
-    fprintf(log_fp, ", %zu", ms); fflush(log_fp);
+    fprintf(log_fp, ", %s, %zu", name, ms); fflush(log_fp);
 }
+inline void skipTimeChunk() { time_point = std::chrono::steady_clock::now(); }
 
-inline void logBoolean(bool b) { fprintf(log_fp, ", %s", b ? "True" : "False"); fflush(log_fp);  }
-inline void logInteger(uint32_t n) { fprintf(log_fp, ", %u", n); fflush(log_fp); }
-inline void logInteger(uint64_t n) { fprintf(log_fp, ", %lu", n); fflush(log_fp); }
-inline void logDouble(double d) { fprintf(log_fp, ", %g", d); fflush(log_fp); }
-inline void logEmpty() { fprintf(log_fp, ", "); fflush(log_fp); }
-
+inline void logBoolean(const char* name, bool b) { fprintf(log_fp, ", %s, %s", name, b ? "True" : "False"); fflush(log_fp);  }
+inline void logInteger(const char* name, uint32_t n) { fprintf(log_fp, ", %s, %u", name, n); fflush(log_fp); }
+inline void logInteger(const char* name1, const char* name2, uint32_t n) { fprintf(log_fp, ", %s%s, %u", name1, name2, n); fflush(log_fp); }
+inline void logInteger(const char* name, uint64_t n) { fprintf(log_fp, ", %s, %lu", name, n); fflush(log_fp); }
+inline void logInteger(const char* name1, const char* name2, uint64_t n) { fprintf(log_fp, ", %s%s, %lu", name1, name2, n); fflush(log_fp); }
+inline void logDouble(const char* name, double d) { fprintf(log_fp, ", %s, %g", name, d); fflush(log_fp); }
+inline void logDouble(const char* name1, const char* name2, double d) { fprintf(log_fp, ", %s%s, %g", name1, name2, d); fflush(log_fp); }
 inline void advance_ProcessLogging(const char* stage){ fprintf(log_prog, ", %s", stage); fflush(log_prog); }
 
 inline void finishLogging() {
