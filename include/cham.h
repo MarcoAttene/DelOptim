@@ -23,8 +23,6 @@
 //#define PLCC_VERBOSE_DEBUG
 //#define PLCC_VERBOSE_DEBUG_LEV1
 
-//#define FP_CHAMFERING
-
 #ifdef TEST_CHAMFERING
 // Exit values for testing purposes
 typedef enum class EXIT_t{
@@ -33,7 +31,7 @@ typedef enum class EXIT_t{
 #endif
 
 // NOTES:   
-//  "flat" edges will be ignored.
+//  "flat" edges will be ignored while aucte angles are searched.
 //  "acute" if incident face form an acute dihedral angle.
 //  "junk" edge have to be deleted during chamfering.
 typedef enum class CHAMedge_t{
@@ -124,7 +122,6 @@ public:
     }
 
     // intialization 
-
     inline void set_ep(uint32_t e0, uint32_t e1){ ep[0]=e0; ep[1]=e1; }
     inline void set_ep_and_reset_oep(uint32_t e0, uint32_t e1){ ep[0]=e0; ep[1]=e1; reset_oep(); }
     inline void reset_oep(){ oep[0]=ep[0]; oep[1]=ep[1]; }
@@ -172,17 +169,14 @@ typedef std::vector<uint32_t>::iterator u32vect_iter;
 
 /// <summary>
 /// CHAMface
-/// This is a maximal flat face of the chmfered PLC (see PLCc class)
-/// It is built out of edge-adjacent and coplanar parts of input triangles
-/// It has no acute corners
-/// It might be bounded by one or more loops of CHAMedges
+/// This is a flat face of the chmfered PLC (see PLCc class)
+/// It is an input triangle, or a portion of it (when chamfered)
+/// It has no acute angles (unless it has two or more flat edges)
 /// </summary>
 class CHAMface {
 public:
-    uint32_t triangle; // One original triangle coplanar and 2D-intersecting the face: 
-                       // it carryes the the orientation wrt the input surface.
+    uint32_t triangle; // Index of the related input triangle
     std::vector<uint32_t> bounding_edges; // (Ordered) Set of bounding edges (CHAMedge indices)
-    bool is_simply_connected = true;
 
     CHAMface(){}
     CHAMface(uint32_t tri) : triangle(tri) {}
@@ -191,17 +185,19 @@ public:
 
     inline bool hasBndEdge(uint32_t e_ind) const { return (std::find( bounding_edges.begin(), bounding_edges.end(), e_ind) != bounding_edges.end()); } // DEBUG
 
-    // boundary navigation: 
-    // works supposing that boundary edges forms a unique chain (ring) when the face is simply connected,
-    // and that boundary edges of not-simply connected faces form chains that are stored contiguosly. 
+    // boundary navigation: works supposing that consecutive edges are stored consecutively in bounding_edges.
+    // index based
     void advance_on_bnd(size_t& it) const { it++; if( it == bounding_edges.size() ) it=0; } 
     void reverse_on_bnd(size_t& it) const { if(it==0) it = bounding_edges.size(); it--; }
+    void make_first(uint32_t ei);
+    void make_last(uint32_t ei);
+    // iterators based
     void advance_on_bnd(u32vect_iter& it) { it++; if( it == bounding_edges.end() ) it = bounding_edges.begin(); } 
     void reverse_on_bnd(u32vect_iter& it) { if(it == bounding_edges.begin()) it = bounding_edges.end(); it--; }
     void make_first(u32vect_iter& it){ std::rotate(bounding_edges.begin(), it, bounding_edges.end() ); }
-    void make_first(uint32_t ei);
     void make_last(u32vect_iter& it);
-    void make_last(uint32_t ei);
+
+    // boundary modification
     void replaceEdge_11(uint32_t old_e, uint32_t new_e); // NOTE: this function does not update connectivity.
 
     // Static functions to be used as predicates in std algorithms
@@ -209,14 +205,13 @@ public:
 };
 
 #define INVALID_BPT UINT32_MAX
-// Chamfered PLC (remove from input PLC angles < pi/2)
+// Chamfered PLC (remove angles < pi/2, from the input PLC)
 class PLCc{
 private:
     bool verbose;
     bool def_interior;
     bool manifold;
     bool safe_mode;
-    bool simplify;
 
 public:
     const double epsilon;
@@ -240,46 +235,27 @@ public:
     std::vector<uint32_t> mark_edges;
     std::vector<uint32_t> mark_faces;
 
-    PLCc(const inputPLC& _plc, const double _epsilon, bool _safe, bool _simplify, bool _verbose) : 
+    PLCc(const inputPLC& _plc, const double _epsilon, bool _safe, bool simplify, bool _verbose) : 
             plc(_plc), epsilon(_epsilon), n_in_vrts(_plc.numVertices()), 
-            def_interior(true), manifold(true), safe_mode(_safe), simplify(_simplify), verbose(_verbose) {
+            def_interior(true), manifold(true), safe_mode(_safe), verbose(_verbose) {
         
         #ifdef PLCC_VERBOSE_DEBUG
         verbose = true;
         #endif
 
         if(verbose) std::cout<<"\nCHAMFERING:\n";
-
         initialize(); 
-        if(verbose) std::cout<<"[PLCc] - initialization COMPLETED\n";
-
-        search_acute_angles();
-
-        if(verbose) std::cout<<"[PLCc] - determination of acute vertices and edges COMPLETED\n";
-
-        #ifdef PLCC_DEBUG
-        assert( acute_edges_have_acute_ep() && checkup() );
-        std::cout<<"[PLCc] - pre-chamfering debug COMPLETED\n";
-        #endif
-        
+        search_acute_angles();    
         chamfering();
-
-        #ifdef PLCC_DEBUG
-        assert( checkup() );
-        std::cout<<"[PLCc] - post-chamfering debug COMPLETED\n";
-        #endif
-        
-        if(verbose) std::cout<<"[PLCc] - chamfering COMPLETED\n";
-
-        if(simplify) {
-		    size_t old_num_edges = edges.size(); // verbose
-		    chamfered_plc_simplification();
-		    if(verbose) std::cout << "Chamfered PLC simplication COMPLETED: " 
-                                   << old_num_edges - edges.size() 
-                                   << " edges removed.\n";
-	    }
+        if(simplify) chamfered_plc_simplification();
+        if(verbose) std::cout<<"chamfering COMPLETED\n";
     };
 
+    // Access private fields
+    inline bool input_plc_defines_interior() const { return def_interior; }
+    inline bool input_plc_is_manifold() const { return manifold; }
+
+    // 
     inline bool isSteinerVertex(uint32_t v) const { return v >= n_in_vrts; }
     inline bool is_acute_vrt(const uint32_t vi) const { return vrt_ch_dist[vi] > 0.0; }
     inline bool is_acute_edge(const uint32_t ei) const { return edges[ei].isAcute(); }
@@ -288,7 +264,6 @@ public:
     void get_face_vertices(const CHAMface& f, std::vector<uint32_t>& fv) const ;
 
     // Ordering
-
     void swap_edges(uint32_t e1, uint32_t e2); // swap edges[e1] and edges[e2] and update connectivity
     uint32_t move_back_isolated_edges();
 
@@ -307,17 +282,11 @@ public:
         ref_exp3D_vrt.push_back(exp3d_i);
     }
 
-    // void swap_faces(uint32_t f1, uint32_t f2); // swap faces[f1] and faces[f2] and update connectivity
-    // uint32_t move_back_empty_faces();
-
     // initialization - an input triangulated PLC is loaded
     //                - vertices, edges and triangular faces are created
-    //                - ajacent coplanar faces are merged: flat edges and empty faces (due to merging) are removed.
 
     void initialize();
-
     void mergePreEdges(); // Removes duplicated pre-edges
-
     void orient_initial_triface_bnd(CHAMface& f);
     uint32_t inTri_opp_vrt(const CHAMedge& e, const uint32_t ti) const;
     void inTri_opp_edge(const uint32_t v, const uint32_t ti, uint32_t& u1, uint32_t& u2) const;
@@ -327,58 +296,40 @@ public:
         return vOrient3D(e.ep[0], e.ep[1], inTri_opp_vrt(e, e.inc_face[0]), inTri_opp_vrt(e, e.inc_face[1])) == 0;
     }
 
-    bool input_plc_defines_interior() const { return def_interior; }
-    bool input_plc_is_manifold() const { return manifold; }
-
     // Search for acute angle between PLCc elements
-    
     void search_acute_angles();
-
     bool findIF_acute_edge(const CHAMedge& e) const;
     bool findIF_acute_vrt(const uint32_t vi, const std::vector<uint32_t>& vv_i, const std::vector<uint32_t>& vt_i) const;
 
     double closest_vv_dist(const uint32_t vi, const std::vector<uint32_t>& vv_i) const;
     double closest_vt_dist(const uint32_t vi, const std::vector<uint32_t>& vt_i) const;
-
     double get_vrt_ch_dist(uint32_t vi, const std::vector<uint32_t>& vv_i, const std::vector<uint32_t>& vt_i) const {
         auto a = closest_vv_dist(vi, vv_i);
         auto b = closest_vt_dist(vi, vt_i);
         auto c = min(a, b);
         return c / 3;
     }
-
-    // Input triangle chamfering (Fallback solution)
-
-    void inputTriangleChamfering(uint32_t fi);
   
     // Chamfering
-
     void chamfering();
     void chamfering_vrts();
     void chamfer_edge_ep(const size_t ei, double d, const uint32_t ep_i);
     uint32_t new_vrt_on_segment(uint32_t v0, uint32_t v1, const double d, const uint32_t d0);
     uint32_t new_vrts_in_inputTri(const uint32_t fi, const uint32_t vi, const uint32_t u0, const uint32_t ou0, const uint32_t u1, const uint32_t ou1);
-    void remove_junk_edges_from_face(uint32_t fi);
-    void get_edge_ch_dist(std::vector<double>& edge_ch_dist);
-    void chamfer_acute_edge_from_inc_face(uint32_t ei, uint32_t fi, double d);
     void chamfering_face(uint32_t fi);
 
-    // Simplification (Post-Processing)
-
+    // Simplification (Optional)
     void chamfered_plc_simplification();
     uint32_t get_cons_edge_on_adj_face(uint32_t ei); // edges[ei] MUST have only one incident face.
     
     // Final triangulation
-
+    void get_triangles(std::vector<uint32_t>& tri_fv) const; // triangulate faces without taking in to account connectivity
     void hear_clipping(uint32_t fi, std::vector<uint32_t>& out_tri_fv_list) const;
-    void triangulate_chamfered_plc(); // WORK IN PROGRESS
 
-    // get a triengulation of the complementar of the chamfered faces wrt the input surface
+    // get a triangulation of the complementar of the chamfered faces wrt the input surface
     void get_complementar_tri(const std::vector<uint32_t>& out_tri, std::vector<uint32_t>& compl_tri);
 
     // Predicates interfaces
-
-    // vertices index interface for geometric predicates
     int vOrient3D(uint32_t v1, uint32_t v2, uint32_t v3, uint32_t v4) const {
         return -pointType::orient3D(*vertices[v1], *vertices[v2], *vertices[v3], *vertices[v4]);
     }
@@ -416,43 +367,11 @@ public:
 
     //Output
 
-    void get_trivrts_1av(const std::vector<uint32_t>& fv, std::vector<uint32_t>& tri_fv) const;
-    void get_trivrts_2av(const std::vector<uint32_t>& fv, std::vector<uint32_t>& tri_fv) const;
-    void get_trivrts_2av1ae(const std::vector<uint32_t>& fv, std::vector<uint32_t>& tri_fv) const;
-    void get_trivrts_3av(const std::vector<uint32_t>& fv, std::vector<uint32_t>& tri_fv) const;
-    void get_trivrts_3av1ae(const std::vector<uint32_t>& fv, std::vector<uint32_t>& tri_fv) const;
-    void get_trivrts_3av2ae(const std::vector<uint32_t>& fv, std::vector<uint32_t>& tri_fv) const;
-    void get_trivrts_3av3ae(const std::vector<uint32_t>& fv, std::vector<uint32_t>& tri_fv) const;
-    void get_triangles(std::vector<uint32_t>& tri_fv) const; // triangulate faces without taking in to account connectivity
-    void get_triangles_naive(std::vector<uint32_t>& tri_fv) const; // DO NOT SUPPORT SIMPLICATION, triangulate faces without taking in to account connectivity
-
-    // Export the data structure to optimizator
-    void chamferPLC(inputPLC& _plc, double _epsilon, std::vector<genericPoint *>& _vertices, std::vector<std::vector<uint32_t>>& _faces){
-        _plc.coordinates.assign(plc.coordinates.begin(), plc.coordinates.end());
-        _plc.triangle_vertices.assign(plc.triangle_vertices.begin(), plc.triangle_vertices.end());
-        _epsilon = epsilon;
-        _vertices.assign(vertices.begin(), vertices.end());
-
-        std::vector<uint32_t> out_tri;
-        get_triangles(out_tri);
-        _faces.resize(out_tri.size() /3);
-        size_t out_fi = 0;
-        for(size_t i=0; i<out_tri.size()/3; i++) 
-            _faces[out_fi++].assign(out_tri.begin() + 3*i, out_tri.begin()+ 3*i +3);
-    }
-
-    // do not work if non-simpy connected faces are present
     bool saveFaces() const {
-
-        for(const CHAMface& f : faces)if( !f.is_simply_connected ){  
-            std::cout<<"PLCc - not simply connected face founded (off file not generated)\n";
-            return false; 
-        }
 
         FILE* fp = fopen("cut_plc_faces.off", "w");
         fprintf(fp, "OFF\n%zu %zu 0\n", vertices.size(), faces.size());
         for(uint32_t i=0; i<vertices.size(); i++) {
-            assert(vertices[i]->is3D()); // DEBUG
             double x, y, z;
             vertices[i]->getApproxXYZCoordinates(x, y, z);
             fprintf(fp, "%f %f %f\n", x, y, z);
@@ -473,21 +392,15 @@ public:
     // and saves into the result in to an off file
     bool saveTriFaces() const {
 
-        for(const CHAMface& f : faces)if( !f.is_simply_connected ){  
-            std::cout<<"PLCc - not simply connected face founded (off file not generated)\n";
-            return false; 
-        }
-
         std::vector<uint32_t> out_tri;
         get_triangles(out_tri);
         assert( (out_tri.size() % 3) == 0 );
 
         uint32_t nfaces = (uint32_t)out_tri.size() / 3;
 
-        FILE* fp = fopen("cut_plc_faces_triangles.off", "w");
+        FILE* fp = fopen("triangulated_cut_plc_faces.off", "w");
         fprintf(fp, "OFF\n%zu %u 0\n", vertices.size(), nfaces);
         for(uint32_t i=0; i<vertices.size(); i++) {
-            assert(vertices[i]->is3D()); // DEBUG
             double x, y, z;
             vertices[i]->getApproxXYZCoordinates(x, y, z);
             fprintf(fp, "%f %f %f\n", x, y, z);
@@ -521,7 +434,6 @@ public:
         fprintf(fp, "OFF\n%u %u 0\n", idx, nfaces);
 
         for(uint32_t i=0; i<vertices.size(); i++) if(used_vertex[i] != UINT32_MAX){
-            assert(vertices[i]->is3D()); // DEBUG
             double x, y, z;
             vertices[i]->getApproxXYZCoordinates(x, y, z);
             fprintf(fp, "%f %f %f\n", x, y, z);
@@ -537,13 +449,7 @@ public:
         return true;
     }
 
-    // do not work for non-simpy connected faces
     bool saveFace(const CHAMface& f, const char* title) const {
-
-        if( !f.is_simply_connected ){  
-            std::cout<<"PLCc - saveFace() - not simply connected face (off file not generated)\n";
-            return false; 
-        }
 
         std::vector<uint32_t> fv;
         get_face_vertices(f, fv);
@@ -563,23 +469,6 @@ public:
         fclose(fp);
 
         return true;
-    }
-
-    void saveFaceVertices(const std::vector<uint32_t> fv, const char* title) const {
-
-        FILE* fp = fopen(title, "w");
-        fprintf(fp, "OFF\n%zu 1 0\n", fv.size());
-        for(uint32_t i=0; i<fv.size(); i++) {
-            double x, y, z;
-            vertices[fv[i]]->getApproxXYZCoordinates(x, y, z);
-            fprintf(fp, "%f %f %f\n", x, y, z);
-        }
-        
-        fprintf(fp, "%zu ", fv.size());
-
-        for(uint32_t i=0; i<fv.size(); i++) fprintf(fp, "%u ", i);
-        fprintf(fp, "\n");
-        fclose(fp);
     }
 
     void saveTriangle(uint32_t v1, uint32_t v2, uint32_t v3, const char* title) const {
@@ -606,13 +495,7 @@ public:
         fclose(fp);
     }
 
-    // do not work if non-simpy connected faces are present
     void saveEdgeIncFaces(const CHAMedge& e) const {
-
-        for(uint32_t fi : e.inc_face)if( !faces[fi].is_simply_connected ){  
-            std::cout<<"PLCc - saveEdgeIncFaces() - not simply connected face founded (off file not generated)\n";
-            return; 
-        }
 
         FILE* fp = fopen("edge_inc_faces.off", "w");
         fprintf(fp, "OFF\n%zu %zu 0\n", vertices.size(), e.inc_face.size());
@@ -781,8 +664,6 @@ public:
         
         // check endpoints
         if( !vertex_have_sense(e.ep[0]) || !vertex_have_sense(e.ep[1]) ){ error = true; }
-
-        #ifndef FP_CHAMFERING
         
         if(e.oep[0]!=e.ep[0] || e.oep[1]!=e.ep[1]){
 
@@ -815,7 +696,6 @@ public:
 
             }
         }
-        #endif
 
         return !error;
     }
@@ -868,9 +748,7 @@ public:
         }
 
         // check the correct orientation wrt neighbours on boundary
-        #ifndef FP_CHAMFERINF
         if( !face_boundary_overlaps(fi) ) error = true;
-        #endif
 
         // check that each enpoint compares exactly two times on the bounday
         std::vector<uint32_t> loc_mark_vrts(vertices.size(), 0);
@@ -888,8 +766,6 @@ public:
             }
         }
 
-        
-            
         return !error;
     }
 
@@ -922,9 +798,7 @@ public:
         bool error = false;
 
         // check edges
-        #ifndef FP_CHAMFERING
         for(uint32_t ei=0; ei<edges.size(); ei++) if(!edge_is_coherent(ei)) error = true;
-        #endif
         
         // check faces
         for(uint32_t fi=0; fi<faces.size(); fi++) if(!face_boundary_have_sense(fi)) error = true;
@@ -1204,6 +1078,11 @@ public:
 
     #endif
 
+    // Single triangle chamfering (old stuff)
+    // void inputTriangleChamfering(uint32_t fi);
+    // void remove_junk_edges_from_face(uint32_t fi);
+    // void get_edge_ch_dist(std::vector<double>& edge_ch_dist);
+    // void chamfer_acute_edge_from_inc_face(uint32_t ei, uint32_t fi, double d);
 
 };
 
