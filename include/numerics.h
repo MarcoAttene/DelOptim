@@ -59,7 +59,7 @@ void initFPU();
 inline void ip_error(const char* msg)
 {
 	std::cerr << msg;
-	exit(0);
+	exit(1);
 }
 
 #if INTPTR_MAX == INT64_MAX

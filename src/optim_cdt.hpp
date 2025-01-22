@@ -73,7 +73,7 @@ class bnd_vrt_chain {
 	
 	void add_comm_v(size_t first_i, size_t last_i){ 
 		comm_v.resize( last_i - first_i );
-		std::iota(comm_v.begin(), comm_v.end(), first_i); 
+		std::iota(comm_v.begin(), comm_v.end(), (uint32_t)first_i);
 	}
 	void set_ref_vrts(uint32_t _r0, uint32_t _r1){ r0=_r0; r1=_r1; }
 
@@ -112,7 +112,6 @@ double markChamferExplicitNeighbors(Tetrahedrization& mesh, const pointType *p, 
 	double d0, d1, d2, d3;
 	Tetrahedra cavity;
 	Tetrahedron* s, * t;
-	const TetVertex* w;
 	cavity.push_back(t0); t0->mark<7>();
 	for (size_t i = 0; i < cavity.size(); i++) {
 		t = cavity[i];
@@ -142,7 +141,6 @@ void markChamferExplicitNeighbors(Tetrahedrization& mesh, const pointType* p1, c
 	double d0, d1, d2, d3;
 	Tetrahedra cavity;
 	Tetrahedron* s, * t;
-	const TetVertex* w;
 	cavity.push_back(t0); t0->mark<7>();
 	for (size_t i = 0; i < cavity.size(); i++) {
 		t = cavity[i];
@@ -166,9 +164,9 @@ bool check_overlaps(const std::vector<const pointType *> vrts, const std::vector
 	const uint32_t* t;
 	for(size_t i=0; i<tri.size()/3; i++){
 		t = tri.data() + 3*i;
-		e.push_back( bnd_edge(*t     , *(t+1)) ); e.back().count = i;
-		e.push_back( bnd_edge(*(t+1) , *(t+2)) ); e.back().count = i;
-		e.push_back( bnd_edge(*(t+2) , *t	 ) ); e.back().count = i;
+		e.push_back( bnd_edge(*t     , *(t+1)) ); e.back().count = (uint32_t)i;
+		e.push_back( bnd_edge(*(t+1) , *(t+2)) ); e.back().count = (uint32_t)i;
+		e.push_back( bnd_edge(*(t+2) , *t	 ) ); e.back().count = (uint32_t)i;
 	}
 
 	uint32_t u0, u1, v, w;
@@ -198,7 +196,7 @@ bool check_overlaps(const std::vector<const pointType *> vrts, const std::vector
 	if(passed) std::cout<<"overlap check passed\n";
 	else{
 		FILE* fp = fopen("overlaps.off", "w");
-		fprintf(fp, "OFF\n%u %u 0\n", vrts.size(), (uint32_t) otri.size() / 3);
+		fprintf(fp, "OFF\n%u %u 0\n", (uint32_t)vrts.size(), (uint32_t) otri.size() / 3);
 
 		for(uint32_t i=0; i<vrts.size(); i++) {
 			double x,y,z;
@@ -249,8 +247,8 @@ bool get_vrts_and_tris_for_cdt(Tetrahedrization& mesh, std::vector<uint32_t>& re
 	size_t n_optimMesh_vrts = mesh.num_vertices();
 	std::vector< std::vector<uint32_t> > vbe_rel( n_optimMesh_vrts );
 	for(size_t be_i=0; be_i<be.size(); be_i++){
-		vbe_rel[ be[be_i].e0 ].push_back(be_i);
-		vbe_rel[ be[be_i].e1 ].push_back(be_i);
+		vbe_rel[ be[be_i].e0 ].push_back((uint32_t)be_i);
+		vbe_rel[ be[be_i].e1 ].push_back((uint32_t)be_i);
 	}
 
 	// To connect a boundary edge be_i (of be) to a suitable vertex in order to
@@ -287,8 +285,8 @@ bool get_vrts_and_tris_for_cdt(Tetrahedrization& mesh, std::vector<uint32_t>& re
 			// Starting from b0 = v0 we want to reach b1 collecting all
 			// sub-edges of E in a unique chain.
 
-			v0 = vi; assert( ref_vrts[v0] != UINT32_MAX ); // starting vertex
-			v1 = be[bei].opposite_ep(vi);  assert(vi!=v1);
+			v0 = (uint32_t)vi; assert( ref_vrts[v0] != UINT32_MAX ); // starting vertex
+			v1 = be[bei].opposite_ep((uint32_t)vi);  assert(vi!=v1);
 			curr_e = bei;
 			chain.push_back( &(be[curr_e]) ); be[curr_e].visited = true;
 			while( ref_vrts[v1] == UINT32_MAX ){
@@ -380,7 +378,7 @@ bool get_vrts_and_tris_for_cdt(Tetrahedrization& mesh, std::vector<uint32_t>& re
     }
 
 	uint32_t n_new_vrts = (uint32_t)vertices.size();
-	uint32_t n_tot_vrts = n_optimMesh_vrts + n_new_vrts;
+	uint32_t n_tot_vrts = (uint32_t)n_optimMesh_vrts + n_new_vrts;
 	for(const bnd_vrt_chain& c : half_strip_bnd){
 		v0 = c.e0();
 		v1 = c.comm_v.front();
@@ -498,7 +496,7 @@ bool get_vrts_and_tris_for_cdt(Tetrahedrization& mesh, std::vector<uint32_t>& re
 		strcat(out_filename, "_rebuilt.off");
 		// ----------------------------------------
 		FILE* fp = fopen(out_filename, "w");
-		fprintf(fp, "OFF\n%u %u 0\n", cdt_vrts.size()/3, (uint32_t) cdt_tris.size() / 3);
+		fprintf(fp, "OFF\n%u %u 0\n", (uint32_t)cdt_vrts.size()/3, (uint32_t) cdt_tris.size() / 3);
 
 		for(uint32_t i=0; i<cdt_vrts.size()/3; i++) {
 			fprintf(fp, "%f %f %f\n", cdt_vrts[i*3], cdt_vrts[i*3+1], cdt_vrts[i*3+2]);

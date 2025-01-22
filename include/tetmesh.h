@@ -1831,7 +1831,7 @@ public:
 	
 	void optimizeTets(double threshold_ratio = 2.0, bool remove_slivers =false, bool use_offcenters =true, uint32_t max_num_vertices =UINT32_MAX) {
 
-		if (max_num_vertices < UINT32_MAX) max_num_vertices += num_vertices();
+		if (max_num_vertices < UINT32_MAX) max_num_vertices += (uint32_t)num_vertices();
 
 		threshold_ratio *= threshold_ratio; // Make it squared to account for squares everywhere
 		bool split;
@@ -1927,7 +1927,7 @@ public:
 		}
 
 		// Normalize into percentage
-		uint32_t tn = F.size() * 3;
+		uint32_t tn = (uint32_t)F.size() * 3;
 		for (uint32_t& b : h) {	b *= 100; b /= tn; }
 	}
 
@@ -1955,7 +1955,7 @@ public:
 		}
 
 		// Normalize into percentage
-		uint32_t tn = T.size() * 6;
+		uint32_t tn = (uint32_t)T.size() * 6;
 		for (uint32_t& b : h) { b *= 100; b /= tn; }
 	}
 

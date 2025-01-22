@@ -298,7 +298,7 @@ uint32_t TetMesh::countConstrTris(const std::vector<bool>& constrTris) const {
     for (uint64_t i = 0; i < tet_node.size(); i++) 
         if (i > tet_neigh[i] && constrTris[i] ) num_tris++;
 
-    return num_tris;
+    return (uint32_t)num_tris;
 }
 
 bool TetMesh::saveRationalTET(const char* filename, bool inner_only)

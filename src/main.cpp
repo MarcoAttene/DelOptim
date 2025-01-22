@@ -2,17 +2,14 @@
 #define _HAS_STD_BYTE 0  // https://developercommunity.visualstudio.com/t/error-c2872-byte-ambiguous-symbol/93889
 #endif
  
-// #define USE_TETGEN // actuallt does not work 
+// #define USE_TETGEN
 
-// #define DISP_PROGRESS // to display on the shell progresses during Delaunay Refinement alg.
+// #define DISP_PROGRESS // to display progress during Delaunay Refinement
 
 #include <iostream>
 #include <fstream>
 #include "cdt.h"
 #include "inputPLC.h"
-#ifdef USE_TETGEN
-#include "tetgen_interface.cpp"
-#endif
 #include <chrono>
 #include "logger.h"
 #include "getRSS.h"
@@ -27,6 +24,9 @@ using namespace std;
 #endif
 
 #include "cham.h"
+#ifdef USE_TETGEN
+#include "tetgen_interface.cpp"
+#endif
 
 typedef std::chrono::steady_clock chrono_clock;
 
@@ -43,7 +43,7 @@ uint64_t take_time(chrono_clock::time_point& time_point){
 
 // It has 4 OPTIONS (boolean):
 // - safe -> enables the "theoretically safe" chamfering strategy, which in turn creates shorter edges.
-// - simplify_cham_plc -> enables merging unnecessary output edges as long as no acute angles appears. 
+// - simplify_cham_plc -> enables merging unnecessary output edges as long as no acute angles appear. 
 // - print_surf -> enables saving the triangulated output on the file chamfered_plc.off
 // - verbose -> enables verbose mode
 class chamfering_interface{
@@ -63,7 +63,8 @@ class chamfering_interface{
 	bool input_is_manifold;
 	bool input_has_interior;
 
-	chamfering_interface(bool _safe = false, bool _simplify = true, bool _save_output_surf = false) : safe(_safe), simplify(_simplify), save_output(_save_output_surf) {}
+	chamfering_interface(bool _safe = false, bool _simplify = true, bool _save_output_surf = false) : 
+		safe(_safe), simplify(_simplify), save_output(_save_output_surf), cut_plc(NULL), input_is_manifold(false), input_has_interior(false) {}
 
 	void perform_chamfering(inputPLC& _plc, double _epsilon, bool verbose = false) {
 		cut_plc = new PLCc(_plc, _epsilon, safe, simplify, verbose);
@@ -123,7 +124,7 @@ class cdt_interface{
 	uint64_t time_cdt;
 	uint32_t num_constr_tris;
 	
-	cdt_interface() : mesh(NULL), time_cdt(0) {}
+	cdt_interface() : Steiner_plc(NULL), mesh(NULL), time_cdt(0), num_constr_tris(0) {}
 
 	// 'plc' is a valid input PLC to the process. Validity is assumed but not verified!
 	void createSteinerCDT(inputPLC& plc, bool comp_min_PLC_dist, bool verbose =false) {
@@ -182,9 +183,7 @@ bool isTetInternal(Tetrahedron* t, TetMesh* cdt) {
 
 void markInternalTets(Tetrahedrization& mesh, TetMesh* cdt) {
 	
-	//for (Tetrahedron* t : mesh.tets()) t->is_internal = isTetInternal(t, cdt);
-
-	// Smarter method - exploit adjacencies to make location in CDT faster
+	// exploit adjacencies to make location in CDT faster
 	for (Tetrahedron* t : mesh.tets()) t->unmark<0>();
 	Tetrahedra todo;
 	todo.reserve(mesh.tets().size());
@@ -305,7 +304,7 @@ class delRef_interface {
 	double closest_dist;
 
 	delRef_interface(inputPLC& _plc, chamfering_interface& _cham, bool _verbose, bool _log) : 
-					 plc(_plc), verbose(_verbose), log(_log), cham(_cham){};
+					 plc(_plc), verbose(_verbose), log(_log), cham(_cham), BBox_len(0), closest_dist(0) {};
 
 	void init(bool fullLowBnd, uint32_t min_dist_exp){
 
@@ -480,7 +479,7 @@ void get_CDT_of_DRmesh( delRef_interface& DR, chamfering_interface& cham, const 
 	if (verbose) std::cout << "\nComputing Delaunay Refined CDT.\n";
 
 	inputPLC qo_plc; 
-	qo_plc.initFromVectors(cdt_vrts.data(), cdt_vrts.size()/3, cdt_tris.data(), cdt_tris.size()/3, false);
+	qo_plc.initFromVectors(cdt_vrts.data(), (uint32_t)cdt_vrts.size()/3, cdt_tris.data(), (uint32_t)cdt_tris.size()/3, false);
 	cdt_interface DR_cdt; 
 	DR_cdt.createSteinerCDT(qo_plc, false);
 	Tetrahedrization stat_mesh;
@@ -499,6 +498,45 @@ void get_CDT_of_DRmesh( delRef_interface& DR, chamfering_interface& cham, const 
 	if(DRCDT_outmesh) DR_cdt.save_mesh_toTET("DRCDT");
 }
 
+void  printUsageAndExit() {
+	std::cout << "Mesher - Create a well-shaped tetrahedral mesh out of a triangulated closed surface.\n";
+	std::cout << "The input is required to be manifold, oriented and with no degenerate or self-intersecting triangles.\n";
+	std::cout << "The mesh is produced by Delaunay-refining a box around the chamfered input.\n";
+	std::cout << "INPUT: an OFF file (filename.off) containing a closed triangulated surface.\n";
+	std::cout << "USAGE: ./delmesher [-v][-l][-e 8] filename.off\n";
+	std::cout << "OPTIONS:\n";
+	std::cout << "[-a]\tcreate an enriched CDT out of the Delaunay-refined mesh\n"
+		<< "\tto produce an exactly conformal volume mesh.\n";
+	std::cout << "[-b]\tuse the Delaunay-refined mesh to produce an OFF file\n"
+		<< "\twhich can be used as input for a CDT algorithm (see OUTPUT).\n";
+	std::cout << "[-c]\tcomputes a lower bound for the LFS.\n";
+	std::cout << "[-d]\tenables sliver removal during Delaunay refinement.\n";
+	std::cout << "[-e exp]\t(exp is positive integer) do not perform Delaunay\n"
+		<< "\trefinement if the LFS lower bound is < 10^-exp.\n";
+	std::cout << "[-m mv]\t(mv is a positive integer) interrupts Delaunay refinament\n"
+		<< "\tas soon as it inserts max_vrt vertices.\n";
+	std::cout << "[-h]\tdisplay angles histograms.\n";
+	std::cout << "[-l]\tlogging mode (append a line to 'delOpt_log.csv').\n";
+	std::cout << "[-v]\tverbose mode.\n";
+	std::cout << "[-u]\tsaves the input after chamfering (see OUTPUT).\n";
+	std::cout << "[-w]\tsaves the outer boundary of the Delaunay-refined mesh (see OUTPUT).\n";
+	std::cout << "[-x]\tsaves the Delaunay-refined mesh (see OUTPUT).\n";
+	std::cout << "[-y]\t(needs [-a]) saves the outer boundary of the enriched CDT (see OUTPUT).\n";
+	std::cout << "[-z]\t(needs [-a]) saves the enriched CDT (see OUTPUT).\n";
+	std::cout << "OUTPUT:\n";
+	std::cout << "\t when [-b] is activated produces a surface mesh. ('filename'_rebuilt.off)\n";
+	std::cout << "\t when [-u] is activated produces a surface mesh. (chamfered_plc.off)\n";
+	std::cout << "\t when [-w] is activated produces a surface mesh. (DR_interface.off)\n";
+	std::cout << "\t when [-y] is activated produces a surface mesh. (DRCDT_constrainedFaces.off)\n";
+	std::cout << "\t when [-x] is activated produces a volumetric mesh. (DR_mesh.tet)\n";
+	std::cout << "\t when [-z] is activated produces a volumetric mesh. (DRCDT_mesh.tet)\n";
+	std::cout << "RETURNS:\n";
+	std::cout << "\t0 when the whole execution terminates correctly.\n";
+	std::cout << "\t10 when option -e is activated and min dist. is violated\n";
+	std::cout << std::endl;
+	exit(0);
+}
+
 // ---- //
 // main //
 // ---- //
@@ -507,48 +545,8 @@ int main(int argc, char* argv[])
 {
 	initFPU();
 
-	char filename[2048];
 #ifndef DEBUG
-	if (argc < 2) {
-		std::cout << "Mesher - Create a well-shaped tetrahedral mesh out of a triangulated closed surface.\n";
-		std::cout << "INPUT: an OFF file (filename.off) containing a closed triangulated surface.\n";
-		std::cout << "USAGE: ./delmesher [-v][-l][-e 8] filename.off\n";
-		std::cout << "OPTIONS:\n";
-		std::cout << "[-a]\tafter the Delaunay refined mesh is created a CDT algorithm is used\n"
-				  << "\tto produce a quasi-optimal volume mesh.\n";
-		std::cout << "[-b]\textracts from the Delaunay refined mesh a triangulaed surface\n"
-				  << "\tconforming the input surface, which can be used as input for\n"
-				  << "\ta CDT algorithm (see OUTPUT).\n";
-		std::cout << "[-c]\tcomputes the lower bound for minimum distance between\n"
-				  << "\tmesh elements (point - segment - triangle),\n"
-				  << "\totherwise only point-point distances is used.\n";
-		std::cout << "[-d]\tenables sliver removal during Delaunay refinement stage.\n";
-		std::cout << "[-e exp]\t(exp is positive integer) exit the program before Delaunay\n"
-				  << "\trefinement if the minimum distance between mesh elements is < 10^-exp.\n";
-		std::cout << "[-m mv]\t(mv is a positive integer) interrupts Delaunay refinament\n" 
-				  << "\tas soon as the number of mesh vertices exceed max_vrt.\n";
-		std::cout << "[-h]\t(terminal) display angles histograms.\n";
-		std::cout << "[-l]\tlogging mode.\n";
-		std::cout << "[-v]\tverbose mode.\n";
-		std::cout << "[-u]\tenables chamfering output (see OUTPUT).\n";
-		std::cout << "[-w]\tenables surface Delaunay refinement output (see OUTPUT).\n";
-		std::cout << "[-x]\tenables volumetric Delaunay refinement output (see OUTPUT).\n";
-		std::cout << "[-y]\t(needs [-a]) enables surface CDT of Delauny refinement output (see OUTPUT).\n";
-		std::cout << "[-z]\t(needs [-a]) enables volumetric CDT of Delauny refinement output (see OUTPUT).\n";
-		std::cout << "OUTPUT:\n";
-		std::cout << "\t when [-b] is activated produces a surface mesh. ('filename'_rebuilt.off)\n";
-		std::cout << "\t when [-u] is activated produces a surface mesh. (chamfered_plc.off)\n";
-		std::cout << "\t when [-w] is activated produces a surface mesh. (DR_interface.off)\n";
-		std::cout << "\t when [-y] is activated produces a surface mesh. (DRCDT_constrainedFaces.off)\n";
-		std::cout << "\t when [-x] is activated produces a volumetric mesh. (DR_mesh.tet)\n";
-		std::cout << "\t when [-z] is activated produces a volumetric mesh. (DRCDT_mesh.tet)\n";
-		std::cout << "RETURNS:\n";
-		std::cout << "\t0 when the whole execution terminates correctly (or when iperror occours)\n";
-		std::cout << "\t10 when option -e is activated and min dist. is violated\n";
-		std::cout << std::endl;
-		return 0;
-	}
-	else strcpy(filename, argv[1]);
+	if (argc < 2) printUsageAndExit();
 #else
 	strcpy(filename, "..\\Input_file\\acute\\cup_fixed_fixed.off");
 	//strcpy(filename, "..\\Input_file\\subdcube.off");
@@ -561,6 +559,7 @@ int main(int argc, char* argv[])
 	uint32_t min_dist_exp = UINT32_MAX;
 	uint32_t max_vrts = UINT32_MAX;
 	char out4CDT_name[] = "";
+	char filename[2048] = "";
 
 	for (int i = 1; i < argc; i++)
 		if (argv[i][0] == '-') {
@@ -569,6 +568,8 @@ int main(int argc, char* argv[])
 			for (int j = 1; j < strlen(argv[i]); j++) options += argv[i][j];
 		}
 		else memcpy(filename, argv[i], strlen(argv[i]) + 1);
+
+	if (strlen(filename) == 0) printUsageAndExit();
 
 	if(options.find('b') !=  std::string::npos) strcpy(out4CDT_name, filename);
 	bool comp_DelRef_CDT = (options.find('a') != std::string::npos);
@@ -583,13 +584,6 @@ int main(int argc, char* argv[])
 	bool DRCDT_skin = 	   (options.find('y') != std::string::npos);
 	bool DRCDT_outmesh =   (options.find('z') != std::string::npos);
 	
-	// Internal parameters ---
-	double epsilon; // chamfering distance; set later beacause depends on bounding box diagonal.
-	bool cham_simpl = true; // DEFAULT: true. Try to remove uncessary edges while keeping non-acute angles.
-	bool cham_safe = false; // DEFAULT: false. If true use "safe" chamfering, but creates shorter edges.
-	double optim_ratio = 2.0; // DEFAULT: 2.0. Delaunay Refinement "tetrhadron shape".
-	bool log_inputCDT_stats = (log_mode && true); // DEFAULT: true. If true register stats of the CDT of the input PLC.
-	// ------------------------
 
 	chrono_clock::time_point main_time = chrono_clock::now(); // start timing
 	if (log_mode) startLogging(filename);
@@ -602,10 +596,16 @@ int main(int argc, char* argv[])
 #ifdef USE_TETGEN
 	Tetrahedrization mesh;
 	mesh.initWithTetgen(plc.numVertices(), plc.coordinates.data(), plc.numTriangles(), plc.triangle_vertices.data(), true, false);
-	for (Tetrahedron* t : mesh.tets()) t->is_internal = true;
-	mesh.printReport();
 	std::cout << std::endl;
 #else
+
+	// Internal parameters ---
+	double epsilon; // chamfering distance; set later beacause depends on bounding box diagonal.
+	bool cham_simpl = true; // DEFAULT: true. Try to remove uncessary edges while keeping non-acute angles.
+	bool cham_safe = false; // DEFAULT: false. If true use "safe" chamfering, but creates shorter edges.
+	double optim_ratio = 2.0; // DEFAULT: 2.0. Delaunay Refinement "tetrhadron shape".
+	bool log_inputCDT_stats = (log_mode && true); // DEFAULT: true. If true register stats of the CDT of the input PLC.
+	// ------------------------
 
 	// Chamfering of the input PLC
 	epsilon = plc.bbDiag() / 1000.0;	// Use bounding-box-diagonal/1000 as chamfering distance

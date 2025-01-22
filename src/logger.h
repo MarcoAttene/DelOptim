@@ -54,8 +54,8 @@ inline void skipTimeChunk() { time_point = std::chrono::steady_clock::now(); }
 inline void logBoolean(const char* name, bool b) { fprintf(log_fp, ", %s, %s", name, b ? "True" : "False"); fflush(log_fp);  }
 inline void logInteger(const char* name, uint32_t n) { fprintf(log_fp, ", %s, %u", name, n); fflush(log_fp); }
 inline void logInteger(const char* name1, const char* name2, uint32_t n) { fprintf(log_fp, ", %s%s, %u", name1, name2, n); fflush(log_fp); }
-inline void logInteger(const char* name, uint64_t n) { fprintf(log_fp, ", %s, %lu", name, n); fflush(log_fp); }
-inline void logInteger(const char* name1, const char* name2, uint64_t n) { fprintf(log_fp, ", %s%s, %lu", name1, name2, n); fflush(log_fp); }
+inline void logInteger(const char* name, uint64_t n) { fprintf(log_fp, ", %s, %zu", name, n); fflush(log_fp); }
+inline void logInteger(const char* name1, const char* name2, uint64_t n) { fprintf(log_fp, ", %s%s, %zu", name1, name2, n); fflush(log_fp); }
 inline void logDouble(const char* name, double d) { fprintf(log_fp, ", %s, %g", name, d); fflush(log_fp); }
 inline void logDouble(const char* name1, const char* name2, double d) { fprintf(log_fp, ", %s%s, %g", name1, name2, d); fflush(log_fp); }
 inline void advance_ProcessLogging(const char* stage){ fprintf(log_prog, ", %s", stage); fflush(log_prog); }

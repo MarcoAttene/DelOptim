@@ -788,7 +788,7 @@ void PLCc::chamfering_face(uint32_t fi){
 
             // 2) create 3 new edges
             uint32_t v2 = resp -1, v3 = resp;
-            uint32_t num_e = edges.size()+3;
+            uint32_t num_e = (uint32_t)edges.size()+3;
             edges.resize(num_e);
             edges[num_e-3].init_bridge_edge(v1, v2, vi, fi);
             edges[num_e-2].init_bridge_edge(v2, v3, vi, fi);
