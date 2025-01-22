@@ -2,7 +2,7 @@
 #define _HAS_STD_BYTE 0  // https://developercommunity.visualstudio.com/t/error-c2872-byte-ambiguous-symbol/93889
 #endif
  
-// #define USE_TETGEN
+// #define USE_TETGEN // Uncomment to use tetgen instead of DR. Works only with MSVC and CLang
 
 // #define DISP_PROGRESS // to display progress during Delaunay Refinement
 
