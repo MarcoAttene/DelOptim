@@ -545,21 +545,21 @@ int main(int argc, char* argv[])
 {
 	initFPU();
 
+	// User interface options
+	std::string options = "";
+	uint32_t min_dist_exp = UINT32_MAX;
+	uint32_t max_vrts = UINT32_MAX;
+	char out4CDT_name[2048] = "";
+	char filename[2048] = "";
+
 #ifndef DEBUG
 	if (argc < 2) printUsageAndExit();
 #else
 	strcpy(filename, "..\\Input_file\\acute\\cup_fixed_fixed.off");
 	//strcpy(filename, "..\\Input_file\\subdcube.off");
 	//char filename[2048] = "..\\Input_file\\twocubes.off";
-
 #endif
 
-	// User interface options
-	std::string options = "";
-	uint32_t min_dist_exp = UINT32_MAX;
-	uint32_t max_vrts = UINT32_MAX;
-	char out4CDT_name[] = "";
-	char filename[2048] = "";
 
 	for (int i = 1; i < argc; i++)
 		if (argv[i][0] == '-') {
