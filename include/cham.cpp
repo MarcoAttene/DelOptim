@@ -46,12 +46,15 @@ bool isAcuteAngle(const pointType* p, const pointType* q, const pointType* r, co
     // The following check is based on the variatinal approach described in
     // https://www.geometrictools.com/Documentation/DistancePoint3Triangle3.pdf
     
-    vector3d Op(p), Oq(q), Or(r), Os(s), w(Oq-Op);
-    double a = Or.dot(Or), b = Or.dot(Os), c = Os.dot(Os);
-    double d = Or.dot(w), e = Os.dot(w);
-    double u = b * e - c * d;
-    double v = b * d - a * e;
-    return (u > 0 && v > 0);
+    // vector3d Op(p), Oq(q), Or(r), Os(s), w(Oq-Op);
+    // double a = Or.dot(Or), b = Or.dot(Os), c = Os.dot(Os);
+    // double d = Or.dot(w), e = Os.dot(w);
+    // double u = b * e - c * d;
+    // double v = b * d - a * e;
+    // return (u > 0 && v > 0);
+
+    if( isAcuteDihedral_exact(s,q,r,p) ) return isAcuteDihedral_exact(r,q,s,p);
+    else return false;
 }
 
 // ------------------ //
