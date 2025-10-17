@@ -32,7 +32,7 @@ void get_chamPLC_bnd_edges(std::vector<uint32_t>& surf_tri, std::vector<bnd_edge
 	// Make half-edges
     for(uint32_t i=0; i<surf_tri.size()/3; i++){
 		const uint32_t* v = surf_tri.data() + i*3;
-		be.insert(be.end(), {bnd_edge(*v,*(v+1)), bnd_edge(*(v+1),*(v+2)), bnd_edge(*(v+2),*v)} );
+		be.insert(be.end(), {bnd_edge(v[0],v[1]), bnd_edge(v[1],v[2]), bnd_edge(v[2],v[0])} );
     }
 	// Keep half-edges that occour only one time, i.e. those that belong to the boundary.
     // Forall i, be[i] endpoints e0 and e1 are s.t. e0 < e1 by construction, 
@@ -89,7 +89,7 @@ class bnd_vrt_chain {
 	bool operator<(const bnd_vrt_chain& c) const { return (r0 < c.r0 || ( r0 == c.r0 && r1 < c.r1 )); }
 };
 
-uint32_t howMany_newVrts_onInputEdge(const bnd_vrt_chain& c1, const bnd_vrt_chain& c2, const std::vector<const pointType*>& vertices) {
+uint32_t howMany_newVrts_onInputEdge(const bnd_vrt_chain& c1, const bnd_vrt_chain& c2, const std::vector<pointType*>& vertices) {
 	const pointType* p1 = vertices[c1.e0()];
 	const pointType* p2 = vertices[c2.e0()];
 	const pointType* U = vertices[c1.r0];
@@ -158,7 +158,7 @@ void markChamferExplicitNeighbors(Tetrahedrization& mesh, const pointType* p1, c
 }
 
 // just for DEBUG purposes 
-bool check_overlaps(const std::vector<const pointType *> vrts, const std::vector<uint32_t>& tri){
+bool check_overlaps(const std::vector<pointType *> vrts, const std::vector<uint32_t>& tri){
 	bool passed = true;
 	std::vector<bnd_edge> e;
 	const uint32_t* t;
@@ -217,13 +217,37 @@ bool check_overlaps(const std::vector<const pointType *> vrts, const std::vector
 }
 
 bool get_vrts_and_tris_for_cdt(Tetrahedrization& mesh, std::vector<uint32_t>& ref_vrts, 
-							   std::vector<double>& cdt_vrts, std::vector<uint32_t>& cdt_tris,
+							   std::vector<genericPoint*>& cdt_vrts, std::vector<uint32_t>& cdt_tris,
 							   const char* filename, bool verbose){
+
+	// DEBUG start
+	// mesh.checkAllFaces(); // DEBUG
+    // mesh.checkConnectivity(); // DEBUG
+	// std::cout<<"\n[get_vrts_and_tris_for_cdt] INPUT:\n";
+	// std::cout<<"\nref_vrts size: "<<ref_vrts.size()<<"\n";
+	// for(size_t i=0; i<ref_vrts.size(); i++) std::cout<<"ref_vrt["<<i<<"] = "<<ref_vrts[i]<<"\n";
+	// std::cout<<"\n";
+	// std::cout<<"(cdt_vrts.size() = "<<cdt_vrts.size()<<", "<<"cdt_tris.size() = "<<cdt_tris.size()<<"\n";
+	// DEBUG end
 	
 	// Exctract triangles of the optimized mesh that are part of the chamfered surface (constr_tri)
 	std::vector<uint32_t> constr_tri;
 	mesh.export_DelTris_asTriVrtsInds(constr_tri, true); // true -> do not include bounding box triangles
 	size_t n_constr_tri = constr_tri.size()/3;
+
+	// DEBUG start
+	// std::cout<<"\nDR mesh DEL TRIS: "<<n_constr_tri<<" (size = "<<constr_tri.size()<<") \n";
+	// for(size_t i=0; i<n_constr_tri; i++){ 
+	// 	std::cout<<"constr_tri["<<i<<"] = < "
+	// 			<<constr_tri[3*i]<<" "
+	// 			<<constr_tri[3*i+1]<<" "
+	// 			<<constr_tri[3*i+2]<<" >\n";
+	// }
+	// std::cout<<"\n";
+	// mesh.checkAllFaces(); // DEBUG
+    // mesh.checkConnectivity(); // DEBUG
+	// mesh.savePLCFaces("DR_PLCfaces.off");
+	// DEBUG end
 
 	// constr_tri triangles exactly conform the chamfered version of the input PLC.
 	// The chamfered surface is a "reduction" of the input PLC.
@@ -242,6 +266,20 @@ bool get_vrts_and_tris_for_cdt(Tetrahedrization& mesh, std::vector<uint32_t>& re
 
 	// Collect the boundary edges of constr_tri.
 	std::vector<bnd_edge> be; get_chamPLC_bnd_edges(constr_tri, be);
+
+	// DEBUG start
+	// std::cout<<"\nDR mesh BND EDGES: "<<be.size()<<"\n";
+	// for(size_t i=0; i<be.size(); i++){ 
+	// 	std::cout<<"bnd_edge["<<i<<"] = < "
+	// 			<<be[i].e0<<" "
+	// 			<<be[i].e1<<" >\n";
+	// 	//std::cout<<*(mesh.vrts()[be[i].e0]->getPoint())<<"\n";
+	// 	//std::cout<<*(mesh.vrts()[be[i].e1]->getPoint())<<"\n\n";
+	// }
+	// std::cout<<"\n";
+	// mesh.checkAllFaces(); // DEBUG
+    // mesh.checkConnectivity(); // DEBUG
+	// DEBUG end
 
 	// Make the vertex-edge relation wrt boundary edges
 	size_t n_optimMesh_vrts = mesh.num_vertices();
@@ -328,7 +366,7 @@ bool get_vrts_and_tris_for_cdt(Tetrahedrization& mesh, std::vector<uint32_t>& re
 	// To later triangulate we need to insert new vertices on the shared input edge.
 	
 	// Creting a new vertices vector to add new vertices.
-	std::vector<const pointType*> vertices(n_optimMesh_vrts);
+	std::vector<pointType*> vertices(n_optimMesh_vrts);
 	for(size_t i=0; i<n_optimMesh_vrts; i++) vertices[i] = mesh.vrts()[i]->getPoint();
 
 	std::sort(half_strip_bnd.begin(), half_strip_bnd.end());
@@ -348,6 +386,7 @@ bool get_vrts_and_tris_for_cdt(Tetrahedrization& mesh, std::vector<uint32_t>& re
 		const size_t init_vert_size = vertices.size();
 		const pointType* P = vertices[r0];
 		const pointType* Q = vertices[r1];
+		assert(vertices[r0]->isExplicit3D() && vertices[r1]->isExplicit3D());
 		const vector3d OP(P), OQ(Q);
 		double l = sqrt( OP.dist_sq(OQ) );
 		double d0 = sqrt( OP.dist_sq( vector3d( vertices[c1.e0()] ) ) );
@@ -378,7 +417,7 @@ bool get_vrts_and_tris_for_cdt(Tetrahedrization& mesh, std::vector<uint32_t>& re
     }
 
 	uint32_t n_new_vrts = (uint32_t)vertices.size();
-	uint32_t n_tot_vrts = (uint32_t)n_optimMesh_vrts + n_new_vrts;
+	// uint32_t n_tot_vrts = (uint32_t)n_optimMesh_vrts + n_new_vrts;
 	for(const bnd_vrt_chain& c : half_strip_bnd){
 		v0 = c.e0();
 		v1 = c.comm_v.front();
@@ -458,6 +497,7 @@ bool get_vrts_and_tris_for_cdt(Tetrahedrization& mesh, std::vector<uint32_t>& re
 		markChamferExplicitNeighbors(mesh, vertices[ strip.r0 ], vertices[ strip.r1 ], d); 
 	}
 	std::vector<uint32_t> uv(vertices.size(), 1); // Used Vertex 
+	assert(vertices.size() == mesh.num_vertices());
 	size_t count_removed = 0;
 	//for(size_t i = n_cham_vrts; i < n_optimMesh_vrts; i++) if(mesh.vrts()[i]->getPoint()->isExplicit3D()){
 	for(size_t i = n_cham_vrts; i < n_optimMesh_vrts; i++) if(mesh.vrts()[i]->isMarked<0>()){ 
@@ -474,17 +514,20 @@ bool get_vrts_and_tris_for_cdt(Tetrahedrization& mesh, std::vector<uint32_t>& re
 		if(count_marked) std::cout<<count_marked<<" vertices marked but not removed.\n";
 	}
 	for(TetVertex* v : mesh.vrts()) v->unmark<0>(); // reset markers
-	
+
 	uint32_t idx = 0;
 	for (size_t i = 0; i < uv.size(); i++) if (uv[i] != UINT32_MAX) uv[i] = idx++; // now uv stores new indexing
-	for (size_t i=0; i<constr_tri.size(); i++) constr_tri[i] = uv[ constr_tri[i] ];
-
-	double x, y, z;
-	for(uint32_t i=0; i<vertices.size(); i++) if(uv[i]!=UINT32_MAX) {
-		vertices[i]->getApproxXYZCoordinates(x, y, z, true);
-		cdt_vrts.insert(cdt_vrts.end(),{x,y,z});
+	for (size_t i=0; i<constr_tri.size(); i++){ 
+		assert(constr_tri[i]<uv.size());
+		constr_tri[i] = uv[ constr_tri[i] ];
 	}
+
+	for(uint32_t i=0; i<vertices.size(); i++) if(uv[i]!=UINT32_MAX) {
+		cdt_vrts.push_back( vertices[i] );
+	}
+
 	cdt_tris.assign(constr_tri.begin(), constr_tri.end());
+
 	
 	if(strlen(filename) != 0){
 		// Saves the surface on an .off file, it is valid input for a cdt algorithm
@@ -496,10 +539,12 @@ bool get_vrts_and_tris_for_cdt(Tetrahedrization& mesh, std::vector<uint32_t>& re
 		strcat(out_filename, "_rebuilt.off");
 		// ----------------------------------------
 		FILE* fp = fopen(out_filename, "w");
-		fprintf(fp, "OFF\n%u %u 0\n", (uint32_t)cdt_vrts.size()/3, (uint32_t) cdt_tris.size() / 3);
+		fprintf(fp, "OFF\n%u %u 0\n", (uint32_t)cdt_vrts.size(), (uint32_t) cdt_tris.size() / 3);
 
-		for(uint32_t i=0; i<cdt_vrts.size()/3; i++) {
-			fprintf(fp, "%f %f %f\n", cdt_vrts[i*3], cdt_vrts[i*3+1], cdt_vrts[i*3+2]);
+		for(uint32_t i=0; i<cdt_vrts.size(); i++) {
+			double x,y,z;
+			cdt_vrts[i]->getApproxXYZCoordinates(x,y,z);
+			fprintf(fp, "%f %f %f\n", x, y, z);
 		}
 
 		for(size_t i=0; i<cdt_tris.size()/3; i++) {
@@ -511,7 +556,7 @@ bool get_vrts_and_tris_for_cdt(Tetrahedrization& mesh, std::vector<uint32_t>& re
 		fclose(fp);
 	}
 
-	//check_overlaps(cdt_vrts, cdt_tris); // DEBUG
+	// check_overlaps(cdt_vrts, cdt_tris); // DEBUG
 
 	if(verbose) std::cout<<"valid CDT input generated\n";
 

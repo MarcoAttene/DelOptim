@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <iomanip>
 #include <list>
+#include "outputMesh.h"
 
 #pragma intrinsic(fabs)
 
@@ -19,18 +20,8 @@
 // --- // ----------------------------------------------------- // --- //
 // --- // ----------------------------------------------------- // --- //
 
-//#define PLCC_DEBUG
-//#define PLCC_VERBOSE_DEBUG
-//#define PLCC_VERBOSE_DEBUG_LEV1
-
-#ifdef TEST_CHAMFERING
-// Exit values for testing purposes
-typedef enum class EXIT_t{
-	ok, open_input, expected_fail, vons_fail                  
-} EXIT_type;
-#endif
-
-// NOTES:   
+// #define PLCC_VERBOSE_DEBUG
+  
 //  "flat" edges will be ignored while aucte angles are searched.
 //  "acute" if incident face form an acute dihedral angle.
 //  "junk" edge have to be deleted during chamfering.
@@ -46,48 +37,73 @@ typedef enum class CHAMedge_t{
 /// It is a segment.
 /// ep[2] are the two endpoints of the edge.
 /// In case the edge is a sub-edge (at least one endpint is a Steiner point)
-/// oep[2] are the endpoints of the "older" parent-edge; otherwise oep[2] = ep[2].
+/// oep[2] are the endpoints of the "older" parent-edge; otherwise oep[2]=ep[2].
 /// <summary>
 class CHAMedge{
 public:
-    uint32_t ep[2];                 // Endpoints (vertices-inds wrt PLCc vertices vector)
-    uint32_t oep[2];                // "older" parent-edge endpoints (vertices-inds wrt PLCc vertices vector)
+    uint32_t ep[2];                 // Endpoints (vertices-inds wrt PLCc 
+                                    // vertices vector)
+    uint32_t oep[2];                // "older" parent-edge endpoints 
+                                    // (vertices-inds wrt PLCc vertices vector)
     std::vector<uint32_t> inc_face; // Incident CHAMfaces
     CHAMedge_type type;             // See CHAMedge_type note above.
 
-    uint32_t loc_face_bridge_id; // If it is a "bridge-edge" contains the index of the related chamfered vertex
-                                 // this info is local wrt a face, i.e. bridges of diffent faces may have the same id.
+    uint32_t loc_face_bridge_id; // If it is a "bridge-edge", contains the index 
+                                 // of the related chamfered vertex; this info
+                                 // is local wrt a face, i.e. bridges of  
+                                 // different faces may have the same id.
 
     inline CHAMedge() : loc_face_bridge_id(NO_BRIDGE) {}
     inline CHAMedge(CHAMedge_type t) : type(t), loc_face_bridge_id(NO_BRIDGE) {}
 
     // copy constructor 
-    inline CHAMedge(const CHAMedge& e) : ep{e.ep[0], e.ep[1]}, oep{e.oep[0], e.oep[1]}, inc_face(e.inc_face), type(e.type), loc_face_bridge_id(e.loc_face_bridge_id) {}
+    inline CHAMedge(const CHAMedge& e) : 
+        ep{e.ep[0], e.ep[1]}, oep{e.oep[0], e.oep[1]}, inc_face(e.inc_face), 
+        type(e.type), loc_face_bridge_id(e.loc_face_bridge_id) {}
 
     // constructor for sub-edges
-    inline CHAMedge(const uint32_t e0, const uint32_t e1, const uint32_t oe0, const uint32_t oe1,
-        const std::vector<uint32_t>& ifaces, const CHAMedge_type t) : ep{e0, e1}, oep{oe0, oe1}, inc_face(ifaces), type(t), loc_face_bridge_id(NO_BRIDGE) {}
+    inline CHAMedge(const uint32_t e0, const uint32_t e1,
+                    const uint32_t oe0, const uint32_t oe1,
+                    const std::vector<uint32_t>& ifaces, 
+                    const CHAMedge_type t) : ep{e0, e1}, oep{oe0, oe1}, 
+                                            inc_face(ifaces), type(t), 
+                                            loc_face_bridge_id(NO_BRIDGE) {}
 
     // constructor for new edges
-    inline CHAMedge(const uint32_t e0, const uint32_t e1, const uint32_t f) : ep{e0, e1}, oep{e0, e1}, type(CHAMedge_t::undet), loc_face_bridge_id(NO_BRIDGE) { inc_face.push_back(f); }
+    inline CHAMedge(const uint32_t e0, const uint32_t e1, const uint32_t f) : 
+                ep{e0, e1}, oep{e0, e1}, type(CHAMedge_t::undet), 
+                loc_face_bridge_id(NO_BRIDGE) { 
+        inc_face.push_back(f); 
+    }
 
-    inline void init_bridge_edge(const uint32_t e0, const uint32_t e1, const uint32_t bridge_v, const uint32_t f){ 
-        oep[0] = ep[0] = e0;  oep[1] = ep[1] = e1; 
+    inline void init_bridge_edge(const uint32_t e0, const uint32_t e1, 
+                                 const uint32_t bridge_v, const uint32_t f){ 
+        oep[0] = ep[0] = e0;  
+        oep[1] = ep[1] = e1; 
         type = CHAMedge_t::undet; 
         loc_face_bridge_id = bridge_v; 
         inc_face.push_back(f); 
     }
 
-    // Enquiry
     inline bool isFlat() const { return type == CHAMedge_t::flat; }
     inline bool isAcute() const { return type == CHAMedge_t::acute; }
     inline bool isJunk() const { return type == CHAMedge_t::junk; }
     inline bool isIsolated() const { return (inc_face.empty()); }
+    inline bool isSubEdge() const { return (ep[0]!=oep[0] || ep[1]!=oep[1]); }
+    inline bool isBridgeEdge() const { return loc_face_bridge_id != NO_BRIDGE; }
 
-    inline bool hasVertex(uint32_t v) const { return (ep[0] == v || ep[1] == v); }
-    inline bool hasOriginalVertex(uint32_t v) const { return (oep[0] == v && oep[1] == v); }
-    bool coincident(const CHAMedge& e) const { return (hasVertex(e.ep[0]) && hasVertex(e.ep[1])); }
-    bool has_commonVertex(const CHAMedge& e) const { return commonVertex(e)!=UINT32_MAX; }
+    inline bool hasVertex(uint32_t v) const { 
+        return (ep[0] == v || ep[1] == v); 
+    }
+    inline bool hasOriginalVertex(uint32_t v) const { 
+        return (oep[0] == v && oep[1] == v); 
+    }
+    bool coincident(const CHAMedge& e) const { 
+        return (hasVertex(e.ep[0]) && hasVertex(e.ep[1])); 
+    }
+    bool has_commonVertex(const CHAMedge& e) const { 
+        return commonVertex(e) != UINT32_MAX; 
+    }
 
     uint32_t relatedOriginalVertex(uint32_t v) const {
         if (ep[0] == v) return oep[0];
@@ -113,40 +129,49 @@ public:
         return UINT32_MAX;
     }
 
-    // assumes that e shares an endpoint with *this
-    // returs the endpoint of not shared with e
+    // Assumes that 'e' shares an endpoint with *this;
+    // returs the endpoint of *tins not shared with 'e'
     uint32_t notCommonVertex(const CHAMedge& e) const {
         assert( has_commonVertex(e) );
         if( e.hasVertex(ep[0]) ) return ep[1];
                                  return ep[0];
     }
 
+    // Returns TRUE if has the same loc_face_bridge_id
+    bool same_bridge(const CHAMedge& e) const { 
+        return loc_face_bridge_id == e.loc_face_bridge_id; 
+    }
+
     // intialization 
-    inline void set_ep(uint32_t e0, uint32_t e1){ ep[0]=e0; ep[1]=e1; }
-    inline void set_ep_and_reset_oep(uint32_t e0, uint32_t e1){ ep[0]=e0; ep[1]=e1; reset_oep(); }
-    inline void reset_oep(){ oep[0]=ep[0]; oep[1]=ep[1]; }
+    inline void set_ep(uint32_t e0, uint32_t e1){ ep[0] = e0; ep[1] = e1; }
+    inline void set_ep_and_reset_oep(uint32_t e0, uint32_t e1){ 
+        ep[0] = e0; ep[1] = e1; 
+        reset_oep(); 
+    }
+    inline void reset_oep(){ oep[0] = ep[0]; oep[1] = ep[1]; }
     inline void reset_type(){ type = CHAMedge_t::undet; }
 
     // preEdge is an input triangle half-edge
-    inline void fill_preEdge(const uint32_t v0, const uint32_t v1, const uint32_t fi) {
+    inline void fill_preEdge(uint32_t v0, uint32_t v1, uint32_t fi) {
         if (v0 > v1) { oep[0] = ep[0] = v1; oep[1] = ep[1] = v0; }
         else { oep[0] = ep[0] = v0; oep[1] = ep[1] = v1; }
         inc_face.push_back(fi);
     } 
 
     // modify icident faces
-    // NOTE: removeIncidentFace and replaceIncidentFace functions do not update connectivity
+    // NOTE: 
+    // removeIncidentFace and replaceIncidentFace do NOT update connectivity.
 
     void removeIncidentFace(uint32_t f) {
-        for(uint32_t pos=0; pos<inc_face.size(); pos++) if(inc_face[pos]==f) { 
-            inc_face.erase(inc_face.begin() + pos); 
+        for(uint32_t i=0; i<inc_face.size(); i++) if(inc_face[i]==f) { 
+            inc_face.erase(inc_face.begin() + i); 
             return; 
         }
     }
 
     void replaceIncidentFace(uint32_t f_old, uint32_t f_new){
-        for(uint32_t pos=0; pos<inc_face.size(); pos++) if(inc_face[pos]==f_old) { 
-            inc_face[pos]=f_new;            
+        for(uint32_t i=0; i<inc_face.size(); i++) if(inc_face[i]==f_old) { 
+            inc_face[i]=f_new;            
             return; 
         }
     }
@@ -154,14 +179,24 @@ public:
     void isolate(){ inc_face.clear(); }
 
     // Static functions to be used as predicates in std algorithms
-    static inline bool isIsolatedPtr(const CHAMedge& e) { return e.isIsolated(); }
+    static inline bool isIsolatedPtr(const CHAMedge& e) {return e.isIsolated();}
 
     // Works as expected only if each edge has ep[0] < ep[1]
     static inline bool vertexSortFunc(const CHAMedge& e1, const CHAMedge& e2) {
         if (e1.ep[0] == e2.ep[0]) return (e1.ep[1] < e2.ep[1]);
         else return (e1.ep[0] < e2.ep[0]);
     }
+
+    // DEBUG
+    inline void print_parent_edge() const { 
+        std::cout << "<" << oep[0] << "," << oep[1] << ">\n";
+    }
 };
+
+inline std::ostream& operator<<(std::ostream& os, const CHAMedge& e) {
+    os << "<" << e.ep[0] << "," << e.ep[1] << "> ";
+    return os;
+}
 
 
 typedef std::vector<uint32_t>::iterator u32vect_iter;
@@ -171,41 +206,108 @@ typedef std::vector<uint32_t>::iterator u32vect_iter;
 /// CHAMface
 /// This is a flat face of the chmfered PLC (see PLCc class)
 /// It is an input triangle, or a portion of it (when chamfered)
-/// It has no acute angles (unless it has two or more flat edges)
+/// When chamfering has been performed it has no acute angles.
 /// </summary>
 class CHAMface {
 public:
     uint32_t triangle; // Index of the related input triangle
-    std::vector<uint32_t> bounding_edges; // (Ordered) Set of bounding edges (CHAMedge indices)
+    std::vector<uint32_t> bounding_edges; // (Ordered) Set of bounding edges 
+                                          // (represented as CHAMedge indices)
 
     CHAMface(){}
     CHAMface(uint32_t tri) : triangle(tri) {}
 
     inline bool isEmpty() const { return bounding_edges.empty(); }
 
-    inline bool hasBndEdge(uint32_t e_ind) const { return (std::find( bounding_edges.begin(), bounding_edges.end(), e_ind) != bounding_edges.end()); } // DEBUG
-
-    // boundary navigation: works supposing that consecutive edges are stored consecutively in bounding_edges.
+    // Boundary navigation: works supposing that consecutive edges are stored 
+    // consecutively in bounding_edges vector. 
+    
     // index based
-    void advance_on_bnd(size_t& it) const { it++; if( it == bounding_edges.size() ) it=0; } 
-    void reverse_on_bnd(size_t& it) const { if(it==0) it = bounding_edges.size(); it--; }
-    void make_first(uint32_t ei);
-    void make_last(uint32_t ei);
-    // iterators based
-    void advance_on_bnd(u32vect_iter& it) { it++; if( it == bounding_edges.end() ) it = bounding_edges.begin(); } 
-    void reverse_on_bnd(u32vect_iter& it) { if(it == bounding_edges.begin()) it = bounding_edges.end(); it--; }
-    void make_first(u32vect_iter& it){ std::rotate(bounding_edges.begin(), it, bounding_edges.end() ); }
-    void make_last(u32vect_iter& it);
+    void advance_on_bnd(size_t& it) const { 
+        if( (++it) == bounding_edges.size() ) it = 0; 
+    } 
+    void advance_on_pierced_bnd(size_t& it) const { 
+        size_t it0 = it;
+        do{
+            advance_on_bnd(it); 
+            assert(it != it0);
+        } while(bounding_edges[it]==EMPTY_PLACE); 
+    } 
+    void reverse_on_bnd(size_t& it) const { 
+        if(it == 0) it = bounding_edges.size(); 
+        it--; 
+    }
+    void reverse_on_pierced_bnd(size_t& it) const { 
+        size_t it0 = it;
+        do{
+            reverse_on_bnd(it); 
+            assert(it != it0);
+        } while(bounding_edges[it]==EMPTY_PLACE); 
+    } 
+    void make_first(uint32_t ei){
+        u32vect_iter it = std::find( bounding_edges.begin(), 
+                                        bounding_edges.end(), ei);
+        if(it!=bounding_edges.end()) make_first(it);
+    }
+    void make_last(uint32_t ei){
+        u32vect_iter it = std::find(bounding_edges.begin(), 
+                                        bounding_edges.end(), ei);
+        if(it!=bounding_edges.end()) make_last(it);
+    }
 
-    // boundary modification
-    void replaceEdge_11(uint32_t old_e, uint32_t new_e); // NOTE: this function does not update connectivity.
+    // iterators based
+    void advance_on_bnd(u32vect_iter& it) { 
+        if( (++it) == bounding_edges.end() ) it = bounding_edges.begin(); 
+    } 
+    void reverse_on_bnd(u32vect_iter& it) { 
+        if(it == bounding_edges.begin()) it = bounding_edges.end(); 
+        it--; 
+    }
+    void make_first(u32vect_iter& it){ 
+        std::rotate(bounding_edges.begin(), it, bounding_edges.end() ); 
+    }
+    void make_last(u32vect_iter& it){
+        // To make the edge e (pointed by it) the last of bounding_edges,
+        // rotate bounding_edges such that e+1 (the succesive on boundary of e) 
+        // occupy the first position.
+        advance_on_bnd(it);
+        std::rotate( bounding_edges.begin(), it, bounding_edges.end() );
+    }
+
+    // boundary modification (NOTE: does not update connectivity).
+    void replaceEdge_11(uint32_t old_e, uint32_t new_e){
+       std::replace(bounding_edges.begin(), bounding_edges.end(), old_e, new_e);
+    }
+
+    // clean bounding_edges
+    void remove_empty_places(){
+        bounding_edges.erase(
+                std::remove_if( bounding_edges.begin(), bounding_edges.end(), 
+                                [](uint32_t x){ return x == EMPTY_PLACE; } ), 
+            bounding_edges.end() );
+    }
 
     // Static functions to be used as predicates in std algorithms
     static inline bool isEmptyPtr(const CHAMface& f) { return f.isEmpty(); }
+
+    // only DEBUG functions
+    inline bool hasBndEdge(uint32_t e_ind) const { 
+        return (
+            std::find( bounding_edges.begin(), bounding_edges.end(), e_ind) != 
+            bounding_edges.end() ); 
+    } 
+
+    void print() const {
+        std::cout<<"( "<< bounding_edges.size() <<" bound-edges )\n";
+        for(size_t i = 0; i < bounding_edges.size(); i++){  
+            std::cout<<"edge["<< bounding_edges[i] <<"]\n"; 
+        }
+        std::cout<<"\n";
+    }
 };
 
 #define INVALID_BPT UINT32_MAX
-// Chamfered PLC (remove angles < pi/2, from the input PLC)
+// Chamfered PLC (removes angles < pi/2, from the input PLC)
 class PLCc{
 private:
     bool verbose;
@@ -213,31 +315,46 @@ private:
     bool manifold;
     bool safe_mode;
 
+    const inputPLC& plc; // Input PLC enriched with stainer points + CDT
+
+    double lfs;
+
 public:
     const double epsilon;
 
-    const inputPLC& plc; // Input PLC enriched with stainer points + CDT
-    std::vector<std::vector<uint32_t>> input_vt; // input vertex->incident_triangle relaion (computed in initalize() and used in search_acute_angles())
+    // input vertex -> incident triangle relaion;
+    // computed in initalize() and used in search_acute_angles())
+    std::vector< std::vector<uint32_t> > input_vt; 
 
     const size_t n_in_vrts;
-    std::vector<pointType*> vertices; // vertices of the chamfered PLC
-                                        // first plcx.input_nv vertices (input vertices) 
-                                        // have to be stored in the first n_in_vrts positions.
+    std::vector<pointType*> vertices; // Vertices of the chamfered PLC;
+                                      // plc vertices (input vertices) are
+                                    // stored in the first n_in_vrts positions.
     std::vector<CHAMedge> edges; // edges of the chamfered PLC
     std::vector<CHAMface> faces; // Faces of the chamfered PLC
 
-    std::vector<double> vrt_ch_dist;  // contains chamfering (cut) distance if v is an acute vertex, -1 otherwise  
+    std::vector<double> vrt_ch_dist; // Contains chamfering (cut) distance for 
+                                     // acute vertices, -1 otherwise.
 
-    std::vector<uint32_t> ref_exp3D_vrt; // store the vrtex index of "closest" explicit3D point for implicit points, UINT32_MAX for explicit points
+    std::vector<uint32_t> ref_exp3D_vrt; // Has many entries as vertices vector; 
+                                         // - for implicit vertices is the 
+                                         // index of "closest" explicit3D point,
+                                         // - for explicit points UINT32_MAX 
 
     // marker
     std::vector<uint32_t> mark_vrts;
     std::vector<uint32_t> mark_edges;
     std::vector<uint32_t> mark_faces;
 
-    PLCc(const inputPLC& _plc, const double _epsilon, bool _safe, bool simplify, bool _verbose) : 
-            plc(_plc), epsilon(_epsilon), n_in_vrts(_plc.numVertices()), 
-            def_interior(true), manifold(true), safe_mode(_safe), verbose(_verbose) {
+    PLCc(const inputPLC& _plc, const double _epsilon, 
+         bool _safe, bool simplify, bool _verbose) : plc(_plc), 
+                                                     epsilon(_epsilon), 
+                                                n_in_vrts(_plc.numVertices()), 
+                                                     def_interior(true), 
+                                                     manifold(true), 
+                                                     safe_mode(_safe), 
+                                                     verbose(_verbose),
+                                                     lfs(DBL_MAX) {
         
         #ifdef PLCC_VERBOSE_DEBUG
         verbose = true;
@@ -249,6 +366,7 @@ public:
         chamfering();
         if(simplify) chamfered_plc_simplification();
         if(verbose) std::cout<<"chamfering COMPLETED\n";
+        assert( check_acuteness() );
     };
 
     // Access private fields
@@ -257,14 +375,24 @@ public:
 
     // 
     inline bool isSteinerVertex(uint32_t v) const { return v >= n_in_vrts; }
-    inline bool is_acute_vrt(const uint32_t vi) const { return vrt_ch_dist[vi] > 0.0; }
-    inline bool is_acute_edge(const uint32_t ei) const { return edges[ei].isAcute(); }
-    inline bool is_flat_edge(const uint32_t ei) const { return edges[ei].isFlat(); }
+    inline bool is_acute_vrt(uint32_t vi) const { return vrt_ch_dist[vi] > 0.0;}
+    inline bool is_acute_edge(uint32_t ei) const { return edges[ei].isAcute(); }
+    inline bool has_acute_endpoint(uint32_t ei) const {
+        return is_acute_vrt(edges[ei].ep[0]) || is_acute_vrt(edges[ei].ep[1]);
+    }
+    inline bool has_acute_edge(uint32_t fi) const {
+        for(uint32_t be : faces[fi].bounding_edges ) if( be != EMPTY_PLACE ) {
+            if( edges[ be ].isAcute() ) return true;
+        }
+        return false;
+    }
+    inline bool is_flat_edge(uint32_t ei) const { return edges[ei].isFlat(); }
 
     void get_face_vertices(const CHAMface& f, std::vector<uint32_t>& fv) const ;
 
     // Ordering
-    void swap_edges(uint32_t e1, uint32_t e2); // swap edges[e1] and edges[e2] and update connectivity
+    void swap_edges(uint32_t e1, uint32_t e2); // swap edges[e1] and edges[e2] 
+                                               // and update connectivity
     uint32_t move_back_isolated_edges();
 
     // Removes all isolated edges from edges vector
@@ -274,12 +402,15 @@ public:
         mark_edges.resize(edges_new_size);
     }
 
-    // Add new vertex to vertices vector and update related vectors
-    inline void add_vertex(pointType* p, uint32_t exp3d_i){
+    // Add new vertex to vertices vector and update related vectors,
+    // returns the position of the added vertex in the vertices vector
+    uint32_t add_vertex(pointType* p, uint32_t exp3d_i){
+        uint32_t pos = (uint32_t)vertices.size();
         vertices.push_back( p );
         mark_vrts.push_back( 0 );
         vrt_ch_dist.push_back( -1.0 );
         ref_exp3D_vrt.push_back(exp3d_i);
+        return pos;
     }
 
     // initialization - an input triangulated PLC is loaded
@@ -289,21 +420,26 @@ public:
     void mergePreEdges(); // Removes duplicated pre-edges
     void orient_initial_triface_bnd(CHAMface& f);
     uint32_t inTri_opp_vrt(const CHAMedge& e, const uint32_t ti) const;
-    void inTri_opp_edge(const uint32_t v, const uint32_t ti, uint32_t& u1, uint32_t& u2) const;
+    void inTri_opp_edge(const uint32_t v, const uint32_t ti, 
+                        uint32_t& u1, uint32_t& u2) const;
 
     bool findIF_flat_edge(const CHAMedge& e) const {
         if( e.inc_face.size()!=2 ) return false;
-        return vOrient3D(e.ep[0], e.ep[1], inTri_opp_vrt(e, e.inc_face[0]), inTri_opp_vrt(e, e.inc_face[1])) == 0;
+        return vOrient3D( e.ep[0], e.ep[1], 
+                          inTri_opp_vrt(e, e.inc_face[0]), 
+                          inTri_opp_vrt(e, e.inc_face[1]) ) == 0;
     }
 
     // Search for acute angle between PLCc elements
     void search_acute_angles();
     bool findIF_acute_edge(const CHAMedge& e) const;
-    bool findIF_acute_vrt(const uint32_t vi, const std::vector<uint32_t>& vv_i, const std::vector<uint32_t>& vt_i) const;
+    bool findIF_acute_vrt(uint32_t vi, const std::vector<uint32_t>& vv_i, 
+                          const std::vector<uint32_t>& vt_i) const;
 
-    double closest_vv_dist(const uint32_t vi, const std::vector<uint32_t>& vv_i) const;
-    double closest_vt_dist(const uint32_t vi, const std::vector<uint32_t>& vt_i) const;
-    double get_vrt_ch_dist(uint32_t vi, const std::vector<uint32_t>& vv_i, const std::vector<uint32_t>& vt_i) const {
+    double closest_vv_dist(uint32_t vi, const std::vector<uint32_t>& vv_i)const;
+    double closest_vt_dist(uint32_t vi, const std::vector<uint32_t>& vt_i)const;
+    double get_vrt_ch_dist(uint32_t vi, const std::vector<uint32_t>& vv_i, 
+                           const std::vector<uint32_t>& vt_i) const {
         auto a = closest_vv_dist(vi, vv_i);
         auto b = closest_vt_dist(vi, vt_i);
         auto c = min(a, b);
@@ -314,34 +450,81 @@ public:
     void chamfering();
     void chamfering_vrts();
     void chamfer_edge_ep(const size_t ei, double d, const uint32_t ep_i);
-    uint32_t new_vrt_on_segment(uint32_t v0, uint32_t v1, const double d, const uint32_t d0);
-    uint32_t new_vrts_in_inputTri(const uint32_t fi, const uint32_t vi, const uint32_t u0, const uint32_t ou0, const uint32_t u1, const uint32_t ou1);
+    uint32_t new_vrt_on_segment(uint32_t v0, uint32_t v1, 
+                                            double d, uint32_t d0);
+    bool get_bpt_coeff(double& xi0, double& eta0, double& xi1, double& eta1, 
+                        const vector3d& Ov, 
+                        const vector3d& Ou0, const vector3d& Ou1, 
+                        double t0, double t1,
+                        const double zero_toll = 0.000000000000001);
+    uint32_t new_vrts_in_inputTri(const uint32_t fi, const uint32_t vi, 
+                                  const uint32_t u0, const uint32_t ou0, 
+                                  const uint32_t u1, const uint32_t ou1);
     void chamfering_face(uint32_t fi);
 
-    // Simplification (Optional)
-    void chamfered_plc_simplification();
-    uint32_t get_cons_edge_on_adj_face(uint32_t ei); // edges[ei] MUST have only one incident face.
-    
-    // Final triangulation
-    void get_triangles(std::vector<uint32_t>& tri_fv) const; // triangulate faces without taking in to account connectivity
-    void hear_clipping(uint32_t fi, std::vector<uint32_t>& out_tri_fv_list) const;
+    // Safe chamfering (optional)
+    bool is_edge_normalizable(uint32_t ei) const {
+        const pointType* ep0 = vertices[ edges[ei].ep[0] ];
+        const pointType* ep1 = vertices[ edges[ei].ep[1] ];
+        return (ep0->isLNC() && ep1->isBPT()) || (ep1->isLNC() && ep0->isBPT());
+    }
+    void normalize_face(uint32_t fi);
 
-    // get a triangulation of the complementar of the chamfered faces wrt the input surface
-    void get_complementar_tri(const std::vector<uint32_t>& out_tri, std::vector<uint32_t>& compl_tri);
+    // Simplification (Optional)
+    typedef enum class bridge_simpl_t{
+	    no, left, right, both                               
+    } bridge_simpl_type;
+    
+    void chamfered_plc_simplification();
+    uint32_t get_cons_edge_on_adj_face(uint32_t ei); // edges[ei] MUST have 
+                                                     // only one incident face.
+    bridge_simpl_t is_3bridge_simplifiable( uint32_t next_bel, uint32_t bel, 
+                        uint32_t bec, uint32_t ber, uint32_t next_ber) const;
+    void simplify_3bridge(uint32_t bel, uint32_t bec, uint32_t ber);
+    void simplify_2bridge(uint32_t bes, uint32_t bec);
+    // Final triangulation
+    
+    // Fills 'tri_fv' with a triangulation of the chamfered plc faces; each 
+    // triangle is a triple of vertices inidces.
+    void get_triangles(std::vector<uint32_t>& tri_fv) const; 
+    void hear_clipping(uint32_t fi, 
+                        std::vector<uint32_t>& out_tri_fv_list) const;
+
+    
+    // Given the triangulation of the chamfered plc 'out_tri', fills
+    // 'compl_tri' with a triangulation of the complementar of the chamfered
+    // plc wrt the input surface; each triangle is a triple of vertices inidces. 
+    void get_complementar_tri(const std::vector<uint32_t>& out_tri, 
+                                std::vector<uint32_t>& compl_tri);
+
+    // Statistics
+    double get_part_lfs() const {
+        double shortest = DBL_MAX;
+        for(const CHAMedge& e : edges) shortest = min(shortest, eEdgeSqLen(e)); 
+        return min(sqrt(shortest), lfs);
+    }
 
     // Predicates interfaces
     int vOrient3D(uint32_t v1, uint32_t v2, uint32_t v3, uint32_t v4) const {
-        return -pointType::orient3D(*vertices[v1], *vertices[v2], *vertices[v3], *vertices[v4]);
+        return -pointType::orient3D(*vertices[v1], *vertices[v2], 
+                                    *vertices[v3], *vertices[v4]);
     }
 
     inline double vPtsSqDist(uint32_t v1, uint32_t v2) const{
-        return ( vector3d( vertices[v1] ) - vector3d( vertices[v2] ) ).sq_length() ;
+        return ( vector3d(vertices[v1]) - vector3d(vertices[v2]) ).sq_length();
     }
 
-    inline double eEdgeSqLen(const uint32_t ei) const { return vPtsSqDist( edges[ei].ep[0], edges[ei].ep[1] ); }
+    inline double eEdgeSqLen(const CHAMedge& e) const { 
+        return vPtsSqDist( e.ep[0], e.ep[1] );
+    }
+
+    inline double eEdgeSqLen(const uint32_t ei) const { 
+        return eEdgeSqLen(edges[ei]);
+    }
 
     inline double vSqVrtDistSeg(uint32_t v, uint32_t u1, uint32_t u2) const {
-        return vector3d(vertices[v]).sq_dist_segment(vector3d(vertices[ u1 ]), vector3d(vertices[ u2 ]));
+        return vector3d(vertices[v]).sq_dist_segment(
+            vector3d(vertices[ u1 ]), vector3d(vertices[ u2 ]));
     }
 
     inline double vSqVrtDistEdge(uint32_t v1, const CHAMedge& e) const {
@@ -349,15 +532,21 @@ public:
     }
 
     bool vCollinear(uint32_t v1, uint32_t v2, uint32_t v3) const {
-        return !pointType::misaligned(*vertices[v1], *vertices[v2], *vertices[v3]);
+        return !pointType::misaligned(*vertices[v1], 
+                                      *vertices[v2], 
+                                      *vertices[v3]);
     }
 
     bool vPointInInnerSegment(uint32_t u, uint32_t v1, uint32_t v2) const {
-        return pointType::pointInInnerSegment(*vertices[u], *vertices[v1], *vertices[v2]);
+        return pointType::pointInInnerSegment(*vertices[u], 
+                                              *vertices[v1], 
+                                              *vertices[v2]);
     }
 
-    bool vInnerSegmentCross(uint32_t u1, uint32_t u2, uint32_t v1, uint32_t v2) const {
-        return pointType::innerSegmentsCross(*vertices[u1], *vertices[u2], *vertices[v1], *vertices[v2]);
+    bool vInnerSegmentCross(uint32_t u1, uint32_t u2, 
+                            uint32_t v1, uint32_t v2) const {
+        return pointType::innerSegmentsCross(*vertices[u1], *vertices[u2], 
+                                             *vertices[v1], *vertices[v2]);
     }
 
     bool vInnerSegmentCrossesEdge(uint32_t u1, uint32_t u2, uint32_t ei) const {
@@ -367,427 +556,481 @@ public:
 
     //Output
 
-    bool saveFaces() const {
-
-        FILE* fp = fopen("cut_plc_faces.off", "w");
-        fprintf(fp, "OFF\n%zu %zu 0\n", vertices.size(), faces.size());
-        for(uint32_t i=0; i<vertices.size(); i++) {
-            double x, y, z;
-            vertices[i]->getApproxXYZCoordinates(x, y, z);
-            fprintf(fp, "%f %f %f\n", x, y, z);
+    void get_mesh_approximated_coords(std::vector<double>& approx_vrts) const {
+        size_t num_vrts = vertices.size();
+        approx_vrts.resize(num_vrts * 3);
+        for(size_t i = 0; i < num_vrts; i++) {
+            vertices[i]->getApproxXYZCoordinates( 
+                approx_vrts[3*i], approx_vrts[3*i +1], approx_vrts[3*i +2] );
         }
-        
-        for(const CHAMface& f : faces) {
-            fprintf(fp, "%zu ", f.bounding_edges.size());
-            std::vector<uint32_t> fv;
-            get_face_vertices(f, fv);
-            for(size_t i=0; i<fv.size(); i++) fprintf(fp, "%u ", fv[i]);
-            fprintf(fp, "\n");
-        }
-        fclose(fp);
-        return true;
     }
 
-    // computes a trinagulation of the chamfered PLC (without modifing it) 
-    // and saves into the result in to an off file
-    bool saveTriFaces() const {
-
-        std::vector<uint32_t> out_tri;
-        get_triangles(out_tri);
-        assert( (out_tri.size() % 3) == 0 );
-
-        uint32_t nfaces = (uint32_t)out_tri.size() / 3;
-
-        FILE* fp = fopen("triangulated_cut_plc_faces.off", "w");
-        fprintf(fp, "OFF\n%zu %u 0\n", vertices.size(), nfaces);
-        for(uint32_t i=0; i<vertices.size(); i++) {
-            double x, y, z;
-            vertices[i]->getApproxXYZCoordinates(x, y, z);
-            fprintf(fp, "%f %f %f\n", x, y, z);
-        }
+    void saveFaces() const {
+        uint32_t num_vrts = (uint32_t)vertices.size();
+        std::vector<double> out_coords;
+        get_mesh_approximated_coords(out_coords);
         
-        for(size_t i=0; i<out_tri.size()/3; i++) {
-            std::vector<uint32_t> v;
-            v.assign(out_tri.begin() + 3*i, out_tri.begin() +3*i +3);
-            fprintf(fp, "3 %u %u %u \n", v[0], v[1], v[2]);
+        uint32_t nf = faces.size(); // number of cham faces.
+        std::vector<uint32_t> nfv(nf); // number of vertices of each face.
+        std::vector<uint32_t> fvind; // linearized vector of vertex indices of 
+                                     // each face.
+        for(size_t i = 0; i < faces.size(); i++) {
+            std::vector<uint32_t> fv;  get_face_vertices(faces[i], fv);
+            nfv[i] = (uint32_t)fv.size();
+            fvind.insert(fvind.end(), fv.begin(), fv.end());
         }
-        fclose(fp);
-        return true;
+        output_mesh cham_faces(out_coords.data(), num_vrts, fvind.data(), nf, 
+                                "cut_plc_faces.off");
+        cham_faces.save_polygon_mesh(nfv.data());
     }
 
-    // save the triangles whose vertices indices are triple of consecutive integers
-    // of save_tri vector into a an .off file
-    bool saveTriangles(const std::vector<uint32_t>& save_tri, const char* title) const {
-
-        assert( (save_tri.size() % 3) == 0 );
-
-        std::vector<uint32_t> used_vertex(vertices.size(), UINT32_MAX);
-	    for (size_t i = 0; i < save_tri.size(); i++)    used_vertex[save_tri[i]] = 1;
-
-	    uint32_t idx = 0;
-	    for (size_t i = 0; i < used_vertex.size(); i++) if (used_vertex[i] != UINT32_MAX) {
-		    used_vertex[i] = idx++;
-	    }
-
-        uint32_t nfaces = (uint32_t)save_tri.size() / 3;
-        FILE* fp = fopen(title, "w");
-        fprintf(fp, "OFF\n%u %u 0\n", idx, nfaces);
-
-        for(uint32_t i=0; i<vertices.size(); i++) if(used_vertex[i] != UINT32_MAX){
-            double x, y, z;
-            vertices[i]->getApproxXYZCoordinates(x, y, z);
-            fprintf(fp, "%f %f %f\n", x, y, z);
+    void saveFaces(std::vector<CHAMface>& save_faces, const char* title) const {
+        uint32_t nv = (uint32_t)vertices.size();
+        std::vector<double> out_coords;
+        get_mesh_approximated_coords(out_coords);
+        uint32_t nf = (uint32_t)save_faces.size();
+        std::vector<uint32_t> fv;
+        std::vector<uint32_t> nfv( save_faces.size() );
+        uint32_t prec_cumulative_nfv = 0;
+        for(size_t i = 0; i < save_faces.size(); i++) {
+            get_face_vertices(save_faces[i], fv);
+            nfv[i] = (uint32_t)fv.size() - prec_cumulative_nfv;
+            prec_cumulative_nfv = (uint32_t)fv.size();
         }
-
-        for(size_t i=0; i<save_tri.size()/3; i++) {
-            std::vector<uint32_t> v;
-            v.assign(save_tri.begin() + 3*i, save_tri.begin() +3*i +3);
-            fprintf(fp, "3 %u %u %u \n", used_vertex[v[0]], used_vertex[v[1]], used_vertex[v[2]]);
-        }
-        
-        fclose(fp);
-        return true;
+        output_mesh cham_faces(out_coords.data(), nv, fv.data(), 1, title);
+        cham_faces.save_minimal_polygon_mesh(nfv.data());
     }
 
-    bool saveFace(const CHAMface& f, const char* title) const {
+    // save the triangles whose vertices indices are triple of consecutive 
+    // integers of 'save' vector into a an .off file
+    void saveTriangles(const std::vector<uint32_t>& tri, 
+                                            const char* title) const {
+
+        uint32_t nv = (uint32_t)vertices.size();
+        std::vector<double> out_coords;
+        get_mesh_approximated_coords(out_coords);
+
+        assert( (tri.size() % 3) == 0 );
+
+        uint32_t nt =  (uint32_t)tri.size()/3;
+        output_mesh cham_tri_faces(out_coords.data(),nv,tri.data(),nt,title);
+        cham_tri_faces.save_minimal_triangle_mesh();
+    }
+
+    void saveFace(const CHAMface& f, const char* title) const {
 
         std::vector<uint32_t> fv;
         get_face_vertices(f, fv);
-
-        FILE* fp = fopen(title, "w");
-        fprintf(fp, "OFF\n%zu 1 0\n", fv.size());
-        for(uint32_t i=0; i<fv.size(); i++) {
-            double x, y, z;
-            vertices[fv[i]]->getApproxXYZCoordinates(x, y, z);
-            fprintf(fp, "%f %f %f\n", x, y, z);
-        }
         
-        fprintf(fp, "%zu ", f.bounding_edges.size());
-
-        for(uint32_t i=0; i<fv.size(); i++) fprintf(fp, "%u ", i);
-        fprintf(fp, "\n");
-        fclose(fp);
-
-        return true;
+        std::vector<uint32_t> nfv( { (uint32_t)fv.size() } );
+        uint32_t nv = (uint32_t)vertices.size();
+        std::vector<double> out_coords;
+        get_mesh_approximated_coords(out_coords);
+        output_mesh cham_faces(out_coords.data(), nv, fv.data(), 1, title);
+        cham_faces.save_minimal_polygon_mesh(nfv.data());
     }
 
-    void saveTriangle(uint32_t v1, uint32_t v2, uint32_t v3, const char* title) const {
-        FILE* fp = fopen(title, "w");
-        fprintf(fp, "OFF\n3 1 0\n");
-        double x, y, z;
-        vertices[v1]->getApproxXYZCoordinates(x, y, z);
-        fprintf(fp, "%f %f %f\n", x, y, z);
-        vertices[v2]->getApproxXYZCoordinates(x, y, z);
-        fprintf(fp, "%f %f %f\n", x, y, z);
-        vertices[v3]->getApproxXYZCoordinates(x, y, z);
-        fprintf(fp, "%f %f %f\n", x, y, z);
-        fprintf(fp, "3 0 1 2\n");
-        fclose(fp);
+    void saveTriangle(uint32_t v1, uint32_t v2, uint32_t v3, 
+                                                const char* title) const {
+        double p1c[3], p2c[3], p3c[3];
+        vertices[v1]->getApproxXYZCoordinates(p1c[0], p1c[1], p1c[2]);
+        vertices[v2]->getApproxXYZCoordinates(p2c[0], p2c[1], p2c[2]);
+        vertices[v3]->getApproxXYZCoordinates(p3c[0], p3c[1], p3c[2]);
+        saveTriangle(p1c, p2c, p3c, title);
     }
 
-    void saveTriangle(const double* p1c, const double* p2c, const double* p3c, const char* title) const {
-        FILE* fp = fopen(title, "w");
-        fprintf(fp, "OFF\n3 1 0\n");
-        fprintf(fp, "%f %f %f\n", p1c[0], p1c[1], p1c[2]);
-        fprintf(fp, "%f %f %f\n", p2c[0], p2c[1], p2c[2]);
-        fprintf(fp, "%f %f %f\n", p3c[0], p3c[1], p3c[2]);
-        fprintf(fp, "3 0 1 2\n");
-        fclose(fp);
+    void saveTriangle(const double* p1c, const double* p2c, const double* p3c, 
+                            const char* title) const {
+        std::vector<double> out_coords( { p1c[0], p1c[1], p1c[2],
+                                          p2c[0], p2c[1], p2c[2],
+                                          p3c[0], p3c[1], p3c[2] });
+        std::vector<uint32_t> tri( {0, 1, 2} );
+        output_mesh out_tri(out_coords.data(),3, tri.data(),1, title);
+        out_tri.save_minimal_triangle_mesh();
     }
 
     void saveEdgeIncFaces(const CHAMedge& e) const {
-
-        FILE* fp = fopen("edge_inc_faces.off", "w");
-        fprintf(fp, "OFF\n%zu %zu 0\n", vertices.size(), e.inc_face.size());
-        for(uint32_t i=0; i<vertices.size(); i++) {
-            double x, y, z;
-            vertices[i]->getApproxXYZCoordinates(x, y, z);
-            fprintf(fp, "%f %f %f\n", x, y, z);
-        }
-        
-        for (uint32_t fi : e.inc_face) {
-            const CHAMface& f = faces[ fi ];
-            fprintf(fp, "%zu ", f.bounding_edges.size());
-
-            std::vector<uint32_t> fv;
-            get_face_vertices(f, fv);
-            for(size_t i=0; i<fv.size(); i++) fprintf(fp, "%u ", fv[i]);
-            
-            fprintf(fp, "\n");
-        }
-        fclose(fp);
+        std::vector<CHAMface> save_faces(e.inc_face.size());
+        for (uint32_t fi : e.inc_face) save_faces[fi] = faces[ fi ];
+        saveFaces(save_faces, "edge_inc_faces.off");
     }
 
-    void save_rebuilded_input_after_chamfering(const std::vector<uint32_t>& tri_cham_faces, const char* title){
+    void save_rebuilded_input_after_chamfering(
+            const std::vector<uint32_t>& tri_cham_faces, const char* title){
         std::vector<uint32_t> compl_tri;
         get_complementar_tri(tri_cham_faces, compl_tri);
 		compl_tri.insert(compl_tri.end(), tri_cham_faces.begin(), tri_cham_faces.end());
 		saveTriangles(compl_tri, title);
     }
 
+    // DEBUG
 
-    // Debug
-
-    inline void print_vertex(uint32_t vi) const { std::cout<<"vertex["<<vi<<"] = "<< *vertices[vi] <<"\n"; }
-    inline void print_vertex_info(uint32_t vi) const { 
-        const pointType* v = vertices[vi];
-        std::cout<<"vertex["<<vi<<"] = "<< *v
-                 <<" - type ";
-        if(v->isExplicit3D()) std::cout<<"EXPLIC3D ";
-        else if(v->isLNC()){ std::cout<<"LNC (P = "<< v->toLNC().P() <<", Q = "<< v->toLNC().Q() <<", t = "<<v->toLNC().T()<<" )"; }
-        else if(v->isBPT()){ std::cout<<"BPT (P = "<< v->toBPT().P() <<", Q = "<< v->toBPT().Q() <<", R = "<< v->toBPT().R() <<", u = "<<v->toBPT().U()<<", v = "<<v->toBPT().V()<<" )"; }
-        else std::cout<<"UNKNOWN ";
-        std::cout<<"\n"; 
+    void print_vertex(uint32_t vi) const { 
+        std::cout<<"vertex["<<vi<<"] = "<< *vertices[vi] <<"\n"; 
     }
-    inline void print_edge(size_t ei) const { std::cout<<"edge["<<(uint32_t)ei<<"] = <"<<edges[ei].ep[0]<<","<<edges[ei].ep[1]<<">\n"; }
+    string vrt_type_toString(const pointType* v) const {
+        if(v->isExplicit3D()) return "EXP3D";
+        if(v->isLNC()) return "LNC";
+        if(v->isBPT()) return "BPT";
+        return "UNKNOWN";
+    }
+    string vrt_type_toString(uint32_t v) const { 
+        return vrt_type_toString(vertices[v]);
+    }
+    void print_LNC_info(const pointType* v) const {
+        const implicitPoint3D_LNC& l = v->toLNC();
+        std::cout<<"( P = "<<l.P()<<", Q = "<<l.Q()<<", t = "<<l.T()<<" )\n";
+    }
+    void print_BPT_info(const pointType* v) const {
+        const implicitPoint3D_BPT& b = v->toBPT();
+        std::cout<<"( P = "<<b.P()<<", Q = "<<b.Q()<<", R = "<<b.R() 
+                 <<", u = "<<b.U()<<", v = "<<b.V()<<" )\n";
+    }
+    void print_vertex_info(uint32_t vi) const { 
+        const pointType* v = vertices[vi];
+        print_vertex(vi);
+        std::cout<<"TYPE: " << vrt_type_toString(vi) << " ";
+        if(v->isLNC()) print_LNC_info(v);
+        else if(v->isBPT()) print_BPT_info(v);
+        else std::cout<<"\n";
+    }
+
+    inline void print_input_tri(uint32_t t) const {
+        const uint32_t* tv = plc.triangle_vertices.data() + t*3;
+        std::cout << *tv << " " << *(tv+1) << " " << *(tv+2) << "\n";
+    }
     inline void print_input_vt(uint32_t vi) const { 
         std::cout<<"input vt["<<vi<<"]:\n";
-        for(size_t i=0; i<input_vt[vi].size(); i++){
-            const uint32_t* ti = plc.triangle_vertices.data() + input_vt[vi][i]*3;
-            std::cout<<*ti<<" "<<*(ti+1)<<" "<<*(ti+2)<<std::endl;
-        }
-        std::cout<<std::endl;
-     }
+        for(size_t i=0; i<input_vt[vi].size(); i++) 
+            print_input_tri(input_vt[vi][i]);
+        std::cout<<"\n";
+    }
+
+    void print_edge(size_t ei) const { 
+        std::cout << "edge["<< ei <<"] = "<< edges[ei] <<"\n"; 
+    }
+    string edge_ep_types_toString(const CHAMedge& e) const {
+        return string("(").append(
+                    vrt_type_toString(e.ep[0])).append(",").append(
+                    vrt_type_toString(e.ep[1])).append(") ");
+    }
+    inline void print_edge_and_epTypes(size_t ei) const { 
+        std::cout <<"edge["<< ei <<"] = "<< edges[ei] <<" "
+                  << edge_ep_types_toString(edges[ei]) << "\n";
+    }
     void print_edge_and_inc_face(uint32_t ei) const { 
-        std::cout<<"edge["<<ei<<"] = <"<<edges[ei].ep[0]<<","<<edges[ei].ep[1]<<"> "
-                 <<" inc_face: ";
+        std::cout<< "edge[" << ei << "] = "<< edges[ei] <<", inc_face: ";
         for(uint32_t fi : edges[ei].inc_face) std::cout<<fi<<" ";
         std::cout<<"\n"; 
     }
+
     void print_face(uint32_t fi) const {
-        std::cout<<"face["<<fi<<"] : ("<< faces[fi].bounding_edges.size() <<" bound-edges) \n";
-        for(size_t i = 0; i < faces[fi].bounding_edges.size(); i++){  
-            std::cout<<"edge["<< faces[fi].bounding_edges[i] <<"]\n"; 
-        }
-        std::cout<<"\n";
+        std::cout<<"face["<<fi<<"] : ";  faces[fi].print();
     }
     void print_face_edges(uint32_t fi) const {
-        std::cout<<"face["<<fi<<"] : ("<< faces[fi].bounding_edges.size() <<" bound-edges) \n";
-        for(uint32_t ei : faces[fi].bounding_edges)
-            if(ei!=UINT32_MAX){  print_edge(ei); }
-            else std::cout<<"JUNK\n";
+        const std::vector<uint32_t>& fbnd = faces[fi].bounding_edges;
+        std::cout<<"face["<<fi<<"] : ("<< fbnd.size() <<" bound-edges) \n";
+        for(uint32_t ei : fbnd) 
+            if(ei!=UINT32_MAX){ print_edge(ei); } else std::cout<<"JUNK edge\n";
         std::cout<<"\n";
     }
 
-    bool vertex_have_sense(uint32_t v) const {
-        bool error = false;
-        if( v >= vertices.size()){
-            error = true;
-            std::cout<<"ERROR PLCc - vertex_have_sense(): "
-                     <<"vertex index "<<v<<" greater than vertices size ("<< vertices.size() <<")\n";
-        }
-        if( !vertices[v]->is3D() ){
-            error = true;
-            std::cout<<"ERROR PLCc - vertex_have_sense(): "
-                     <<"vertex["<<v<<"] is not 3D (inpute vertices are first "<< n_in_vrts <<")\n";
-
-        }
+    bool check_vertex(uint32_t v) const {
+        bool error = ( v >= vertices.size() || !vertices[v]->is3D());
+        if(v >= vertices.size()) std::cout <<"vertex index "<< v <<" > vertices" 
+                                           <<" size "<< vertices.size() <<"\n";
+        if(!vertices[v]->is3D()) std::cout <<" vertex["<< v <<"] is not 3D\n"; 
+        if(error) std::cout<<"[cham.h - vertex_has_sense()] ERROR dtected\n";
         return !error;
     }
 
-    // during vertex chamfering
-    void check_bridge(uint32_t v1, uint32_t v2, uint32_t v3, uint32_t v4) const{
-        if(!vertices[v1]->isLNC() || !vertices[v4]->isLNC() ||
-           !vertices[v2]->isBPT() || !vertices[v3]->isBPT() ){
-                uint32_t v[] = {v1,v2,v3,v4};
-                for(size_t i = 0; i < 4; i++){
-                    std::cout<<"v"<<i<<" -> ";
-                    if(vertices[v[i]]->isLNC()) std::cout<<"LNC\n";
-                    else if(vertices[v[i]]->isBPT()) std::cout<<"BPT\n";
-                    else if(vertices[v[i]]->isExplicit3D()) std::cout<<"EXP3D\n";
-                    else std::cout<<"OTHER\n";
+    // During vertex chamfering (v0 is the chamfered vertex, the other 4 vi
+    // are the ordered LNC-BPT-BPT-LNC bridge vertices)
+    bool check_bridge(uint32_t v0, 
+                    uint32_t v1, uint32_t v2, uint32_t v3, uint32_t v4) const {
+        bool error = false;
+        const uint32_t v[] = {v0, v1, v2, v3, v4};
+        const pointType* po = vertices[v0];
+        const pointType* p1 = vertices[v1];
+        const pointType* p2 = vertices[v2];
+        const pointType* p3 = vertices[v3];
+        const pointType* p4 = vertices[v4];
+        const bool v_match_type[] = { po->isExplicit3D(), p1->isLNC(),
+                                        p2->isBPT(), p3->isBPT(), p4->isLNC() };
+        const string type_str[] = {"EXPLICIT3D", "LNC", "BPT", "BPT", "LNC"};
+        for(int i = 0; i < 5; i++) if( !v_match_type[i] ) {
+            std::cout << "v" << i << " is not an " << type_str[i] << "\n"; 
+            print_vertex_info(v[i]); std::cout<<"\n";
+            error = true;
+        }
+        
+        if(!error){
+            const explicitPoint3D& expo = po->toExplicit3D();
+            const pointType* p0 = (p1->toLNC().P().toExplicit3D() == expo) ? 
+                                    &p1->toLNC().Q() : &p1->toLNC().P();
+            const pointType* p5 = (p4->toLNC().P().toExplicit3D() == expo) ? 
+                                    &p4->toLNC().Q() : &p4->toLNC().P();
+            const pointType* p[] = {p0, p1, p2, p3, p4, p5};
+            for(int i = 1; i < 5; i++) if(isAcuteAngle(p[i-1], p[i], p[i+1])) {
+                std::cout<<"acute angle at v["<<i<<"]\n"; 
+                error = true;
+            }
+
+            if(!error){
+                if( pointType::innerSegmentsCross(*po, *p0, *p2, *p3) ||
+                    pointType::innerSegmentsCross(*po, *p0, *p3, *p4) ||
+                    pointType::innerSegmentsCross(*p1, *p2, *p3, *p4) ||
+                    pointType::innerSegmentsCross(*po, *p5, *p1, *p2) ||
+                    pointType::innerSegmentsCross(*po, *p5, *p2, *p3)   ) {
+                    error = true;
+                    std::cout<< "edge bridges overlap\n";
                 }
-                // ip_error("[check_bridge] ERROR invalid bridge vertices\n");
-                std::cout<<"[cham.h - check_bridge()] ERROR invalid bridge vertices\n"; exit(1);
-           }
+            }
+        }
+        
+        if(error) std::cout<<"[cham.h - check_bridge()] ERROR detected\n";
+        return !error;
     }
 
     // during simplification
     void print_all_bridge_edges() const {
         std::cout<<"\nBRIDGE EDGES:\n";
-        for(uint32_t ei = 0; ei < edges.size(); ei++) if(edges[ei].loc_face_bridge_id != NO_BRIDGE) { 
+        for(uint32_t ei=0; ei<edges.size(); ei++) if(edges[ei].isBridgeEdge()){ 
             const CHAMedge& e = edges[ei];
-            std::cout<<"\n"; 
-            std::cout<<"<";
-            if( vertices[e.ep[0]]->isLNC() ) std::cout<<"LNC, ";
-            else if( vertices[e.ep[0]]->isBPT() ) std::cout<<"BPT, ";
-            else if( vertices[e.ep[0]]->isExplicit3D() ) std::cout<<"!EXPL3D!, ";
-            else std::cout<<"!OTHER!, ";
-            if( vertices[e.ep[1]]->isLNC() ) std::cout<<"LNC> -> ";
-            else if( vertices[e.ep[1]]->isBPT() ) std::cout<<"BPT> -> ";
-            else if( vertices[e.ep[1]]->isExplicit3D() ) std::cout<<"!EXPL3D!> -> ";
-            else std::cout<<"!OTHER!> -> ";
-            print_edge(ei);
-            std::cout<<"lfb_id = "; if(e.loc_face_bridge_id!=NO_BRIDGE) std::cout<<e.loc_face_bridge_id<<"\n"; else std::cout<<"NO_BRIGE\n";
-            std::cout<<"n_inc_faces = "<<e.inc_face.size()<<"\n";
+            std::cout <<"edge["<< ei <<"] = "<< edges[ei]
+                    << edge_ep_types_toString(edges[ei]) << ", "
+                    << "lfb_id = " << e.loc_face_bridge_id << ", " 
+                    << "n_inc_faces = " << e.inc_face.size() <<"\n";
         }
-        std::cout<<std::endl;
-
+        std::cout<<"\n";
     }
 
-    void check_bridge_edges() const {
-        for(const CHAMedge& e : edges) if(e.loc_face_bridge_id != NO_BRIDGE) {
-            assert( e.inc_face.size()==1);
-            assert( vertices[ e.ep[0] ]->isLNC() || vertices[ e.ep[0] ]->isBPT() );
-            assert( vertices[ e.ep[1] ]->isLNC() || vertices[ e.ep[1] ]->isBPT() );
-            assert( !( vertices[ e.ep[0] ]->isLNC() && vertices[ e.ep[1] ]->isLNC()) );
+    void print_3bridge_details(uint32_t bel, uint32_t bec, uint32_t ber, 
+                            uint32_t cons_left_edge, uint32_t cons_right_edge,
+                                        bool print_inc_face_details) const {
+
+        std::cout<<"\n";
+        if(cons_left_edge==UINT32_MAX) std::cout<<"left_ext NOT FOUND!\n";
+        else{ std::cout<<"left_ext: "; print_edge(cons_left_edge);}
+        std::cout<<"left_bridge: "; print_edge(bel);  
+        std::cout<<"cent_bridge: "; print_edge(bec);
+        std::cout<<"right_bridge: "; print_edge(ber);
+        if(cons_right_edge==UINT32_MAX) std::cout<<"right_ext NOT FOUND!\n";
+        else{ std::cout<<"right_ext: "; print_edge(cons_right_edge);}
+        if(!print_inc_face_details) return;
+        assert(edges[ bec ].inc_face.size() == 1);
+        const CHAMface& f = faces[ edges[ bec ].inc_face[0] ];
+        for(size_t bei = 0; bei < f.bounding_edges.size(); bei++)
+            print_edge_and_inc_face(f.bounding_edges[bei]);
+    }
+
+    void print_2bridge_details(uint32_t bec, uint32_t bes, 
+                            uint32_t next_bes, bool print_inc_face_details) const {
+
+        std::cout<<"\n";
+        if(next_bes==UINT32_MAX) std::cout<<"left_ext NOT FOUND!\n";
+        else{ std::cout<<"cons_side_ext: "; print_edge(next_bes);}
+        std::cout<<"side_bridge: "; print_edge(bes);
+        std::cout<<"cent_bridge: "; print_edge(bec);
+        if(!print_inc_face_details) return;
+        assert(edges[ bec ].inc_face.size() == 1);
+        const CHAMface& f = faces[ edges[ bec ].inc_face[0] ];
+        for(size_t bei = 0; bei < f.bounding_edges.size(); bei++)
+            print_edge_and_inc_face(f.bounding_edges[bei]);
+    }
+
+    bool check_bridge_edges() const {
+        for(const CHAMedge& e : edges) if(e.isBridgeEdge()) {
+            if( e.inc_face.size() != 1) return false;
+            const pointType* p0 = vertices[e.ep[0]];
+            const pointType* p1 = vertices[e.ep[1]];
+            if( !p0->isLNC() && !p0->isBPT() ) return false;
+            if( !p1->isLNC() && !p1->isBPT() ) return false; 
+            if( p0->isLNC() && p1->isLNC() ) return false; 
         }
+        return true;
     }
     
-    // check that each acute edge has both acute endpoints: use it only at the end of initialize()
+    // Check that each acute edge has both acute endpoints: 
+    // use it only before performing chamfering.
     bool acute_edges_have_acute_ep() const {
         bool error = false;
         for(uint32_t ei=0; ei<edges.size(); ei++) if(edges[ei].isAcute()){ 
-            const CHAMedge& e = edges[ei];
-            if( !is_acute_vrt(e.ep[0]) || !is_acute_vrt(e.ep[1]) ){
+            uint32_t n = 0;
+            if(!is_acute_vrt(edges[ei].ep[0])) n++; 
+            if(!is_acute_vrt(edges[ei].ep[1])) n++;
+            if(n > 0){
                 error = true;
-                uint32_t n = (uint32_t) (!is_acute_vrt(e.ep[0])) + (uint32_t) (!is_acute_vrt(e.ep[1]));
-                std::cout<<"ERROR PLCc - check_acute_coherence(): "
-                         <<"acute edge["<<ei<<"] has "<<n<<" not-acute endpoints\n";
-                
-                //for(uint32_t fi : e.inc_face) print_face_edges( fi );
-                //saveEdgeIncFaces(e); assert(is_acute_vrt(e.ep[0]) && is_acute_vrt(e.ep[1]));
+                std::cout << "acute edge[" << ei << "] has "
+                          << n << " not-acute endpoints\n";
             }
         }
+        if(error) std::cout<<"[cham.h - acute_edges_have_acute_ep()] ERROR\n";
         return(!error);
     }
 
-    bool edge_is_coherent(uint32_t ei) const {
+    bool check_subedge(uint32_t ei, uint32_t epi) const {
         const CHAMedge& e = edges[ei];
-        bool error = false;
-
-        if( ei >= edges.size()){
+        uint32_t ep = e.ep[0], oep = e.oep[0], opp_ep = e.ep[1]; 
+        if(epi==1){ ep = e.ep[1], oep = e.oep[1], opp_ep = e.ep[0]; }
+        if(ep == oep) return true;
+        bool error=false; 
+        if(!vCollinear(oep, ep, opp_ep)){
+            print_edge(ei);
+            std::cout<<"sub-edge of "; e.print_parent_edge();
+            std::cout<<"has "<<oep<<", "<<ep<<", "<<opp_ep<<" NOT collinear\n";
             error = true;
-            std::cout<<"ERROR PLCc - edge_is_coherent(): "
-                     <<"edge index "<<ei<<" greater than edges size ("<< edges.size() <<")\n";
         }
-        
-        // check endpoints
-        if( !vertex_have_sense(e.ep[0]) || !vertex_have_sense(e.ep[1]) ){ error = true; }
-        
-        if(e.oep[0]!=e.ep[0] || e.oep[1]!=e.ep[1]){
-
-            if(e.oep[0]!=e.ep[0] && !vertices[e.ep[0]]->isBPT()){
-                if(!vCollinear(e.oep[0], e.ep[0], e.ep[1])){
-                    std::cout<<"ERROR PLCc - edge_is_coherent(): "
-                             <<"edge["<<ei<<"] oep0, ep0, ep1 NOT collinear\n";
-                    error = true;
-                }
-
-                if(!vPointInInnerSegment(e.ep[0], e.oep[0], e.ep[1])){
-                    std::cout<<"ERROR PLCc - edge_is_coherent(): "
-                             <<"edge["<<ei<<"] ep0 outside <oep0,ep1>\n";
-                    error = true;
-                }
-            }
-
-            if(e.oep[1]!=e.ep[1] && !vertices[e.ep[1]]->isBPT()){ 
-                if(!vCollinear(e.ep[0], e.ep[1], e.oep[1])){
-                    std::cout<<"ERROR PLCc - edge_is_coherent(): "
-                             <<"edge["<<ei<<"] ep0, ep1, oep1 NOT collinear\n";
-                    error = true;
-                }
-
-                if(!vPointInInnerSegment(e.ep[1], e.ep[0], e.oep[1])){
-                    std::cout<<"ERROR PLCc - edge_is_coherent(): "
-                             <<"edge["<<ei<<"] ep1 outside <ep0,oep1>\n";
-                    error = true;
-                }
-
-            }
+        if(!vPointInInnerSegment(ep, oep, opp_ep)){
+            print_edge(ei);
+            std::cout<<"sub-edge of "; e.print_parent_edge();
+            std::cout<<"has "<<ep<<" outside parent edge.\n";
+            error = true;
         }
-
         return !error;
     }
 
-    bool face_boundary_overlaps(uint32_t fi) const {
-        const CHAMface& f = faces[fi];
-        const std::vector<uint32_t>& fbe = f.bounding_edges;
-        for(size_t i = 0; i < fbe.size()-1; i++){
-            const CHAMedge& ei = edges[ fbe[i] ];
-            for(size_t j = i+1; j < fbe.size(); j++){
-                const CHAMedge& ej = edges[ fbe[j] ];
-
-                if( vInnerSegmentCross(ei.ep[0], ei.ep[1], ej.ep[0], ej.ep[1]) ){
-                    std::cout<<"ERROR PLCc - face_boundary_overlaps(): "
-                        <<"edge["<< fbe[i] <<"] and edge["<< fbe[j] <<" intersects\n";
-                    print_face_edges(fi);
-                    saveFace(f, "face.off");
-                    return false;
-                }
-
-            }
-                        
+    bool check_edge(uint32_t ei) const {
+        const CHAMedge& e = edges[ei];
+        bool error = false;
+        if( ei >= edges.size()){
+            error = true;
+            std::cout<<"edge index "<<ei<<" > edges size "<<edges.size()<<"\n";
         }
-
-        return true;
+        uint32_t e0 = e.ep[0], e1 = e.ep[1];
+        if(!check_vertex(e0) || !check_vertex(e1)) error = true;
+        if(e.isSubEdge() && 
+            (!check_subedge(ei,0) || !check_subedge(ei,1)) ) error = true;
+        if(error) std::cout << "[cham.h - check_edge()] ERROR detected\n";
+        return !error;
     }
 
-    bool face_boundary_have_sense(uint32_t fi) const {
+    bool vrt_inside_edge(uint32_t vi, uint32_t ei, bool verbose=false) const {
+        bool inside = vPointInInnerSegment(vi, edges[ei].ep[0],edges[ei].ep[1]);
+        if(inside && verbose) {
+            std::cout << "vertex[" << vi << "] is inside "; print_edge(ei);
+        }
+        return inside;
+    }
+
+    bool edges_intersects(uint32_t ei, uint32_t ej, bool verbose=false) const { 
+        uint32_t ei0 = edges[ei].ep[0], ei1 = edges[ei].ep[1];
+        uint32_t ej0 = edges[ej].ep[0], ej1 = edges[ej].ep[1];
+        if(vrt_inside_edge(ei0, ej, verbose)) return true;
+        if(vrt_inside_edge(ei1, ej, verbose)) return true;
+        if(vrt_inside_edge(ej0, ei, verbose)) return true;
+        if(vrt_inside_edge(ej1, ei, verbose)) return true;
+        bool intersects = vInnerSegmentCross(ei0, ei1, ej0, ej1);
+        if(intersects && verbose) {
+            std::cout<<"edge["<< ei <<"] and edge["<< ej <<"] intersects.\n";
+            print_edge(ei); print_edge(ej); std::cout<<"\n";
+        }
+        return intersects;
+    }
+
+    bool face_boundary_overlaps(uint32_t fi, bool empty_places=false) const {
+        const CHAMface& f = faces[fi];
+        const std::vector<uint32_t>& fbe = f.bounding_edges;
+        for(size_t i = 0; i < fbe.size()-1; i++) if(fbe[i] != EMPTY_PLACE) {
+            for(size_t j = i+1; j < fbe.size(); j++) if(fbe[j] != EMPTY_PLACE) {
+                if( !edges_intersects(fbe[i], fbe[j], true) ) continue;
+                std::cout<<"[cam.h - face_boundary_overlaps()] ERROR: "
+                         << "overlap detected on face "<< fi << "boundary\n";
+                const uint32_t* tv = plc.triangle_vertices.data() + 
+                                                    faces[fi].triangle * 3;
+                saveTriangle(*tv, *(tv+1), *(tv+2), "overlapping_face_tri.off");
+                return true;
+            }       
+        }
+        return false;
+    }
+
+    bool check_face(uint32_t fi, bool empty_places=false) const {
         bool error = false;
         const CHAMface& f = faces[fi];
         const std::vector<uint32_t>& fbe = f.bounding_edges;
 
         // check tath each edge has at two neighbour (with which share an endpoint)
         for(size_t it=0; it < fbe.size(); ++it){
-            size_t n_it = it;  f.advance_on_bnd(n_it);
-            size_t p_it = it;  f.reverse_on_bnd(p_it);
 
-            const CHAMedge& e = edges[ fbe[it] ];
+            if(empty_places && fbe[it] == EMPTY_PLACE) continue;
+
+            size_t n_it = it;
+            size_t p_it = it; 
+            if(!empty_places) f.advance_on_bnd(n_it);
+            else f.advance_on_pierced_bnd(n_it);
+            if(!empty_places) f.reverse_on_bnd(p_it);
+            else f.reverse_on_pierced_bnd(p_it);
+
+            uint32_t ei = fbe[it];
+            const CHAMedge& e = edges[ ei ];
             const CHAMedge& ne = edges[ fbe[n_it] ];
             const CHAMedge& pe = edges[ fbe[p_it] ];
-
-            if(!e.has_commonVertex(ne) || !e.has_commonVertex(pe) ||
-                e.coincident(ne) || e.coincident(pe)           ){
-                    std::cout<<"ERROR PLCc - face_boundary_have_sense(): "
-                             <<"edge["<<fbe[it]<<"] have problems with neighbours\n";
-                    print_face_edges(fi);
-                    error = true;
-
+            if(!e.has_commonVertex(ne) || !e.has_commonVertex(pe)){
+                error = true;
+                std::cout << "edge[" << ei << "] inchoerent bounding_edges\n";
+            }
+            if(e.coincident(ne) || e.coincident(pe)){
+                error = true;
+                std::cout << "edge[" << ei << "] bounding_edges duplication\n";
             }
         }
 
-        // check the correct orientation wrt neighbours on boundary
-        if( !face_boundary_overlaps(fi) ) error = true;
+        if( face_boundary_overlaps(fi, empty_places) ) error = true;
 
         // check that each enpoint compares exactly two times on the bounday
         std::vector<uint32_t> loc_mark_vrts(vertices.size(), 0);
-        for(uint32_t ei : f.bounding_edges){
+        for(uint32_t ei : f.bounding_edges) if(ei != EMPTY_PLACE) {
             loc_mark_vrts[edges[ei].ep[0]]++;
             loc_mark_vrts[edges[ei].ep[1]]++;
         }
 
-        for(uint32_t ei : f.bounding_edges) for(uint32_t k=0; k<2; k++) {
-            uint32_t vi = edges[ei].ep[k];
-            if(loc_mark_vrts[vi]!=2){
-                std::cout<<"ERROR PLCc - face_boundary_have_sense(): "
-                    <<"endpoint "<<vi<<" compares "<<loc_mark_vrts[vi]<<" times\n";
-                error = true;
+        for(uint32_t ei : f.bounding_edges) if(ei != EMPTY_PLACE) 
+            for(uint32_t k=0; k<2; k++) {
+                uint32_t vi = edges[ei].ep[k];
+                if(loc_mark_vrts[vi]!=2){
+                    error = true;
+                    std::cout << "endpoint " << vi << " of edge[" << ei 
+                          << "] compares " << loc_mark_vrts[vi] << " times\n";
+                }
             }
-        }
 
-        return !error;
+        if(error) {
+            std::cout<<"[cham.h - check_face()] ERROR detected\n";
+            print_face_edges(fi);
+            return false;
+        }
+        return true;
     }
 
-    bool EF_relation_is_choerent(uint32_t ei) const{
+    void get_unchamferableFace_info(uint32_t fi) const {
+        const uint32_t tri = faces[fi].triangle;
+        const uint32_t* tv = plc.triangle_vertices.data() + tri*3;
+        std::cout<<"chamfering failed for face["<< fi <<"] (input tri #"
+                 << tri <<" <"<<*(tv)<<","<<*(tv+1)<<","<<*(tv+2)<<">)\n";
+        print_face_edges(fi);
+        saveTriangle(*tv, *(tv+1), *(tv+2), "unchamferable_tri.off");
+    }
+
+    bool check_EF_relation(uint32_t ei) const {
         const CHAMedge& e = edges[ei];
         for(uint32_t fi : e.inc_face) if(!faces[fi].hasBndEdge(ei)){ 
-            std::cout<<"ERROR PLCc - check_EF_relation(): "
-                     <<"edge["<<ei<<"] has inc_face face["<<fi<<"] "
-                     <<"but do not appear on its boundary\n";
+            std::cout<<"[cham.h - check_EF_relation()] ERROR "
+                     <<"edge["<<ei<<"] has face["<<fi<<"] as inc_face, "
+                     <<"but it does not appear on face boundary\n";
             return false; 
         }
         return true;
     }
 
-    bool FE_relation_is_choerent(uint32_t fi) const{
+    bool check_FE_relation(uint32_t fi) const{
         const CHAMface& f = faces[fi];
         for(uint32_t ei : f.bounding_edges){ 
             const CHAMedge& e = edges[ei];
             if(std::find(e.inc_face.begin(), e.inc_face.end(), fi) == e.inc_face.end()){ 
-                std::cout<<"ERROR PLCc - check_FE_relation(): "
-                        <<"face["<<fi<<"] has bnd_edge edge["<<ei<<"] "
-                        <<"but do not appear as its incident face\n";
+                std::cout<<"[cham.h - check_FE_relation()] ERROR face["<<fi<<"]"
+                         <<" has edge["<<ei<<"] on its boundary, but it "
+                        <<"does not appear as one of its incident faces\n";
                 return false; 
             }
         }
@@ -796,187 +1039,188 @@ public:
 
     bool checkup() const {
         bool error = false;
-
-        // check edges
-        for(uint32_t ei=0; ei<edges.size(); ei++) if(!edge_is_coherent(ei)) error = true;
-        
-        // check faces
-        for(uint32_t fi=0; fi<faces.size(); fi++) if(!face_boundary_have_sense(fi)) error = true;
-
-        // check connectivity
-        for(uint32_t ei=0; ei<edges.size(); ei++) if(!EF_relation_is_choerent(ei)) error = true;
-        for(uint32_t fi=0; fi<faces.size(); fi++) if(!FE_relation_is_choerent(fi)) error = true;
-
+        uint32_t ei, fi;
+        for(ei=0; ei<edges.size();) if(!check_edge(ei++)) error=true;
+        for(fi=0; fi<faces.size();) if(!check_face(fi++)) error=true;
+        for(ei=0; ei<edges.size();) if(!check_EF_relation(ei++)) error = true;
+        for(fi=0; fi<faces.size();) if(!check_FE_relation(fi++)) error = true;
         return !error;
     }
 
-    bool analyze_acute_angle(const pointType* pl, const pointType* p, const pointType* pr, uint32_t v, uint32_t fi) const {
-
-        const double cos_toll = 0.0157; // approximation of cos(pi/2 * 99/100) ~= cos(89,1°)
-
-        vector3d Opl(pl), Opr(pr), Op(p);
-
-        const double comp_dp = abs((Opl-Op).dot(Opr-Op));
-        const double sq_ll = Opl.dist_sq(Op); 
-        const double sq_lr = Opr.dist_sq(Op); 
-        const double norm_prod = sqrt( sq_ll * sq_lr );
-
-        if( comp_dp < cos_toll*norm_prod ){
-            #ifdef PLCC_VERBOSE_DEBUG
-            std::cout<<" vertex "<< v <<" (type "<<vertices[v]->getType()<<") on face["<<fi<<"]:\n";
-            std::cout<<"[ analyze_acute_angle() ] WARNING: cos(alpha) = "<< comp_dp / norm_prod <<"\n";
-            #endif
-            return false;
-        }
-
-        std::cout<<" \nvertex "<< v <<" (type "<<vertices[v]->getType()<<") on face["<<fi<<"]:\n";
-        std::cout<<"[ analyze_acute_angle() ] ERROR: cos(alpha) = "<< comp_dp / norm_prod <<"\n";
-        std::cout<<"[ analyze_acute_angle() ] comp_dotprod = "<< comp_dp <<"\n";
-        std::cout<<"[ analyze_acute_angle() ] norm_prod = "<< norm_prod <<"\n";
-        std::cout<<"[ analyze_acute_angle() ] cent node (v) coords = "<< Op <<"\n";
-        std::cout<<"[ analyze_acute_angle() ] vertices incident at v: "<<Opl<<" , "<<Opr<<"\n";
-        uint32_t intri = faces[fi].triangle;
-        const uint32_t* intriv = plc.triangle_vertices.data() + intri*3;
-        std::cout<<"[ analyze_acute_angle() ] original triangle "<<intri<<": <"<< *intriv <<","<< *(intriv+1) << ","<< *(intriv+2) <<">\n";
-        Opl = (Op+Opl)*0.5;
-        Opr = (Op+Opr)*0.5;
-        saveTriangle(Opl.c,Op.c,Opr.c,"acute_angle.off");
-        return true;
-
-    }
-
-    // use it only at the end of chamfering algorithm
+    // To check absence of acute angles after chamfering
     bool check_acuteness() const {
 
-        // check that each couple of faces incident at an edges do not form 
+        bool error = false;
+        const std::vector<pointType*>& v = vertices;
+
+        // Check that each couple of faces incident at an edges do not form 
         // an acute dihedral angle
-        // DO NOT WORK CAUSE OF NOT-COVEX FACES 
-        // for(uint32_t ei=0; ei<edges.size(); ei++){
+        for(uint32_t ei=0; ei<edges.size(); ei++){
+            const CHAMedge& e = edges[ei];
 
-        //     const CHAMedge& e = edges[ei];
+            if(e.inc_face.size() == 1) continue;
+            if(e.inc_face.size() > 4)
+                std::cout<<"edges["<<ei<<"] is acute: it has "
+                         << e.inc_face.size() <<" incident faces.\n";
 
-        //     if(e.inc_face.size() == 1) continue;
-        //     if(e.inc_face.size() > 4){ 
-        //         std::cout<<"[ check_acuteness() ] ERROR: edges["<<ei<<"] has "
-        //                  << e.inc_face.size() <<" incident faces, thus is acute.\n";
-        //         return false;
-        //     }
+            uint32_t ui, uj;
+            const pointType* p0 = vertices[ e.oep[0] ];
+            const pointType* p1 = vertices[ e.oep[1] ];
+            assert(p0->isExplicit3D() && p1->isExplicit3D());
+            const CHAMedge orig_e(e.oep[0], e.oep[1], UINT32_MAX);
+            std::vector<uint32_t> in_tri;
+            for(uint32_t fi : e.inc_face) in_tri.push_back(faces[fi].triangle);
+            for(size_t i = 0; i < in_tri.size()-1; i++)
+                for(size_t j = i+1; j < in_tri.size(); j++) {
+                    ui = inTri_opp_vrt(orig_e, in_tri[i]);
+                    uj = inTri_opp_vrt(orig_e, in_tri[j]);
+                    if( isAcuteDihedral_exact(p0, p1, v[ui], v[uj]) ){
+                        std::cout<<"edges["<<ei<<"] is acute.\n";
+                        error = true;
+                        // saveTriangle(ui,e.oep[0],o.oep[1], "acute_tri1.off");
+                        // saveTriangle(uj,e.oep[0],o.oep[1], "acute_tri2.off");
+                        // return false;
+                    }
+                }
+            
+        }
 
-        //     uint32_t e0 = e.ep[0], e1 = e.ep[1];
-        //     uint32_t u, v;
-        //     const pointType* e0_pt = vertices[e0];
-        //     const pointType* e1_pt = vertices[e1];
-
-        //     for(size_t i=1; i<e.inc_face.size(); i++){
-        //         for(size_t j=0; j<i; j++){
-        //             u = get_not_collinear_vertex_on_face(e0, e1, e.inc_face[i]);
-        //             v = get_not_collinear_vertex_on_face(e0, e1, e.inc_face[j]);
-
-        //             const vector3d Oe0( e0_pt );
-        //             const vector3d e0e1( vector3d(e1_pt) - Oe0 );
-        //             const vector3d nu = e0e1.cross( vector3d( vertices[u] ) - Oe0 );
-        //             const vector3d nv = e0e1.cross( vector3d( vertices[v] ) - Oe0 );
-        //             const vector3d Onu( Oe0 + nu );
-        //             const vector3d Onv( Oe0 + nv );
-
-        //             const explicitPoint3D p( Onu.c[0], Onu.c[1], Onu.c[2] ) ;
-        //             const explicitPoint3D q( Onv.c[0], Onv.c[1], Onv.c[2] ) ;
-
-        //             if( pointType::dotProductSign3D(p, q, *e0_pt) > 0){
-        //                 std::cout<<"\ns_dp = "<<pointType::dotProductSign3D(p, q, *e0_pt)
-        //                          <<" for face["<<e.inc_face[i]<<"] and face["<<e.inc_face[j]<<"] incident at ";
-        //                 print_edge(ei);
-        //                 if( analyze_acute_angle(&p, e0_pt, &q) ){ 
-        //                     const vector3d Oe1( e1_pt );
-        //                     const double pc[3] = {p.X(), p.Y(), p.Z()};
-        //                     const double qc[3] = {q.X(), q.Y(), q.Z()};
-        //                     saveTriangle(pc, Oe0.c, Oe1.c, "norm1.off");
-        //                     saveTriangle(qc, Oe0.c, Oe1.c, "norm2.off");
-        //                     if( !saveFace(faces[ e.inc_face[i] ], "face1.off") )
-        //                         saveTriangle(e0,e1,u,"tri1.off");
-        //                     if( !saveFace(faces[ e.inc_face[j] ], "face2.off"))
-        //                         saveTriangle(e0,e1,v,"tri2.off");
-        //                     return false;
-
-        //                 }
-        //             }
-        //         }
-        //     }
-
-        // }
-
-        // check that each face as polygon has not acute angles
+        // Check that each face has not acute angles at any two consecutive 
+        // sides.
         for(uint32_t fi=0; fi<faces.size(); fi++){
             const CHAMface& f = faces[fi];
             const std::vector<uint32_t>& fbnd = f.bounding_edges;
             size_t it = 0;
             while(it < fbnd.size()){
                 size_t nit = it; f.advance_on_bnd(nit);
-                uint32_t v, vl, vr;
+                uint32_t vc, vl, vr;
                 const CHAMedge& e1 = edges[ f.bounding_edges[it] ];
                 const CHAMedge& e2 = edges[ f.bounding_edges[nit] ];
-                v = e1.commonVertex(e2);
+                vc = e1.commonVertex(e2);
                 vl = e1.notCommonVertex(e2);
                 vr = e2.notCommonVertex(e1);
-                //if( pointType::dotProductSign3D( *vertices[vl], *vertices[vr], *vertices[v]) > 0 ){ 
-                if( !findIF_flat_edge(e1) && 
-                    !findIF_flat_edge(e2) &&
-                    isAcuteAngle( vertices[vl], vertices[v], vertices[vr]) ){ 
-                    if( analyze_acute_angle(vertices[vl], vertices[v], vertices[vr],v,fi) ){ 
-                        saveFace(f,"acute_face.off");
-                        return false;
-                    }
+                if( !e1.isFlat() && !e2.isFlat() &&
+                    isAcuteAngle( v[vl], v[vc], v[vr]) ) {
+                    std::cout<<"edge "<<e1<<" and edge "<<e2<<" form an "
+                             <<"angle at face "<<fi<<" boundary.\n"; 
+                    // saveFace(f, "acute_face.off");
+                    // saveTriangle(vl, vc, vl, "acute_angle.off");
+                    // return false;
+                    error = true;
                 }
                 ++it;
             }
         }
 
-        // check that there are no acute vertices (considering all incident elements)
+        // Check that there are no acute vertices
+        std::vector< std::vector<uint32_t> > ve_rel(vertices.size());
+        for(size_t i = 0; i < edges.size(); i++) if(!edges[i].isFlat()) {
+            ve_rel[ edges[i].ep[0] ].push_back(i);
+            ve_rel[ edges[i].ep[1] ].push_back(i);
+        }
+        for(uint32_t vi=0; vi<vertices.size(); vi++) if(!ve_rel[vi].empty()) {
+            assert(ve_rel[vi].size() > 1);
+            for(size_t ei=0; ei<ve_rel[vi].size()-1; ei++)
+                for(size_t ej=ei+1; ej<ve_rel[ei].size(); ej++) {
+                    uint32_t ui = edges[ei].ep[0], uj = edges[ej].ep[0];
+                    if(ui == vi) ui = edges[ei].ep[1];
+                    if(uj == vi) uj = edges[ej].ep[1];
+                    if(isAcuteAngle( v[ui], v[vi], v[uj]) ) {
+                        std::cout<<"edge "<<ei<<" and edge "<<ej<<" form an "
+                                 <<"angle at vertex "<<vi<<".\n"; 
+                        // saveTriangle(ui, vi, vj, "acute_angle.off");
+                        // return false;
+                        error = true;
+                    }
+                }
+        }
 
-
+        if(error){
+            std::cout<<"[cham.h - check_acuteness()] ERROR\n";
+            return false;
+        }
         return true;
     }
 
-    #ifdef PLCC_DEBUG
-    // Debug mode functions
-
-    bool duplicated_vertices() const{
-        bool duplicated = false;
-        std::vector< std::pair<vector3d,uint32_t> > vrts_cpy;
-        for(size_t i=0; i<vertices.size(); i++){ 
-            vrts_cpy.push_back( std::pair<vector3d,uint32_t> (vector3d(vertices[i]),i) ); 
+    //
+    bool checkEdges_beforeJunkDeletion() const {
+        for(const CHAMedge& e : edges)if(!e.isIsolated()){
+            uint32_t e0 = e.ep[0], e1 = e.ep[1];
+            if(e.isJunk()){ 
+                if( !is_acute_vrt(e0) && !is_acute_vrt(e1) ) return false;
+            }
+            else if( is_acute_vrt(e0) || is_acute_vrt(e1) ) return false;
         }
-        std::sort(vrts_cpy.begin(), vrts_cpy.end(),
-                  [](const std::pair<vector3d,uint32_t> &a, const std::pair<vector3d,uint32_t> &b){ return a.first < b.first;} );
-        for(size_t i=1; i<vrts_cpy.size(); i++){ 
-            if(vrts_cpy[i-1].first.c[0] == vrts_cpy[i].first.c[0] &&
-            vrts_cpy[i-1].first.c[1] == vrts_cpy[i].first.c[1] &&
-            vrts_cpy[i-1].first.c[2] == vrts_cpy[i].first.c[2]     ){
-                uint32_t v1 = vrts_cpy[i-1].second;
-                uint32_t v2 = vrts_cpy[i].second;
-                std::cout<<"ERROR: duplicated vertex["<< v1 <<"] = vertex["<< v2 <<"]\n"; 
-                print_vertex_info(v1);
-                print_vertex_info(v2);
-                const pointType *vv1 = vertices[v1];
-                const pointType *vv2 = vertices[v2];
-                if(vv1->isLNC() && vv2->isLNC()){  
-                    if(vv1->toLNC().P() == vv2->toLNC().P() && 
-                       vv1->toLNC().Q() == vv2->toLNC().Q() && 
-                       vv1->toLNC().T() == vv2->toLNC().T()   )
-                        std::cout<<"Exact Versions Are Equal\n";
-                }
-                if(vv1->isBPT() && vv2->isBPT()){  
-                    if(vv1->toBPT().P() == vv2->toBPT().P() && 
-                       vv1->toBPT().Q() == vv2->toBPT().Q() && 
-                       vv1->toBPT().R() == vv2->toBPT().R() && 
-                       vv1->toBPT().U() == vv2->toBPT().U() &&
-                       vv1->toBPT().V() == vv2->toBPT().V()   )
-                        std::cout<<"Exact Versions Are Equal\n";
-                }
-                
+        return true;
+    }
+
+
+    #ifdef PLCC_VERBOSE_DEBUG
+
+    static inline bool sameLNC(const implicitPoint3D_LNC& l1, 
+                                const implicitPoint3D_LNC& l2) {
+        const explicitPoint3D& P1 = l1.P().toExplicit3D();
+        const explicitPoint3D& Q1 = l1.Q().toExplicit3D();
+        bigfloat t1 = l1.T();
+        const explicitPoint3D& P2 = l2.P().toExplicit3D();
+        const explicitPoint3D& Q2 = l2.Q().toExplicit3D();
+        bigfloat t2 = l2.T();
+        if(P1==P2 && Q1==Q2 && t1==t2) return true;
+        if(P1==Q2 && Q1==P2 && t1==(1-t2)) return true;
+        return false;
+    }
+
+    static inline bool sameBPT(const implicitPoint3D_BPT& b1, 
+                                const implicitPoint3D_BPT& b2) {
+        const explicitPoint3D& P1 = b1.P().toExplicit3D();
+        const explicitPoint3D& Q1 = b1.Q().toExplicit3D();
+        const explicitPoint3D& R1 = b1.R().toExplicit3D();
+        bigfloat v1 = b1.V(), u1 = b1.U();
+        const explicitPoint3D& P2 = b2.P().toExplicit3D();
+        const explicitPoint3D& Q2 = b2.Q().toExplicit3D();
+        const explicitPoint3D& R2 = b2.R().toExplicit3D();
+        bigfloat v2 = b2.V(), u2 = b2.U();
+        if(P1==P2 && Q1==Q2 && R1==R2 && v1==v2 && u1==u2) return true;
+        if(P1==Q2 && Q1==P2 && R1==R2 && v1==u2 && u1==v2) return true;
+        if(P1==R2 && Q1==P2 && R1==Q2 && v1==u2 && u1==(1-u2-v2)) return true;
+        if(P1==P2 && Q1==R2 && R1==Q2 && v1==(1-u2-v2) && u1==u2) return true;
+        if(P1==Q2 && Q1==R2 && R1==P2 && v1==(1-u2-v2) && u1==v2) return true;
+        if(P1==R2 && Q1==Q2 && R1==P2 && v1==v2 && u1==(1-u2-v2)) return true;
+        return false;
+    }
+
+    bool duplicated_vertices() const {
+        bool duplicated = false;
+        const std::vector<pointType*>& v = vertices;
+        std::vector< std::pair<vector3d,uint32_t> > v_cpy;
+        for(size_t i=0; i<vertices.size(); i++)
+            v_cpy.push_back( std::pair<vector3d,uint32_t> (vector3d(v[i]),i) ); 
+        
+        std::sort(v_cpy.begin(), v_cpy.end(),
+                    []( const std::pair<vector3d,uint32_t> &a, 
+                        const std::pair<vector3d,uint32_t> &b ) { 
+                            return ( a.first < b.first || 
+                                (a.first == b.first && a.second < b.second) ); 
+                        } );
+        
+        for(size_t i=1; i<v_cpy.size(); i++) {
+            if( !(v_cpy[i-1].first == v_cpy[i].first) ) continue;
+            
+            const pointType* p1 = v[ v_cpy[i-1].second ];
+            const pointType* p2 = v[ v_cpy[i].second ];
+            if( p1->isExplicit3D() == p2->isExplicit3D() ||
+               (    p1->isLNC() && p2->isLNC() && 
+                    sameLNC(p1->toLNC(),p2->toLNC())   ) ||
+               (    p1->isBPT() && p2->isBPT() && 
+                    sameBPT(p1->toBPT(),p2->toBPT())   )    ){  
                 duplicated = true;
+                std::cout << "duplicated vertex[" << v_cpy[i-1].second
+                          << "] = vertex[" << v_cpy[i].second << "]\n"; 
+                print_vertex_info(v_cpy[i-1].second); 
+                print_vertex_info(v_cpy[i].second);
             }
         }
+        if(duplicated) std::cout<<"[cham.h - duplicated_vertices()] ERROR\n";
         return duplicated;
     }
 
@@ -985,67 +1229,24 @@ public:
         std::vector< std::vector<uint32_t> > edge_cpy;
         for(uint32_t i=0; i<edges.size(); i++){ 
             uint32_t ep0=edges[i].ep[0], ep1=edges[i].ep[1];
-            if(ep0>ep1) std::swap(ep0,ep1);
+            if(ep0 > ep1) std::swap(ep0, ep1);
             edge_cpy.push_back( std::vector<uint32_t> ({ep0, ep1, i}) ); 
         }
         std::sort(edge_cpy.begin(), edge_cpy.end(),
-                  [](const std::vector<uint32_t> &a, const std::vector<uint32_t> &b){ 
-                                        return (a[0] < b[0] || (a[0]==b[0] && a[1]<b[1]));
-                                        } 
-                  );
+                  []( const std::vector<uint32_t> &a, 
+                      const std::vector<uint32_t> &b ) { 
+                        return (a[0] < b[0] || (a[0]==b[0] && a[1]<b[1])); } );
         for(size_t i=1; i<edge_cpy.size(); i++){ 
-            if(edge_cpy[i-1][0] == edge_cpy[i][0] &&
-               edge_cpy[i-1][1] == edge_cpy[i][1]    ){
-                std::cout<<"ERROR: duplicated edge["<< edge_cpy[i-1][2] <<"] = edge["<< edge_cpy[i][2] <<"]\n"; 
+            if( edge_cpy[i-1][0] == edge_cpy[i][0] &&
+                edge_cpy[i-1][1] == edge_cpy[i][1]    ){
+                std::cout<<"duplicated edge["<< edge_cpy[i-1][2] 
+                        <<"] = edge["<< edge_cpy[i][2] <<"]\n"; 
                 duplicated = true;
             }
         }
+        if(duplicated) std::cout<<"[cham.h - duplicated_edges()] ERROR\n";
         return duplicated;
     }
-
-    void checkEdges_beforeJunkDeletion() const {
-        for(const CHAMedge& e : edges)if(!e.isIsolated()){
-            if(e.isJunk()) assert( is_acute_vrt(e.ep[0]) || is_acute_vrt(e.ep[1]) );
-            else assert( !is_acute_vrt(e.ep[0]) && !is_acute_vrt(e.ep[1]) );
-        }
-    }
-
-    void checkFacesBND_afterJunkDeletion() const {
-        for(uint32_t fi=0; fi<faces.size(); fi++){
-            const CHAMface& f = faces[fi];
-            for(uint32_t ei : f.bounding_edges){
-                const CHAMedge& e = edges[ei];
-                assert(!is_acute_vrt(e.ep[0]));
-                assert(!is_acute_vrt(e.ep[1]));
-            }
-        }
-    }
-
-    //
-    void report_vons_fail(uint32_t v0, uint32_t v1){
-        string type_ep0, type_ep1;
-
-        if(vertices[v0]->isExplicit3D()) type_ep0 = "explicit";
-        else if(vertices[v0]->isLNC()) type_ep0 = "LNC";
-        else if(vertices[v0]->isBPT()) type_ep0 = "BTP";
-        else type_ep0 = "unknown";
-
-        if(vertices[v1]->isExplicit3D()) type_ep1 = "explicit";
-        else if(vertices[v1]->isLNC()) type_ep1 = "LNC";
-        else if(vertices[v1]->isBPT()) type_ep1 = "BTP";
-        else type_ep1 = "unknown";
-
-        std::cout<<"[new_vrt_on_segment()] ERROR: "
-                 <<"ep0 = "<<v0<<" is " << type_ep0 << " and "
-                 <<"ep1 = "<<v1<<" is " << type_ep1 <<": this shold never happen.\n";
-    }
-
-    #endif
-
-
-
-    #ifdef PLCC_VERBOSE_DEBUG
-    // Verbose mode functions
 
     inline void disp_howManyFlatEdges() const {
         uint32_t count_flat = 0;
@@ -1065,24 +1266,18 @@ public:
         std::cout<<count_acute_v<<" acute vertices founded.\n";
     }
 
-    #endif
+    inline void print_just_chamfered_edge(uint32_t ei, uint32_t ep_i) const {
+        std::cout<<"after chamfering:\n"; 
+        print_edge(ei); print_edge(edges.size()-1);
+        std::cout<<"edge["<< ((ep_i==1) ? edges.size()-1 : ei) <<"] is junk\n";
+    }
 
-    #ifdef PLCC_VERBOSE_DEBUG_LEV1
+    #endif // PLCC_VERBOSE_DEBUG
 
-    // More-verbose mode functions
-    inline void disp_allFlatEdges() const { std::cout<<"FLAT EDGES:\n"; for(uint32_t i=0; i<edges.size(); i++) if(edges[i].isFlat()) print_edge(i); std::cout<<endl;}
-    inline void disp_allAcuteEdges() const { std::cout<<"ACUTE EDGES:\n"; for(uint32_t i=0; i<edges.size(); i++) if(edges[i].isAcute()) print_edge(i); std::cout<<endl;}
-    inline void disp_allAcuteVertices() const { std::cout<<"ACUTE VRTS:\n"; for(uint32_t i=0; i<vertices.size(); i++) if(is_acute_vrt(i)) print_vertex(i); std::cout<<endl;}
-    #else
-    //inline void disp_allFlatEdges() const { std::cout<<"FLAT EDGES:\n"; for(uint32_t i=0; i<edges.size(); i++) if(edges[i].isFlat()) print_edge(i); std::cout<<endl;}
-
-    #endif
-
-    // Single triangle chamfering (old stuff)
-    // void inputTriangleChamfering(uint32_t fi);
-    // void remove_junk_edges_from_face(uint32_t fi);
-    // void get_edge_ch_dist(std::vector<double>& edge_ch_dist);
-    // void chamfer_acute_edge_from_inc_face(uint32_t ei, uint32_t fi, double d);
+    void report_error_and_exit(const char* msg) const {
+        printf("%s", msg);
+        exit(1);
+    }
 
 };
 

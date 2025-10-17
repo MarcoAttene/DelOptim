@@ -43,7 +43,7 @@
 
 class TetMesh {
 
-    double min_inputPLC_dist;
+    double inputPLC_LFS;
 
 public:
     // General purpose fields
@@ -63,8 +63,8 @@ public:
     const bool has_outer_vertices; // This is TRUE if mesh vertices must survive after destruction
 
     // Constructor and destructor
-    TetMesh() : has_outer_vertices(false), min_inputPLC_dist(DBL_MAX) {};
-    TetMesh(bool h) : has_outer_vertices(h), min_inputPLC_dist(DBL_MAX) {};
+    TetMesh() : has_outer_vertices(false), inputPLC_LFS(DBL_MAX) {};
+    TetMesh(bool h) : has_outer_vertices(h), inputPLC_LFS(DBL_MAX) {};
     ~TetMesh() { if (!has_outer_vertices) flushVertices(); };
 
 
@@ -81,13 +81,13 @@ public:
         return numTets() - (uint32_t)std::count(tet_node.begin(), tet_node.end(), INFINITE_VERTEX);
     }
 
-    double get_min_inputPLC_dist() const { return min_inputPLC_dist; }
+    double get_inputPLC_LFS() const { return inputPLC_LFS; }
 
     // Fill the vertex vector with newly-created genericPoints
     void init_vertices(std::vector<genericPoint *>& pts);
     void init_vertices(const double* coords, uint32_t num_v);
 
-    double addBoundingBoxVertices(double dist = 1.0);
+    void addBoundingBoxVertices(const std::vector<double>& bbox_coords);
 
     // Destroy vertices
     void flushVertices() { for (pointType* p : vertices) delete p; }
@@ -239,6 +239,9 @@ public:
     inline void mark_Tet_2(const uint64_t t) const { mark_tetrahedra[t] |= ((uint32_t)4); }
     inline void unmark_Tet_2(const uint64_t t) const { mark_tetrahedra[t] &= (~((uint32_t)4)); }
     inline uint32_t is_marked_Tet_2(const uint64_t t) const { return mark_tetrahedra[t] & ((uint32_t)4); }
+    inline void mark_Tet_30(const uint64_t t) const { mark_tetrahedra[t] |= ((uint32_t)1073741824); }
+    inline void unmark_Tet_30(const uint64_t t) const { mark_tetrahedra[t] &= (~((uint32_t)1073741824)); }
+    inline uint32_t is_marked_Tet_30(const uint64_t t) const { return mark_tetrahedra[t] & ((uint32_t)1073741824); }
     inline void mark_Tet_31(const uint64_t t) const { mark_tetrahedra[t] |= ((uint32_t)2147483648); }
     inline void unmark_Tet_31(const uint64_t t) const { mark_tetrahedra[t] &= (~((uint32_t)2147483648)); }
     inline uint32_t is_marked_Tet_31(const uint64_t t) const { return mark_tetrahedra[t] & ((uint32_t)2147483648); }
@@ -386,9 +389,16 @@ public:
 
     double convergentSwapMesh(double th_energy);
 
-    bool is_constrained_edge(uint32_t ep0, uint32_t ep1, const std::vector<bool>& constr_tri_asCorners);
-    double compute_closest_features_dist(const std::vector<bool>& constr_tri_asCorners);
-    void compute_min_inputPLC_dist(const std::vector<bool>& constr_tri_asCorners);
+    bool is_constrained_edge(uint32_t ep0, uint32_t ep1, 
+                            const std::vector<bool>& constr_tri_asCorners);
+    bool are_vrts_connected_in_inputPLC(uint32_t v, uint32_t w) const;
+    bool tet_intersects_ballCR(uint64_t tet, uint32_t v, double rsq);
+    double compute_inputPLC_LFS( const std::vector<double>& input_coords,
+                            const std::vector<uint32_t>& input_tris,
+                            const std::vector<bool>& constr_tri_asCorners);
+    void set_inputPLC_LFS( const std::vector<double>& input_coords,
+                            const std::vector<uint32_t>& input_tris,
+                            const std::vector<bool>& constr_tri_asCorners);
 };
 
 
@@ -413,9 +423,13 @@ public:
 
     inline void operator+=(const vector3d& v) { c[0] += v.c[0]; c[1] += v.c[1]; c[2] += v.c[2]; }
     inline void operator*=(const double d) { c[0] *= d; c[1] *= d; c[2] *= d; }
-
+    inline bool operator==(const vector3d& v) const { 
+        return (c[0] == v.c[0] && c[1] == v.c[1] && c[2] == v.c[2]);
+     }
     inline bool operator<(const vector3d& v) const {
-        return (c[0] < v.c[0] || (c[0] == v.c[0] && c[1] < v.c[1]) || (c[0] == v.c[0] && c[1] == v.c[1] && c[2] < v.c[2]));
+        return (c[0] < v.c[0] || 
+                (c[0] == v.c[0] && c[1] < v.c[1]) || 
+                (c[0] == v.c[0] && c[1] == v.c[1] && c[2] < v.c[2]));
     }
 
     inline double dot(const vector3d& p) const { return (c[0] * p.c[0] + c[1] * p.c[1] + c[2] * p.c[2]); }
@@ -503,117 +517,193 @@ public:
         return vector3d(c[0] + (v.c[0] - c[0]) * k, c[1] + (v.c[1] - c[1]) * k, c[2] + (v.c[2] - c[2]) * k);
     }
 
-    double sq_dist_triangle(const vector3d& v1, const vector3d& v2, const vector3d& v3);
+
+    vector3d closestPointTriangle( 
+                const vector3d& a, const vector3d& b, const vector3d& c) const;
+    double sq_dist_triangle(
+            const vector3d& v1, const vector3d& v2, const vector3d& v3) const {
+        return dist_sq( closestPointTriangle(v1, v2, v3) );
+    }
+    // double sq_dist_triangle(const vector3d& v1, const vector3d& v2, const vector3d& v3) const ;
     double sq_dist_seg_seg(const vector3d& p1, const vector3d& q0, const vector3d& q1);
 
 };
 
-// NOT ROBUST (see https://www.geometrictools.com/Documentation/DistancePoint3Triangle3.pdf)
-double vector3d::sq_dist_triangle(const vector3d& v1, const vector3d& v2, const vector3d& v3){
-    // compute the square distance between the point P = (*this) and the triangle T(s,t) = v1 + s*v2 + t*v2, with s,t in [0,1]
-    // |T(s,t) - P|^2 = a*s^2 + 2*b*s*t + c*t^2 + 2*d*s + 2*e*t + f
-    // where
-    vector3d U( v1 - (*this) );
-    double a = v2.dot(v2);
-    double b = v2.dot(v3);
-    double c = v3.dot(v3);
-    double d = U.dot(v2);
-    double e = U.dot(v3);
-    double f = U.dot(U);
-    // the minimum of |T(s,t)-P|^2 is the minimu squared distance between P and the plane for T(s,t)
-    // it occours when the gradient of |T(s,t)-P|^2 vanishes, i.e.
-    // (s,t) such that 2 * ( as + bt + d, bs + ct + e ) = (0,0), which gives:
-    double delta = abs(a*c - b*b);
-    double s = b*e - c*d; // this is actually s * delta;
-    double t = b*d - a*e; // this is actually t * delta;
-    // we have to check wherever (s,t) belong to T or not
-    uint32_t region = UINT32_MAX;
-    if( s + t <= delta ){
-        if(s < 0){ (t < 0) ? region=4 : region=3; }
-        else{      (t < 0) ? region=5 : region=0; }
-    }
-    else{
-        if(s < 0)            region=2;
-        else{      (t < 0) ? region=6 : region=1; }
-    }
-
-    double num, den, tmp0, tmp1;
-    switch(region){ 
-        case(0):
-            s/=delta; t/=delta;
-            break;
-
-        case(1):
-            num = (c+e) - (b+d);
-            if(num < 0) s=0;
-            else{
-                den = a - 2*b + c;
-                (num >= den) ?  s = 1  :  s = num/den;
-            }
-            t = 1-s;
-            break;
-
-        case(2):
-            tmp0 = b + d, tmp1 = c + e;
-            if(tmp1 > tmp0){
-                num = tmp1 - tmp0, den = a - 2*b + c;
-                (num >= den) ?  s = 1 : s = num/den;
-                t = 1-s;
-            }
-            else{
-                s = 0;
-                if(tmp1 <= 0) t = 1;
-                else if(e >= 0) t = 0;
-                else t = -(e/c);
-            }
-            break;
-
-        case(3):
-            s = 0;
-            if(e >= 0) t = 0;
-            else (-e >= c) ?  t = 1  :  t = -(e/c);
-            break;
-
-        case(4):
-            if(d < 0){
-                t = 0;
-                (-d >= a) ?  s = 1  :  s = -(d/a);
-            }
-            else{
-                s = 0;
-                (-e >= c) ?  t = 1  :  t = -(e/c);
-            }
-            break;
-
-        case(5):
-            t = 0;
-            if(d >= 0) s = 0;
-            else (-d >= a) ?  s = 1  :  s = -(d/a);
-            break;
-
-        case(6):
-            tmp0 = b + e, tmp1 = a + d;
-            if(tmp1 > tmp0){
-                num = tmp1 - tmp0, den = a - 2*b + c;
-                (num >= den) ?  t = 1 : t = num/den;
-                s = 1-t;
-            }
-            else{
-                t = 0;
-                if(tmp1 <= 0) s = 1;
-                else if(d >= 0) s = 0;
-                else s = -(d/a);
-            }
-            break;
-
-        default:
-            ip_error("[cdt.h] sq_dist_triangle(): ERROR invalid region");
-            break;
-    }
-
-    vector3d diff( v1 + v2*s + v2*t - (*this) );
-    return diff.dot(diff); //(a*s*s + 2*b*s*t + c*t*t + 2*d*s + 2*e*t + f);
+inline std::ostream& operator<<(std::ostream& os, const vector3d& p)
+{
+    return os << (p.c[0]) << " " << (p.c[1]) << " " << (p.c[2]);
 }
+
+vector3d vector3d::closestPointTriangle(
+                const vector3d& a, const vector3d& b, const vector3d& c) const {
+    
+    const vector3d p(*this);
+    // translate triangle 'a','b','c' and 'p' such that 'a' is the origin
+    const vector3d ab = b - a;
+    const vector3d ac = c - a;
+    const vector3d ap = p - a;
+
+    const double d1 = ap.dot(ab); 
+    const double d2 = ap.dot(ac);
+    if (d1 <= 0.0 && d2 <= 0.0) return a;
+
+    const vector3d bp = p - b;
+    const double d3 = bp.dot(ab);
+    const double d4 = bp.dot(ac);
+    if (d3 >= 0.0 && d4 <= d3) return b;
+
+    const vector3d cp = p - c;
+    const double d5 = cp.dot(ab);
+    const double d6 = cp.dot(ac);
+    if (d6 >= 0.f && d5 <= d6) return c;
+
+    const double vc = d1 * d4 - d3 * d2;
+    if (vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0) {
+        const double v = d1 / (d1 - d3);
+        return a + ab * v;
+    }
+        
+    const double vb = d5 * d2 - d1 * d6;
+    if (vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0) {
+        const double v = d2 / (d2 - d6);
+        return a + ac * v; 
+    }
+        
+    const double va = d3 * d6 - d5 * d4;
+    if (va <= 0.0 && (d4 - d3) >= 0.0 && (d5 - d6) >= 0.0) {
+        const double v = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        return b + (c - b) * v;
+    }
+
+    const double denom = 1.0 / (va + vb + vc);
+    const double v = vb * denom;
+    const double w = vc * denom;
+    return a + ab * v + ac * w;
+}
+
+// NOT ROBUST (see https://www.geometrictools.com/Documentation/DistancePoint3Triangle3.pdf)
+// double vector3d::sq_dist_triangle(const vector3d& v1, const vector3d& v2, const vector3d& v3) const {
+    
+//     return dist_sq( closestPointTriangle(*this,v1,v2,v3) );
+    
+//     // compute the square distance between the point P = (*this) and the triangle T(s,t) = v1 + s*v2 + t*v2, with s,t in [0,1]
+//     // |T(s,t) - P|^2 = a*s^2 + 2*b*s*t + c*t^2 + 2*d*s + 2*e*t + f
+//     // where
+//     vector3d U( v1 - (*this) );
+//     double a = v2.dot(v2);
+//     double b = v2.dot(v3);
+//     double c = v3.dot(v3);
+//     double d = U.dot(v2);
+//     double e = U.dot(v3);
+//     double f = U.dot(U);
+//     // the minimum of |T(s,t)-P|^2 is the minimum squared distance between P and the plane for T(s,t)
+//     // it occours when the gradient of |T(s,t)-P|^2 vanishes, i.e.
+//     // (s,t) such that 2 * ( as + bt + d, bs + ct + e ) = (0,0), which gives:
+//     double delta = abs(a*c - b*b);
+//     double s = b*e - c*d; // this is actually s * delta;
+//     double t = b*d - a*e; // this is actually t * delta;
+//     // we have to check wherever (s,t) belong to T or not
+//     uint32_t region = UINT32_MAX;
+//     if( s + t <= delta ){
+//         if(s < 0){ (t < 0) ? region=4 : region=3; }
+//         else{      (t < 0) ? region=5 : region=0; }
+//     }
+//     else{
+//         if(s < 0)            region=2;
+//         else{      (t < 0) ? region=6 : region=1; }
+//     }
+
+//     std::cout<<"\nv0: "<<(*this)<<"\n"; // DEBUG
+//     std::cout<<"v1: "<<v1<<"\n"; // DEBUG
+//     std::cout<<"v2: "<<v2<<"\n"; // DEBUG
+//     std::cout<<"v3: "<<v3<<"\n"; // DEBUG
+//     std::cout<<"a: "<<a<<"\n"; // DEBUG
+//     std::cout<<"b: "<<b<<"\n"; // DEBUG
+//     std::cout<<"c: "<<c<<"\n"; // DEBUG
+//     std::cout<<"d: "<<d<<"\n"; // DEBUG
+//     std::cout<<"e: "<<e<<"\n"; // DEBUG
+//     std::cout<<"delta: "<<delta<<"\n"; // DEBUG
+//     std::cout<<"t: "<<t<<"\n"; // DEBUG
+//     std::cout<<"s: "<<s<<"\n"; // DEBUG
+//     std::cout<<"region: "<<region<<"\n"; // DEBUG
+
+//     double num, den, tmp0, tmp1;
+//     switch(region){ 
+//         case(0):
+//             s/=delta; t/=delta;
+//             break;
+
+//         case(1):
+//             num = (c+e) - (b+d);
+//             if(num < 0) s=0;
+//             else{
+//                 den = a - 2*b + c;
+//                 (num >= den) ?  s = 1  :  s = num/den;
+//             }
+//             t = 1-s;
+//             break;
+
+//         case(2):
+//             tmp0 = b + d, tmp1 = c + e;
+//             if(tmp1 > tmp0){
+//                 num = tmp1 - tmp0, den = a - 2*b + c;
+//                 (num >= den) ?  s = 1 : s = num/den;
+//                 t = 1-s;
+//             }
+//             else{
+//                 s = 0;
+//                 if(tmp1 <= 0) t = 1;
+//                 else if(e >= 0) t = 0;
+//                 else t = -(e/c);
+//             }
+//             break;
+
+//         case(3):
+//             s = 0;
+//             if(e >= 0) t = 0;
+//             else (-e >= c) ?  t = 1  :  t = -(e/c);
+//             break;
+
+//         case(4):
+//             if(d < 0){
+//                 t = 0;
+//                 (-d >= a) ?  s = 1  :  s = -(d/a);
+//             }
+//             else{
+//                 s = 0;
+//                 (-e >= c) ?  t = 1  :  t = -(e/c);
+//             }
+//             break;
+
+//         case(5):
+//             t = 0;
+//             if(d >= 0) s = 0;
+//             else (-d >= a) ?  s = 1  :  s = -(d/a);
+//             break;
+
+//         case(6):
+//             tmp0 = b + e, tmp1 = a + d;
+//             if(tmp1 > tmp0){
+//                 num = tmp1 - tmp0, den = a - 2*b + c;
+//                 (num >= den) ?  t = 1 : t = num/den;
+//                 s = 1-t;
+//             }
+//             else{
+//                 t = 0;
+//                 if(tmp1 <= 0) s = 1;
+//                 else if(d >= 0) s = 0;
+//                 else s = -(d/a);
+//             }
+//             break;
+
+//         default:
+//             ip_error("[cdt.h] sq_dist_triangle(): ERROR invalid region");
+//             break;
+//     }
+
+//     vector3d diff( v1 + v2*s + v2*t - (*this) );
+//     return diff.dot(diff); //(a*s*s + 2*b*s*t + c*t*t + 2*d*s + 2*e*t + f);
+// }
 
 // NOT ROBUST (see https://www.geometrictools.com/Documentation/DistanceLine3Line3.pdf)
 double vector3d::sq_dist_seg_seg(const vector3d& p1, const vector3d& q0, const vector3d& q1){
@@ -626,7 +716,7 @@ double vector3d::sq_dist_seg_seg(const vector3d& p1, const vector3d& q0, const v
     double c = q1q0.dot(q1q0);
     double d = p1p0.dot(p0q0);
     double e = q1q0.dot(p0q0);
-    double f = p0q0.dot(p0q0);
+    // double f = p0q0.dot(p0q0);
     double det = abs(a * c - b * b);
     double s, t, nd, bmd, bte, ctd, bpe, ate, btd;
 
@@ -715,11 +805,6 @@ double vector3d::sq_dist_seg_seg(const vector3d& p1, const vector3d& q0, const v
 
     vector3d diff = ((*this) + p1p0 * s) - (q0 + q1q0 * t);
     return diff.dot(diff);
-}
-
-inline std::ostream& operator<<(std::ostream& os, const vector3d& p)
-{
-    return os << (p.c[0]) << " " << (p.c[1]) << " " << (p.c[2]);
 }
 
 // NOTES: 1) "both_acute_ep" edges will be immediatelly split by inserting the middle point (each subedge becomes a "one_acute_ep")
@@ -1011,7 +1096,7 @@ public:
       fclose(fp);
   }
 
-  void saveEdges() const {
+    void saveEdges() const {
       FILE* fp = fopen("edges.wrl", "w");
       fprintf(fp, "#VRML V1.0 ascii\nSeparator {\nCoordinate3 {\npoint[\n");
       for (auto* v : delmesh.vertices) {
@@ -1026,7 +1111,124 @@ public:
       }
       fprintf(fp, "]\n}\n}\n");
       fclose(fp);
-  }
+    } 
+
+    void saveFace(const char* fname, const PLCface& f) const {
+        FILE* fp = fopen(fname, "w");
+        uint32_t nv = f.vertices.size();
+        fprintf(fp, "OFF\n%u %d 0\n", nv, 1);
+
+        std::vector<uint32_t> reindex(delmesh.vertices.size(), UINT32_MAX);
+        uint32_t pos = 0;
+        for (uint32_t i = 0; i<nv; i++ ) {
+            uint32_t vi = f.vertices[i];
+            if(reindex[vi] == UINT32_MAX){ 
+                const genericPoint* v = delmesh.vertices[ vi ];
+                double x, y, z;
+                v->getApproxXYZCoordinates(x, y, z);
+                fprintf(fp, "%f %f %f\n", x, y, z);
+                reindex[vi] = pos++;
+            }
+        }
+
+        fprintf(fp, "%zu ", f.vertices.size());
+    
+        for (uint32_t i = 0; i<nv; i++ ){ 
+            uint32_t vi = f.vertices[i];
+            fprintf(fp, "%u ", reindex[vi]);
+        }
+
+        fprintf(fp, "\n");
+        fclose(fp);
+    }
+
+
+
+    void saveFaceTris(const char* fname, const PLCface& f) const {
+        FILE* fp = fopen(fname, "w");
+        uint32_t nv = 0, nt = f.triangles.size();
+
+        std::vector<uint32_t> reindex(delmesh.vertices.size(), UINT32_MAX);
+        std::vector<double> vrts;
+        uint32_t pos = 0;
+        for (uint32_t i = 0; i<nt; i++ ) {
+            uint32_t ti = f.triangles[i];
+            uint32_t tv[] = { input_tv[3*ti], input_tv[3*ti+1], input_tv[3*ti+2] };
+            for(uint32_t j=0; j<3; j++){
+                uint32_t vi = tv[j];
+                if(reindex[vi] == UINT32_MAX){ 
+                    const genericPoint* v = delmesh.vertices[ vi ];
+                    double x, y, z;
+                    v->getApproxXYZCoordinates(x, y, z);
+                    vrts.insert(vrts.end(),{x,y,z});
+                    reindex[vi] = pos++;
+                }
+            }
+        }
+        nv = pos;
+
+        fprintf(fp, "OFF\n%u %u 0\n", nv, nt);
+
+        for(size_t i=0; i<vrts.size()/3; i++){
+            double x = vrts[3*i], y = vrts[3*i+1], z = vrts[3*i+2];
+            fprintf(fp, "%f %f %f\n", x, y, z);
+        }
+
+        for (uint32_t i = 0; i<nt; i++ ) {
+            uint32_t ti = f.triangles[i];
+            uint32_t tv[] = { input_tv[3*ti], input_tv[3*ti+1], input_tv[3*ti+2] };
+            fprintf(fp, "3 %u %u %u\n", reindex[tv[0]], reindex[tv[1]], reindex[tv[2]]);
+        }
+
+        fclose(fp);
+    }
+
+
+
+    void save_tet_faces(const char* fname, const std::vector<uint64_t>& i_tets){
+        FILE* fp = fopen(fname, "w");
+        uint32_t nv = 0, nt = (uint32_t)i_tets.size()*4;
+
+        std::vector<uint32_t> reindex(delmesh.vertices.size(), UINT32_MAX);
+        std::vector<double> vrts;
+        uint32_t pos = 0;
+        for (size_t i = 0; i<i_tets.size(); i++ ) {
+            for(size_t j=0; j<4; j++){
+                uint32_t tv[3];
+                delmesh.getFaceVertices(i_tets[i]*4+j, tv);
+
+                for(uint32_t k=0; k<3; k++){
+                    uint32_t vk = tv[k];
+                    if(reindex[vk] == UINT32_MAX){ 
+                        const genericPoint* v = delmesh.vertices[ vk ];
+                        double x, y, z;
+                        v->getApproxXYZCoordinates(x, y, z);
+                        vrts.insert(vrts.end(),{x,y,z});
+                        reindex[vk] = pos++;
+                    }
+                }
+
+            }   
+        }
+        nv = pos;
+
+        fprintf(fp, "OFF\n%u %u 0\n", nv, nt);
+
+        for(size_t i=0; i<vrts.size()/3; i++){
+            double x = vrts[3*i], y = vrts[3*i+1], z = vrts[3*i+2];
+            fprintf(fp, "%f %f %f\n", x, y, z);
+        }
+
+        for (size_t i = 0; i<i_tets.size(); i++ ) {
+            for(size_t j=0; j<4; j++){
+                uint32_t tv[3];
+                delmesh.getFaceVertices(i_tets[i]*4+j, tv);
+                fprintf(fp, "3 %u %u %u\n", reindex[tv[0]], reindex[tv[1]], reindex[tv[2]]);
+            }   
+        }
+        
+        fclose(fp);
+    }
 
 };
 

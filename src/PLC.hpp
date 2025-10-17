@@ -33,7 +33,8 @@ inline implicitPoint_LNC* PLCx::getProjectionOrMidPoint(uint32_t oe0i, uint32_t 
     if (discr <= (t1 + dv) || discr >= (t2 - dv)) { discr = (t1 + t2) / 2; acute_v = UINT32_MAX; }
     else acute_v = oe0i;
 
-    return new implicitPoint_LNC(vs[oe0i]->toExplicit3D(), vs[oe1i]->toExplicit3D(), discr);
+    //return new implicitPoint_LNC(vs[oe0i]->toExplicit3D(), vs[oe1i]->toExplicit3D(), discr);
+    return new implicitPoint_LNC(*vs[oe0i], *vs[oe1i], discr);
 }
 
 inline implicitPoint_LNC* PLCx::getProjectionOrMidPoint_noac(uint32_t oe0i, uint32_t oe1i, uint32_t e0i, uint32_t e1i, uint32_t ri, uint32_t& acute_v) const
@@ -51,7 +52,8 @@ inline implicitPoint_LNC* PLCx::getProjectionOrMidPoint_noac(uint32_t oe0i, uint
     if (discr >= t2) { discr = (t1 + t2) / 2; acute_v = UINT32_MAX; }
     else acute_v = oe0i;
 
-    return new implicitPoint_LNC(vs[oe0i]->toExplicit3D(), vs[oe1i]->toExplicit3D(), discr);
+    // return new implicitPoint_LNC(vs[oe0i]->toExplicit3D(), vs[oe1i]->toExplicit3D(), discr);
+    return new implicitPoint_LNC(*vs[oe0i], *vs[oe1i], discr);
 }
 
 inline implicitPoint_LNC* PLCx::getProjectionOrMidPoint_noac_rev(uint32_t oe0i, uint32_t oe1i, uint32_t e0i, uint32_t e1i, uint32_t ri, uint32_t& acute_v) const
@@ -69,7 +71,8 @@ inline implicitPoint_LNC* PLCx::getProjectionOrMidPoint_noac_rev(uint32_t oe0i, 
     if (discr <= t1) { discr = (t1 + t2) / 2; acute_v = UINT32_MAX; }
     else acute_v = oe1i;
 
-    return new implicitPoint_LNC(vs[oe0i]->toExplicit3D(), vs[oe1i]->toExplicit3D(), discr);
+    //return new implicitPoint_LNC(vs[oe0i]->toExplicit3D(), vs[oe1i]->toExplicit3D(), discr);
+    return new implicitPoint_LNC(*vs[oe0i], *vs[oe1i], discr);
 }
 
 inline implicitPoint_LNC* PLCx::getMidPoint(uint32_t oe0i, uint32_t oe1i, uint32_t e0i, uint32_t e1i) const
@@ -77,7 +80,8 @@ inline implicitPoint_LNC* PLCx::getMidPoint(uint32_t oe0i, uint32_t oe1i, uint32
     const std::vector<pointType*>& vs = delmesh.vertices;
     const double t1 = getT1(oe0i, e0i);
     const double t2 = getT2(oe1i, e1i);
-    return new implicitPoint_LNC(vs[oe0i]->toExplicit3D(), vs[oe1i]->toExplicit3D(), (t1 + t2) / 2);
+    //return new implicitPoint_LNC(vs[oe0i]->toExplicit3D(), vs[oe1i]->toExplicit3D(), (t1 + t2) / 2);
+    return new implicitPoint_LNC(*vs[oe0i], *vs[oe1i], (t1 + t2) / 2);
 }
 #else
 implicitPoint_LNC* PLCx::getProjectionOrMidPoint(uint32_t oe0i, uint32_t oe1i, uint32_t e0i, uint32_t e1i, uint32_t ri, uint32_t& acute_v) const
@@ -239,11 +243,15 @@ void PLCface::initConvexity(const PLCx& plc) {
         const uint32_t tv[3] = { plc.input_tv[t0 * 3], plc.input_tv[t0 * 3 + 1], plc.input_tv[t0 * 3 + 2] };
         const TetMesh& dm = plc.delmesh;
         const std::vector<pointType*>& dmv = dm.vertices;
-        const explicitPoint& tp1 = dmv[tv[0]]->toExplicit3D();
-        const explicitPoint& tp2 = dmv[tv[1]]->toExplicit3D();
-        const explicitPoint& tp3 = dmv[tv[2]]->toExplicit3D();
-
-        max_comp_normal = pointType::maxComponentInTriangleNormal(tp1.X(), tp1.Y(), tp1.Z(), tp2.X(), tp2.Y(), tp2.Z(), tp3.X(), tp3.Y(), tp3.Z());
+        double x0,y0,z0, x1,y1,z1, x2,y2,z2;
+        dmv[tv[0]]->getApproxXYZCoordinates(x0,y0,z0);
+        dmv[tv[1]]->getApproxXYZCoordinates(x1,y1,z1);
+        dmv[tv[2]]->getApproxXYZCoordinates(x2,y2,z2);
+        max_comp_normal = pointType::maxComponentInTriangleNormal(x0,y0,z0, x1,y1,z1, x2,y2,z2);
+        // const explicitPoint& tp1 = dmv[tv[0]]->toExplicit3D();
+        // const explicitPoint& tp2 = dmv[tv[1]]->toExplicit3D();
+        // const explicitPoint& tp3 = dmv[tv[2]]->toExplicit3D();
+        // max_comp_normal = pointType::maxComponentInTriangleNormal(tp1.X(), tp1.Y(), tp1.Z(), tp2.X(), tp2.Y(), tp2.Z(), tp3.X(), tp3.Y(), tp3.Z());
 
         for (size_t i = 1; i < bounding_edges.size(); i++) {
             const PLCedge* e1 = bounding_edges[i - 1];
@@ -706,25 +714,25 @@ void PLCx::segmentRecovery_HSi(bool quiet)
 }
 
 
-
-
 void PLCx::tripleEdgeSplit(const uint32_t ei, double sqd1, double sqd2) {
     PLCedge& e = edges[ei];
     uint64_t ct = delmesh.inc_tet[e.ep[0]] << 2;
     const uint32_t e0 = e.ep[0], e1 = e.ep[1];
     assert(e0 == e.oep[0] && e1 == e.oep[1]); // Sanity check - this function must be called on input segments only!
 
-    const explicitPoint& v1 = delmesh.vertices[e0]->toExplicit3D();
-    const explicitPoint& v2 = delmesh.vertices[e1]->toExplicit3D();
-    const double sql = (vector3d(&v1).dist_sq(vector3d(&v2)))*9;
+    double x0,y0,z0, x1,y1,z1;
+    const genericPoint *v0 = delmesh.vertices[e0], *v1 = delmesh.vertices[e1];
+    v0->getApproxXYZCoordinates(x0,y0,z0);
+    v1->getApproxXYZCoordinates(x1,y1,z1);
+    const double sql = (vector3d(x0,y0,z0).dist_sq(vector3d(x1,y1,z1)))*9;
     const double t_1 = sqrt(sqd1 / sql);
     const double t_2 = 1.0 - sqrt(sqd2 / sql);
     assert(t_1 > 0 && t_1 < 1.0);
     assert(t_2 > 0 && t_2 < 1.0);
     assert(t_1 < t_2);
 
-    implicitPoint_LNC* np1 = new implicitPoint_LNC(v1, v2, t_1);
-    implicitPoint_LNC* np2 = new implicitPoint_LNC(v1, v2, t_2);
+    implicitPoint_LNC* np1 = new implicitPoint_LNC(*v0, *v1, t_1);
+    implicitPoint_LNC* np2 = new implicitPoint_LNC(*v0, *v1, t_2);
 
     const uint32_t np2i = (uint32_t)delmesh.vertices.size(); 
     pushVertex(np2, UINT32_MAX);
@@ -738,6 +746,37 @@ void PLCx::tripleEdgeSplit(const uint32_t ei, double sqd1, double sqd2) {
     edges.push_back(PLCedge(np1i, np2i, e0, e1, edges[ei].inc_tri, no_acute_ep));
     delmesh.insertExistingVertex((uint32_t)delmesh.vertices.size() - 1, ct);
 }
+
+// void PLCx::tripleEdgeSplit(const uint32_t ei, double sqd1, double sqd2) {
+//     PLCedge& e = edges[ei];
+//     uint64_t ct = delmesh.inc_tet[e.ep[0]] << 2;
+//     const uint32_t e0 = e.ep[0], e1 = e.ep[1];
+//     assert(e0 == e.oep[0] && e1 == e.oep[1]); // Sanity check - this function must be called on input segments only!
+//     // DOES NOT WORKS WITH UPDATED PREDICATES
+//     const explicitPoint& v1 = delmesh.vertices[e0]->toExplicit3D();
+//     const explicitPoint& v2 = delmesh.vertices[e1]->toExplicit3D();
+//     const double sql = (vector3d(&v1).dist_sq(vector3d(&v2)))*9;
+//     const double t_1 = sqrt(sqd1 / sql);
+//     const double t_2 = 1.0 - sqrt(sqd2 / sql);
+//     assert(t_1 > 0 && t_1 < 1.0);
+//     assert(t_2 > 0 && t_2 < 1.0);
+//     assert(t_1 < t_2);
+
+//     implicitPoint_LNC* np1 = new implicitPoint_LNC(v1, v2, t_1);
+//     implicitPoint_LNC* np2 = new implicitPoint_LNC(v1, v2, t_2);
+
+//     const uint32_t np2i = (uint32_t)delmesh.vertices.size(); 
+//     pushVertex(np2, UINT32_MAX);
+//     edges.push_back(PLCedge(e1, np2i, e1, e0, e.inc_tri, one_acute_ep));
+//     delmesh.insertExistingVertex((uint32_t)delmesh.vertices.size() - 1, ct);
+
+//     const uint32_t np1i = (uint32_t)delmesh.vertices.size(); 
+//     pushVertex(np1, UINT32_MAX);
+//     edges[ei].ep[1] = np1i;
+//     edges[ei].type = one_acute_ep;
+//     edges.push_back(PLCedge(np1i, np2i, e0, e1, edges[ei].inc_tri, no_acute_ep));
+//     delmesh.insertExistingVertex((uint32_t)delmesh.vertices.size() - 1, ct);
+// }
 
 //
 bool PLCx::midsplitMissingEdge(uint32_t mei) {
@@ -1160,8 +1199,9 @@ inline void pushAndMark(uint64_t t, TetMesh& m, std::vector<uint64_t>& B) {
     m.mark_Tet_1(t);
 }
 
-// Fill i_tets with tetrahedra that intersect the face 'fi'.
-// If cornerMask is not NULL, mark 'true' mesh triangles that overlap with 'fi'.
+// This function has two usages:
+// if cornerMask is NULL, fills i_tets with tetrahedra that intersect or overlap the face 'fi'.
+// if cornerMask is not NULL, marks 'true' mesh triangles that overlap with 'fi'.
 void PLCx::getTetsIntersectingFace(uint32_t fi, std::vector<uint64_t> *i_tets, std::vector<bool>* cornerMask) {
     const PLCface& f = faces[fi];
 
@@ -1193,17 +1233,20 @@ void PLCx::getTetsIntersectingFace(uint32_t fi, std::vector<uint64_t> *i_tets, s
 
     // Mark f vertices and init orientations
     for (uint32_t v : f.vertices) {
-        delmesh.marked_vertex[v]++;
+        delmesh.marked_vertex[v] = 1;
         v_orient[v] = 0;
     }
-    for (uint32_t v : f.flat_vertices) v_orient[v] = 0;
+    for (uint32_t v : f.flat_vertices){ 
+        delmesh.marked_vertex[v] = 2;
+        v_orient[v] = 0;
+    }
 
     // init v_reindex with f 
 
     for (uint32_t i = 0; i < (uint32_t)f.vertices.size(); i++) {
         const uint32_t v = f.vertices[i];
-        if (delmesh.marked_vertex[v] > 1)
-            singular_v.push_back(std::pair<uint32_t, uint32_t>(v, i));
+        // if (delmesh.marked_vertex[v] == 3)
+        //     singular_v.push_back(std::pair<uint32_t, uint32_t>(v, i));
         v_reindex[v] = i;
     }
 
@@ -1212,13 +1255,14 @@ void PLCx::getTetsIntersectingFace(uint32_t fi, std::vector<uint64_t> *i_tets, s
 
     std::vector<uint32_t> to_unorient;
 
-    //  Find a tet t0 in ET(e) intersecting the face interior
+    //  Find a tet t0 in ET(e) intersecting the face interior [NOT EXACTLY...]
+    // t0 is a tetrahedron in ET(e) we use as seed to explore the mesh around the face.
     uint64_t t0 = UINT64_MAX;
     for (uint64_t t : et) {
         //    - let v3 and v4 be the vertices of t0 opposite wrt e (oppositeTetEdge)
         delmesh.oppositeTetEdge(t<<2, v_t, v_t + 2);
 
-        // If we are using this function to mark faces we need three vertices on the plane
+        // If we are using cornerMask to mark constrained faces we need three vertices on the plane
         if (cornerMask) {
             if (v_orient[v_t[2]] == 0 && isTriangleOnFace(v_t, fi, orig_flat_edges)) { t0 = t; break; }
             std::swap(v_t[2], v_t[3]);
@@ -1238,37 +1282,59 @@ void PLCx::getTetsIntersectingFace(uint32_t fi, std::vector<uint64_t> *i_tets, s
         if (ov3 * ov4 < 0 && lineIntersectsFace(v_t[2], v_t[3], f)) { t0 = t; break; }
         //    - if v_orient[v3]==0
         if (ov3 == 0) {
-            //      - if v3 not marked -> skip
-            if (!delmesh.marked_vertex[v_t[2]]) continue;
+            //      - if v3 not marked -> skip (WRONG v3 could be a flat vertex)
+            // if (!delmesh.marked_vertex[v_t[2]]) continue;
             //      - if v1,v2,v3 part of f
             if (isTriangleOnFace(v_t, fi, orig_flat_edges)) { t0 = t; break; }
         }
 
         //    - if v_orient[v4]==0
         if (ov4 == 0) {
-            //      - if v4 not marked -> skip
-            if (!delmesh.marked_vertex[v_t[3]]) continue;
+            //      - if v4 not marked -> skip (WRONG v4 could be a flat vertex)
+            // if (!delmesh.marked_vertex[v_t[3]]) continue;
             //      - if v1,v2,v4 part of f
             std::swap(v_t[2], v_t[3]);
             if (isTriangleOnFace(v_t, fi, orig_flat_edges)) { t0 = t; break; }
         }
     }
 
+    // Reset marker for flat vertices
+    for (uint32_t w : f.flat_vertices) delmesh.marked_vertex[w] = 0;
+
+    // Progressive boundary vertices marking for non-simpliconnected face vertices
+    for (uint32_t w : f.vertices) delmesh.marked_vertex[w] = 0;
+    for (uint32_t w : f.vertices) delmesh.marked_vertex[w]++;
+
+    // "Explore" the face by adjacently moving from t0
+    assert(t0!=UINT64_MAX); 
+
     // B = empty
     std::vector<uint64_t> B;
 
     // Mark t0 and insert in B
-    if (t0!=UINT64_MAX) B.push_back(t0);
-    if (f.flat_vertices.size()) {
-        for (uint32_t v : f.flat_vertices) delmesh.VT(v, B);
-        B.erase(std::unique(B.begin(), B.end()), B.end());
-        for (uint64_t t : B) delmesh.mark_Tet_1(t);
-    }
-    else delmesh.mark_Tet_1(t0);
 
-    // In the remainder, OK means "add n to B, mark it"
+    // OLD WRONG CODE SNIPPET
+    // if (t0!=UINT64_MAX) B.push_back(t0);
+    // if (f.flat_vertices.size()) {
+    //     for (uint32_t v : f.flat_vertices) delmesh.VT(v, B);
+    //     B.erase(std::unique(B.begin(), B.end()), B.end());
+    //     for (uint64_t t : B) delmesh.mark_Tet_1(t);
+    // }
+    // else delmesh.mark_Tet_1(t0);
+
+    // NEW AND RVISED ONE
+    pushAndMark(t0, delmesh, B);
+    if (f.flat_vertices.size()) {
+        std::vector<uint64_t> fv_vt;
+        for (uint32_t v : f.flat_vertices){ 
+            delmesh.VT(v, fv_vt);
+            for (uint64_t t : fv_vt) 
+                if(!delmesh.is_marked_Tet_1(t)) pushAndMark(t, delmesh, B);
+            fv_vt.clear();
+        }
+    }
+
     // for each tet t in B
-    //int ct = 0;
     for (size_t k = 0; k < B.size(); k++) {
         const uint64_t t = B[k];
         const uint64_t tb = t << 2;
@@ -1288,30 +1354,41 @@ void PLCx::getTetsIntersectingFace(uint32_t fi, std::vector<uint64_t> *i_tets, s
                     localOrient3d(cv[2], tv[0], tv[1], tv[2], to_unorient)
                 };
 
-                if (mv[0] && mv[1] && mv[2]) pushAndMark(n, delmesh, B);
-                else if (mv[0] && mv[1]) {
-                    if (!adjacentFaceVertices(cv[0], cv[1], f)) pushAndMark(n, delmesh, B);
-                }
-                else if (mv[1] && mv[2]) {
-                    if (!adjacentFaceVertices(cv[1], cv[2], f)) pushAndMark(n, delmesh, B);
-                }
-                else if (mv[2] && mv[0]) {
-                    if (!adjacentFaceVertices(cv[2], cv[0], f)) pushAndMark(n, delmesh, B);
-                }
-                else if (mv[0]) {
-                    if (o3d[1] * o3d[2] < 0) pushAndMark(n, delmesh, B);
-                }
-                else if (mv[1]) {
-                    if (o3d[2] * o3d[0] < 0) pushAndMark(n, delmesh, B);
-                }
-                else if (mv[2]) {
-                    if (o3d[0] * o3d[1] < 0) pushAndMark(n, delmesh, B);
-                }
-                else {
-                    if (o3d[1] * o3d[2] < 0 ||
-                        o3d[2] * o3d[0] < 0 ||
-                        o3d[0] * o3d[1] < 0) pushAndMark(n, delmesh, B);
-                }
+                if (     mv[0] && mv[1] && mv[2]){                                  pushAndMark(n, delmesh, B); }
+                else if (mv[0] && mv[1] && !adjacentFaceVertices(cv[0], cv[1], f)){ pushAndMark(n, delmesh, B); }
+                else if (mv[1] && mv[2] && !adjacentFaceVertices(cv[1], cv[2], f)){ pushAndMark(n, delmesh, B); }
+                else if (mv[2] && mv[0] && !adjacentFaceVertices(cv[2], cv[0], f)){ pushAndMark(n, delmesh, B); }
+                else if (mv[0] && (o3d[1] * o3d[2] < 0) ){                          pushAndMark(n, delmesh, B); }
+                else if (mv[1] && (o3d[2] * o3d[0] < 0) ){                          pushAndMark(n, delmesh, B); }
+                else if (mv[2] && (o3d[0] * o3d[1] < 0) ){                          pushAndMark(n, delmesh, B); }   
+                // The common face has no f-boundary vertices
+                else if (o3d[1] * o3d[2] < 0 || o3d[2] * o3d[0] < 0 || o3d[0] * o3d[1] < 0){ pushAndMark(n, delmesh, B); }
+
+                // The same ase above but spreaded
+                // if (mv[0] && mv[1] && mv[2]) pushAndMark(n, delmesh, B);
+                // else if (mv[0] && mv[1]) {
+                //     if (!adjacentFaceVertices(cv[0], cv[1], f)) pushAndMark(n, delmesh, B);
+                // }
+                // else if (mv[1] && mv[2]) {
+                //     if (!adjacentFaceVertices(cv[1], cv[2], f)) pushAndMark(n, delmesh, B);
+                // }
+                // else if (mv[2] && mv[0]) {
+                //     if (!adjacentFaceVertices(cv[2], cv[0], f)) pushAndMark(n, delmesh, B);
+                // }
+                // else if (mv[0]) {
+                //     if (o3d[1] * o3d[2] < 0) pushAndMark(n, delmesh, B);
+                // }
+                // else if (mv[1]) {
+                //     if (o3d[2] * o3d[0] < 0) pushAndMark(n, delmesh, B);
+                // }
+                // else if (mv[2]) {
+                //     if (o3d[0] * o3d[1] < 0) pushAndMark(n, delmesh, B);
+                // }
+                // else {
+                //     if (o3d[1] * o3d[2] < 0 ||
+                //         o3d[2] * o3d[0] < 0 ||
+                //         o3d[0] * o3d[1] < 0) pushAndMark(n, delmesh, B);
+                // }
             }
         }
     }
@@ -1385,6 +1462,73 @@ bool PLCx::segmentCrossesFlatEdge(uint32_t ev[2], const std::vector<std::pair<ui
     return false;
 }
 
+// NOTE. This function assumes that 
+// - v[0] and v[1] are on the boundary of PLC-face 'fi'
+// - all vertices of PLC-face 'fi' are marked with their position in the 
+//   vector faces[fi].vertices if they are on boundary or a number greater or equal
+//   to faces[fi].vertices.size() if they are flat vertices of 'fi'.
+// PLC-face 'fi' is made of one or more adjacent and coplanar input triangles,
+// and each input triangle may have Steiner points on one of its sides.
+// Tetrahedra may conform or not with the face 'fi' triangulation.
+//
+// The triangle v = {v0,v1,v2} is a tetrahedron face.
+// v is inside the PLC-face 'fi' if:
+// 1) v0,v1,v2 are are all on the border of 'fi' AND 'fi' is convex 
+// 2) v0,v1,v2 is an input triangle which is part of 'fi'
+// 3) v0,v1,v2 is a subtriangle of one of the input triangles constituting 'fi' 
+// 4) one of the sides vi,vi+1 "crosses" one of the flat edges of 'fi'
+// 5) v2 is a flat vertex of 'fi'
+bool PLCx::isTriangleOnFace(const uint32_t v[3], uint32_t fi, const std::vector<std::pair<uint32_t, uint32_t>>& orig_flat_edges) {
+
+    const unsigned char* marked = delmesh.marked_vertex.data();
+    const PLCface& f = faces[fi];
+
+    // We assume that v[0] and v[1] are marked.
+    assert( marked[v[0]] && marked[v[1]] ); 
+
+    if ( marked[v[2]] && f.is_convex ) return true; // case 1)
+
+    if ( marked[v[2]] == 2 ) return true; // case 5)
+    if ( v_reindex[v[2]] == UINT32_MAX ) return false; // v[2] is coplanar but outside the face
+    
+    if (faceHasTriangle(f, v)) return true; // case 2)
+    if( marked[v[2]] == 0 ) return false; // v[2] is coplanar but outside the face
+
+    // To check 3) we use vt_maps that list each input triangle incident at each
+    // vertex of face 'fi'. 
+    // vt_maps[fi] is a "table" which has as many "rows" as the number of vertices 
+    // on the boundary of the face; then i-th-rows lists all the (>1) input triangles 
+    // incident at that vertex.
+
+    // NOTE. Steiner points may be incident at an input triangle 
+    //       whitout being one of its vertices.
+
+    // NOTE. v_reindex[ v[i] ] is the position of v[i] on fi boundary.
+
+    const std::vector<uint32_t>& vtf_v0 = vt_maps[fi][ v_reindex[v[0]] ]; 
+    const std::vector<uint32_t>& vtf_v1 = vt_maps[fi][ v_reindex[v[1]] ]; 
+    const std::vector<uint32_t>& vtf_v2 = vt_maps[fi][ v_reindex[v[2]] ]; 
+
+    for (uint32_t j : f.triangles) {
+        bool inc_at_all = true;
+        inc_at_all &= (std::find(vtf_v0.begin(), vtf_v0.end(), j) != vtf_v0.end());
+        inc_at_all &= (std::find(vtf_v1.begin(), vtf_v1.end(), j) != vtf_v1.end());
+        inc_at_all &= (std::find(vtf_v2.begin(), vtf_v2.end(), j) != vtf_v2.end());
+        if (inc_at_all) return true; 
+    }
+
+    // Check case 4)
+    // segment v[0], v[1] cannot cross flat edges, it is on the boundary
+    uint32_t seg_ep[2];
+    seg_ep[0]=v[1]; seg_ep[1]=v[2];
+    if (segmentCrossesFlatEdge(seg_ep, orig_flat_edges, f.max_comp_normal)) return true;
+    seg_ep[0]=v[2]; seg_ep[1]=v[0];
+    if (segmentCrossesFlatEdge(seg_ep, orig_flat_edges, f.max_comp_normal)) return true;
+
+    return false;
+
+}
+
 // A triangle cv = {v1,v2,v3} is part of the face f=faces[fi] if:
 //  v1,v2,v3 are all marked (meaning they are on the border of f) AND
 //   f is convex OR 
@@ -1394,43 +1538,43 @@ bool PLCx::segmentCrossesFlatEdge(uint32_t ev[2], const std::vector<std::pair<ui
 //
 // This function assumes that none of the cv is a flat vertex !
 
-bool PLCx::isTriangleOnFace(const uint32_t cv[3], uint32_t fi, const std::vector<std::pair<uint32_t, uint32_t>>& orig_flat_edges) {
-    if (delmesh.marked_vertex[cv[0]] && delmesh.marked_vertex[cv[1]] && delmesh.marked_vertex[cv[2]]) {
-        const PLCface& f = faces[fi];
-        if (f.is_convex || faceHasTriangle(f, cv)) return true;
+// bool PLCx::isTriangleOnFace(const uint32_t cv[3], uint32_t fi, const std::vector<std::pair<uint32_t, uint32_t>>& orig_flat_edges) {
+//     if (delmesh.marked_vertex[cv[0]] && delmesh.marked_vertex[cv[1]] && delmesh.marked_vertex[cv[2]]) {
+//         const PLCface& f = faces[fi];
+//         if (f.is_convex || faceHasTriangle(f, cv)) return true;
 
-        for (auto j : f.triangles) {
-            bool hascv[3];
-            for (int i = 0; i < 3; i++) {
-                uint32_t v = v_reindex[cv[i]];
-                const auto& vts = vt_maps[fi][v];
-                hascv[i] = (std::find(vts.begin(), vts.end(), j) != vts.end());
-            }
-            if (hascv[0] && hascv[1] && hascv[2]) {
-                return true;
-            }
-        }
+//         for (auto j : f.triangles) {
+//             bool hascv[3];
+//             for (int i = 0; i < 3; i++) {
+//                 uint32_t v = v_reindex[cv[i]];
+//                 const auto& vts = vt_maps[fi][v];
+//                 hascv[i] = (std::find(vts.begin(), vts.end(), j) != vts.end());
+//             }
+//             if (hascv[0] && hascv[1] && hascv[2]) {
+//                 return true;
+//             }
+//         }
 
-        for (int i = 0; i < 3; i++) {
-            uint32_t ev[2] = { cv[i], cv[(i + 1) % 3] };
-            if (segmentCrossesFlatEdge(ev, orig_flat_edges, f.max_comp_normal)) return true;
-        }
+//         for (int i = 0; i < 3; i++) {
+//             uint32_t ev[2] = { cv[i], cv[(i + 1) % 3] };
+//             if (segmentCrossesFlatEdge(ev, orig_flat_edges, f.max_comp_normal)) return true;
+//         }
 
-        if (f.flat_vertices.size()) {
-            for (int i = 0; i < 3; i++)
-                if (std::find(f.flat_vertices.begin(), f.flat_vertices.end(), cv[i]) != f.flat_vertices.end())
-                    return true;
+//         if (f.flat_vertices.size()) {
+//             for (int i = 0; i < 3; i++)
+//                 if (std::find(f.flat_vertices.begin(), f.flat_vertices.end(), cv[i]) != f.flat_vertices.end())
+//                     return true;
 
-            for (int i = 0; i < 3; i++) {
-                uint32_t ev[2] = { cv[i], cv[(i + 1) % 3] };
-                for (uint32_t v : f.flat_vertices)
-                    if (pointType::pointInInnerSegment(*delmesh.vertices[v], *delmesh.vertices[ev[0]], *delmesh.vertices[ev[1]])) return true;
-            }
-        }
-    }
+//             for (int i = 0; i < 3; i++) {
+//                 uint32_t ev[2] = { cv[i], cv[(i + 1) % 3] };
+//                 for (uint32_t v : f.flat_vertices)
+//                     if (pointType::pointInInnerSegment(*delmesh.vertices[v], *delmesh.vertices[ev[0]], *delmesh.vertices[ev[1]])) return true;
+//             }
+//         }
+//     }
     
-    return false;
-}
+//     return false;
+// }
 
 
 void PLCx::initFaceFlatEdges(PLCface& f) {

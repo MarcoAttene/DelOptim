@@ -390,9 +390,15 @@ inline double snapToPowerOfTwo(double d) {
 
 inline pointType* createMidPoint(const pointType* v0, const pointType* v1)
 {
+
+	// return new implicitPoint3D_LNC(*v0, *v1, 0.5);
+
 	// v0 and v1 can be Explicit, LNC or BPT (E, L, B)
 	if (v0->getType() > v1->getType()) std::swap(v0, v1); // E < L < B
 
+	// The following is the old implementation based on old predicates
+	// which must take explicit point as input. 
+	// QUESTION: some of the following contructors may optimize the process??
 	// Cases:
 	// EE -> easy, create LNC with t=0.5
 	// EL -> E must be one endpoint of L (assert), create LNC (see code below)
@@ -403,113 +409,141 @@ inline pointType* createMidPoint(const pointType* v0, const pointType* v1)
 
 	// EE
 	if (v0->isExplicit3D() && v1->isExplicit3D()) {
-		return new implicitPoint_LNC(v0->toExplicit3D(), v1->toExplicit3D(), 0.5);
+		// return new implicitPoint_LNC(v0->toExplicit3D(), v1->toExplicit3D(), 0.5);
+		return new implicitPoint_LNC(*v0, *v1, 0.5);
 	}
 
 	// EL
 	if (v0->isExplicit3D() && v1->isLNC()) {
 		const implicitPoint3D_LNC& l = v1->toLNC();
-		if (&l.P() == v0) return new implicitPoint_LNC(v0->toExplicit3D(), l.Q().toExplicit3D(), l.T() / 2);
-		assert(&l.Q() == v0);
-		return new implicitPoint_LNC(l.P().toExplicit3D(), v0->toExplicit3D(), (l.T() + 1.0) / 2);
+
+		if(l.P().isExplicit3D() && l.Q().isExplicit3D()){
+			// if (&l.P() == v0) return new implicitPoint_LNC(v0->toExplicit3D(), l.Q().toExplicit3D(), l.T() / 2);
+			if (&l.P() == v0) return new implicitPoint_LNC(*v0, l.Q(), l.T() * 0.5);
+			// return new implicitPoint_LNC(l.P().toExplicit3D(), v0->toExplicit3D(), (l.T() + 1.0) / 2);
+			else if (&l.Q() == v0) return new implicitPoint_LNC(l.P(), *v0, (l.T() + 1.0) * 0.5);
+		}
+
+		else return new implicitPoint3D_LNC(*v0, *v1, 0.5);
 	}
 
 	// EB
-	assert(!(v0->isExplicit3D() && v1->isBPT()));
+	// assert(!(v0->isExplicit3D() && v1->isBPT()));
 
 	// LL
 	if (v0->isLNC() && v1->isLNC()) {
+
 		const implicitPoint3D_LNC& l0 = v0->toLNC();
 		const implicitPoint3D_LNC& l1 = v1->toLNC();
-		if (&l0.P() == &l1.P() && &l0.Q() == &l1.Q()) // same orientations
-			return new implicitPoint_LNC(l0.P().toExplicit3D(), l0.Q().toExplicit3D(), (l0.T() + l1.T()) / 2);
-		else if (&l0.P() == &l1.Q() && &l0.Q() == &l1.P()) // opposite orientations
-			return new implicitPoint_LNC(l0.P().toExplicit3D(), l0.Q().toExplicit3D(), (l0.T() + 1.0 - l1.T()) / 2);
-		else {
-			double u, v;
-			const explicitPoint3D* A = NULL;
-			const explicitPoint3D* B = NULL;
-			const explicitPoint3D* C = NULL;
-			if (&l0.P() == &l1.P()) {
-				A = &l0.Q().toExplicit3D();  u = l0.T();
-				B = &l1.Q().toExplicit3D();  v = l1.T();
-				C = &l0.P().toExplicit3D();
-			}
-			else if (&l0.P() == &l1.Q()) {
-				A = &l0.Q().toExplicit3D();  u = 1.0 - l0.T();
-				B = &l1.P().toExplicit3D();  v = l1.T();
-				C = &l0.P().toExplicit3D();
-			}
-			else if (&l0.Q() == &l1.P()) {
-				A = &l0.P().toExplicit3D();  u = l0.T();
-				B = &l1.Q().toExplicit3D();  v = 1.0 - l1.T();
-				C = &l0.Q().toExplicit3D();
-			}
-			else {
-				assert(&l0.Q() == &l1.Q());
-				A = &l0.P().toExplicit3D();  u = 1.0 - l0.T();
-				B = &l1.P().toExplicit3D();  v = 1.0 - l1.T();
-				C = &l0.Q().toExplicit3D();
-			}
 
-			return new implicitPoint3D_BPT(*A, *B, *C, u / 2, v / 2);
-		}
-	}
+		if(l0.P().isExplicit3D() && l0.Q().isExplicit3D() &&
+			l1.P().isExplicit3D() && l1.Q().isExplicit3D() ){
 
-	// LB
-	if (v0->isLNC() && v1->isBPT()) {
-		const implicitPoint3D_LNC& l0 = v0->toLNC();
-		const implicitPoint3D_BPT& b1 = v1->toBPT();
-		assert(&l0.P() == &b1.P() || &l0.P() == &b1.Q() || &l0.P() == &b1.R());
-		assert(&l0.Q() == &b1.P() || &l0.Q() == &b1.Q() || &l0.Q() == &b1.R());
+				if (&l0.P() == &l1.P() && &l0.Q() == &l1.Q()) // same orientations
+					//return new implicitPoint_LNC(l0.P().toExplicit3D(), l0.Q().toExplicit3D(), (l0.T() + l1.T()) / 2);
+					return new implicitPoint_LNC(l0.P(), l0.Q(), (l0.T() + l1.T()) * 0.5);
+				else if (&l0.P() == &l1.Q() && &l0.Q() == &l1.P()) // opposite orientations
+					// return new implicitPoint_LNC(l0.P().toExplicit3D(), l0.Q().toExplicit3D(), (l0.T() + 1.0 - l1.T()) / 2);
+					return new implicitPoint_LNC(l0.P(), l0.Q(), (l0.T() + 1.0 - l1.T()) * 0.5);
+				else {
 
-		// Convert LNC's t to BPT's (u,v)
-		double u = b1.U(), v = b1.V(), t = l0.T();
-		if (&l0.P() == &b1.Q() && &l0.Q() == &b1.P()) { u += (1 - t); v += t; }
-		else if (&l0.P() == &b1.P() && &l0.Q() == &b1.Q()) { u += t; v += (1 - t); }
-		else if (&l0.P() == &b1.Q() && &l0.Q() == &b1.R()) { u += (1 - t); }
-		else if (&l0.P() == &b1.R() && &l0.Q() == &b1.Q()) { u += t; }
-		else if (&l0.P() == &b1.R() && &l0.Q() == &b1.P()) { v += t; }
-		else {
-			assert(&l0.P() == &b1.P() && &l0.Q() == &b1.R());
-			v += (1-t);
+					double u, v;
+					const explicitPoint3D* A = NULL;
+					const explicitPoint3D* B = NULL;
+					const explicitPoint3D* C = NULL;
+					if (&l0.P() == &l1.P()) {
+						A = &l0.Q().toExplicit3D();  u = l0.T();
+						B = &l1.Q().toExplicit3D();  v = l1.T();
+						C = &l0.P().toExplicit3D();
+					}
+					else if (&l0.P() == &l1.Q()) {
+						A = &l0.Q().toExplicit3D();  u = 1.0 - l0.T();
+						B = &l1.P().toExplicit3D();  v = l1.T();
+						C = &l0.P().toExplicit3D();
+					}
+					else if (&l0.Q() == &l1.P()) {
+						A = &l0.P().toExplicit3D();  u = l0.T();
+						B = &l1.Q().toExplicit3D();  v = 1.0 - l1.T();
+						C = &l0.Q().toExplicit3D();
+					}
+					else if(&l0.Q() == &l1.Q()){
+						A = &l0.P().toExplicit3D();  u = 1.0 - l0.T();
+						B = &l1.P().toExplicit3D();  v = 1.0 - l1.T();
+						C = &l0.Q().toExplicit3D();
+					}
+					// else assert(false);
+					else return new implicitPoint3D_LNC(*v0, *v1, 0.5);
+
+					return new implicitPoint3D_BPT(*A, *B, *C, u / 2, v / 2);
+				}
+
+			return new implicitPoint3D_LNC(*v0, *v1, 0.5);
 		}
 
-		u /= 2;
-		v /= 2;
-
-		return new implicitPoint3D_BPT(b1.P(), b1.Q(), b1.R(), v, u);
 	}
 
-	// BB
-	if (v0->isBPT() && v1->isBPT()) {
-		const implicitPoint3D_BPT& b0 = v0->toBPT();
-		const implicitPoint3D_BPT& b1 = v1->toBPT();
-		const explicitPoint3D* b1p = &b1.P(), *b1q = &b1.Q(), *b1r = &b1.R();
-		double b1ou = b1.U(), b1ov = b1.V();
-		double b1v, b1u;
-		if (&b0.P() == b1p && &b0.Q() == b1q && &b0.R() == b1r) { b1v = b1ov; b1u = b1ou; }
-		else if (&b0.P() == b1q && &b0.Q() == b1r && &b0.R() == b1p) { b1v = b1ou; b1u = 1.0 - b1ov - b1ou; }
-		else if (&b0.P() == b1r && &b0.Q() == b1p && &b0.R() == b1q) { b1v = 1.0 - b1ov - b1ou; b1u = b1ov; }
-		else {
-			std::swap(b1p, b1q);
-			std::swap(b1ou, b1ov);
-			if (&b0.P() == b1p && &b0.Q() == b1q && &b0.R() == b1r) { b1v = b1ov; b1u = b1ou; }
-			else if (&b0.P() == b1q && &b0.Q() == b1r && &b0.R() == b1p) { b1v = b1ou; b1u = 1.0 - b1ov - b1ou; }
-			else if (&b0.P() == b1r && &b0.Q() == b1p && &b0.R() == b1q) { b1v = 1.0 - b1ov - b1ou; b1u = b1ov; }
-			else{ 
-				// ip_error("apparently two BPTs have different vertices...\n");
-				std::cout<<"[fp_geometry.h - createMidPoint()] apparently two BPTs have different vertices...\n"; exit(1);
-			}
+	return new implicitPoint3D_LNC(*v0, *v1, 0.5);
 
-			//implicitPoint3D_BPT pr(b0.P(), b0.Q(), b0.R(), (b0.V() + b1v) / 2, (b0.U() + b1u) / 2);
-			//std::cout << *v0 << "\n";
-			//std::cout << *v1 << "\n";
-			//std::cout << pr << "\n";
-			//getchar();
-		}
-		return new implicitPoint3D_BPT(b0.P(), b0.Q(), b0.R(), (b0.V() + b1v) / 2, (b0.U() + b1u) / 2);
-	}
+	// // LB
+	// if (v0->isLNC() && v1->isBPT()) {
+
+	// 	std::cout<<std::endl<<"midpoint of   v0 LNC - v1 BPT"<<std::endl;
+
+	// 	const implicitPoint3D_LNC& l0 = v0->toLNC();
+	// 	const implicitPoint3D_BPT& b1 = v1->toBPT();
+	// 	assert(&l0.P() == &b1.P() || &l0.P() == &b1.Q() || &l0.P() == &b1.R());
+	// 	assert(&l0.Q() == &b1.P() || &l0.Q() == &b1.Q() || &l0.Q() == &b1.R());
+
+	// 	// Convert LNC's t to BPT's (u,v)
+	// 	double u = b1.U(), v = b1.V(), t = l0.T();
+	// 	if (&l0.P() == &b1.Q() && &l0.Q() == &b1.P()) { u += (1 - t); v += t; }
+	// 	else if (&l0.P() == &b1.P() && &l0.Q() == &b1.Q()) { u += t; v += (1 - t); }
+	// 	else if (&l0.P() == &b1.Q() && &l0.Q() == &b1.R()) { u += (1 - t); }
+	// 	else if (&l0.P() == &b1.R() && &l0.Q() == &b1.Q()) { u += t; }
+	// 	else if (&l0.P() == &b1.R() && &l0.Q() == &b1.P()) { v += t; }
+	// 	else {
+	// 		assert(&l0.P() == &b1.P() && &l0.Q() == &b1.R());
+	// 		v += (1-t);
+	// 	}
+
+	// 	u /= 2;
+	// 	v /= 2;
+
+	// 	return new implicitPoint3D_BPT(b1.P(), b1.Q(), b1.R(), v, u);
+	// }
+
+	// // BB
+	// if (v0->isBPT() && v1->isBPT()) {
+
+	// 	std::cout<<std::endl<<"midpoint of   v0 BPT - v1 BPT"<<std::endl;
+
+	// 	const implicitPoint3D_BPT& b0 = v0->toBPT();
+	// 	const implicitPoint3D_BPT& b1 = v1->toBPT();
+	// 	const explicitPoint3D* b1p = &b1.P(), *b1q = &b1.Q(), *b1r = &b1.R();
+	// 	double b1ou = b1.U(), b1ov = b1.V();
+	// 	double b1v, b1u;
+	// 	if (&b0.P() == b1p && &b0.Q() == b1q && &b0.R() == b1r) { b1v = b1ov; b1u = b1ou; }
+	// 	else if (&b0.P() == b1q && &b0.Q() == b1r && &b0.R() == b1p) { b1v = b1ou; b1u = 1.0 - (b1ov + b1ou); }
+	// 	else if (&b0.P() == b1r && &b0.Q() == b1p && &b0.R() == b1q) { b1v = 1.0 - (b1ov + b1ou); b1u = b1ov; }
+	// 	else {
+	// 		std::swap(b1p, b1q);
+	// 		std::swap(b1ou, b1ov);
+	// 		if (&b0.P() == b1p && &b0.Q() == b1q && &b0.R() == b1r) { b1v = b1ov; b1u = b1ou; }
+	// 		else if (&b0.P() == b1q && &b0.Q() == b1r && &b0.R() == b1p) { b1v = b1ou; b1u = 1.0 - (b1ov + b1ou); }
+	// 		else if (&b0.P() == b1r && &b0.Q() == b1p && &b0.R() == b1q) { b1v = 1.0 - (b1ov + b1ou); b1u = b1ov; }
+	// 		else{ 
+	// 			// ip_error("apparently two BPTs have different vertices...\n");
+	// 			std::cout<<"[fp_geometry.h - createMidPoint()] apparently two BPTs have different vertices...\n"; exit(1);
+	// 		}
+
+	// 		//implicitPoint3D_BPT pr(b0.P(), b0.Q(), b0.R(), (b0.V() + b1v) / 2, (b0.U() + b1u) / 2);
+	// 		//std::cout << *v0 << "\n";
+	// 		//std::cout << *v1 << "\n";
+	// 		//std::cout << pr << "\n";
+	// 		//getchar();
+	// 	}
+	// 	return new implicitPoint3D_BPT(b0.P(), b0.Q(), b0.R(), (b0.V() + b1v) / 2, (b0.U() + b1u) / 2);
+	// }
 
 	// No other possibility is supported
 	// ip_error("createMidPoint - Should never reach this point!\n");
@@ -545,7 +579,7 @@ inline void computeCircumCenter(
 	cc = explicitPoint3D(ccv.c[0], ccv.c[1], ccv.c[2]);
 }
 
-inline double createTetCurcumcenterPrecise(const pointType* v0, const pointType* v1, const pointType* v2, const pointType* v3, double* cc, double offcenter_tr) {
+inline double createTetCircumcenterPrecise(const pointType* v0, const pointType* v1, const pointType* v2, const pointType* v3, double* cc, double offcenter_tr) {
 	const vec3d_bf a(v0), b(v1), c(v2), d(v3); // Exact because we are using LNCs and BPTs only
 
 	// Use coordinates relative to point 'a' of the tetrahedron.
@@ -616,16 +650,16 @@ inline double createTetCurcumcenterPrecise(const pointType* v0, const pointType*
 	return sq_radius;
 }
 
-inline double createTetCurcumcenterPrecise(const pointType* v0, const pointType* v1, const pointType* v2, const pointType* v3, vector3d& cc, double offcenter_tr)
+inline double createTetCircumcenterPrecise(const pointType* v0, const pointType* v1, const pointType* v2, const pointType* v3, vector3d& cc, double offcenter_tr)
 {
-	return createTetCurcumcenterPrecise(v0, v1, v2, v3, cc.c, offcenter_tr);
+	return createTetCircumcenterPrecise(v0, v1, v2, v3, cc.c, offcenter_tr);
 }
 
 // The tet circumcenter is not exact. It should be guaranteed into the mesh, but rounding might make it slightly out.
 // In such a case, it is virtually guaranteed that the circumcenter encroaches upon one of the PLC faces,
 // meaning that it would not be used.
 
-inline double createTetCurcumcenter(const pointType* v0, const pointType* v1, const pointType* v2, const pointType* v3, vector3d& cc)
+inline double createTetCircumcenter(const pointType* v0, const pointType* v1, const pointType* v2, const pointType* v3, vector3d& cc)
 {
 	const vector3d a(v0), b(v1), c(v2), d(v3);
 
@@ -657,7 +691,7 @@ inline double createTetCurcumcenter(const pointType* v0, const pointType* v1, co
 	cc += a;
 
 	if (pointType::inSphere(explicitPoint(cc.c[0], cc.c[1], cc.c[2]), *v0, *v1, *v2, *v3) < 0) 
-		return createTetCurcumcenterPrecise(v0, v1, v2, v3, cc, 0);
+		return createTetCircumcenterPrecise(v0, v1, v2, v3, cc, 0);
 
 	return radius;
 }
@@ -701,7 +735,7 @@ inline double getTetShortestEdgeSqLength(const pointType* v[4]) {
 }
 
 inline double getTetShortestHeightSqLength(const pointType* v[4]) {
-	vector3d pp[4] = { v[0], v[1], v[2], v[3] };
+	// vector3d pp[4] = { v[0], v[1], v[2], v[3] };
 	double al, ml = DBL_MAX;
 	if ((al = distanceLineLine(v[0], v[1], v[2], v[3])) < ml) ml = al;
 	if ((al = distanceLineLine(v[0], v[2], v[1], v[3])) < ml) ml = al;
@@ -711,7 +745,7 @@ inline double getTetShortestHeightSqLength(const pointType* v[4]) {
 
 inline double getTetCircumSphere(const pointType* v[4], double ccc[3]) {
 	vector3d cc;
-	double radius = createTetCurcumcenter(v[0], v[1], v[2], v[3], cc);
+	double radius = createTetCircumcenter(v[0], v[1], v[2], v[3], cc);
 	ccc[0] = cc.c[0];
 	ccc[1] = cc.c[1];
 	ccc[2] = cc.c[2];
@@ -744,7 +778,7 @@ inline double getTriangleCircumSphere(const pointType* v[3], double ccc[3]) {
 
 inline double getTetCircumSpherePrecise(const pointType* v[4], double ccc[3], double offcenter_tr) {
 	vector3d cc;
-	double radius = createTetCurcumcenterPrecise(v[0], v[1], v[2], v[3], cc, offcenter_tr);
+	double radius = createTetCircumcenterPrecise(v[0], v[1], v[2], v[3], cc, offcenter_tr);
 
 	ccc[0] = cc.c[0];
 	ccc[1] = cc.c[1];
@@ -775,10 +809,11 @@ inline double minTetDihedralAngleCos(const pointType* v0, const pointType* v1, c
 
 inline double getAngle(double a, double b, double c) {
 
-	if (a < 0.0 || b < 0.0 || c < 0.0){ 
-		//ip_error("[getAcuteAngle] Ivalid angle (negative side)\n");
-		std::cout<<"[fp_geometry.h - getAcuteAngle()] Ivalid angle (negative side)\n"; exit(1);
-	}
+	assert(a>0.0 && b>0.0 && c>0.0 && "ERROR: negative side\n");
+	assert((a < b+c) && (b < a+c) && (c < a+b) && "ERROR: triangle inequality does not hold\n"); 
+	// if((a > b+c) || (b > a+c) || (c > a+b)){
+	// 	std::cout<<"ERROR: triangle inequality does not hold\n"; exit(1);
+	// } 
 
 	if (a < b) std::swap(a, b); // must be a > b
 
@@ -789,13 +824,11 @@ inline double getAngle(double a, double b, double c) {
 	double num = ((a - b) + c) * mu;
 	double den = (a + (b + c)) * ((a - c) + b);
 
-	if (den == 0.0 && num == 0.0){ 
-		//ip_error("[getAcuteAngle] Ivalid angle (NaN)\n");
-		std::cout<<"[fp_geometry.h - getAcuteAngle()] Ivalid angle (NaN)\n"; exit(1);
-	}
+	assert(((den != 0.0) || (num != 0.0)) && "ERROR: Ivalid angle (NaN, both num and den are 0)\n" );
 
 	if (den == 0.0) return 180.0;
 	if (num == 0.0) return 0.0;
+
 	return 180.0 * ((atan(sqrt((num / den))) * 2) / M_PI);
 }
 
@@ -912,12 +945,15 @@ inline double getDihedralAngle(const pointType* v0, const pointType* v1, const p
 	const vector3d Ov0(v0), Ov1(v1), Ov2(v2), Ov3(v3);
 	double l01 = sqrt((Ov1 - Ov0).sq_length());
 
-	if (l01 == 0.0) ip_error("[getDihedralAngle] edge is degenerate\n");
+	// if (l01 == 0.0) ip_error("[getDihedralAngle] edge is degenerate\n");
+	assert( (l01 != 0.0) && "[getDihedralAngle] edge is degenerate\n" );
 
 	double num = -orient3d_val(Ov0, Ov1, Ov2, Ov3) * l01; // 6 * tet volume
 	if (num < 0 && abs(num) > toll) {
 		int o3d_tet = pointType::orient3D(*v0, *v1, *v2, *v3);
-		if (o3d_tet < 0) ip_error("[detDihedralAngle] invertedTet\n");
+		// if (o3d_tet < 0) ip_error("[detDihedralAngle] invertedTet\n");
+		assert( (o3d_tet >= 0) && "[detDihedralAngle] invertedTet\n" );
+		
 		std::cout << "[detDihedralAngle] WARNING num ( ori3d = " << num << " * len = " << l01 << ") sign corrected according to exact_orient3D\n";
 		num = abs(num);
 	}
@@ -926,8 +962,9 @@ inline double getDihedralAngle(const pointType* v0, const pointType* v1, const p
 	const vector3d n3 = accurate_cross_prod(Ov0, Ov1, Ov2); // (Ov0-Ov2) x (Ov1-Ov2)
 	double den = (n3 * n2) * (-1.0);
 
-	if (den == 0.0 && num == 0.0) ip_error("[getDihedralAngle] invalid dihedral angle (NaN)\n");
-
+	// if (den == 0.0 && num == 0.0) ip_error("[getDihedralAngle] invalid dihedral angle (NaN)\n");
+	assert( (den != 0.0 || num != 0.0) && "[getDihedralAngle] invalid dihedral angle (NaN)\n" );
+	
 	// Use bigfloats when numerics make things unstable
 	if (avoid_atan2_below_toll && (abs(num) < toll || abs(den) < toll))
 		return getDihedralAngle_withNormalVectors_bf(v0, v1, v2, v3);
@@ -1090,4 +1127,13 @@ void getTriangleAngles(const pointType* vi0, const pointType* vi1, const pointTy
 	a0 = getAngle(l1, l2, l0);
 	a1 = getAngle(l2, l0, l1);
 	a2 = getAngle(l0, l1, l2);
+}
+
+// Computes the cosine of the angle at A of the triangle <A,B,C>
+// using the cosine law.
+double cosOfAngle_at(const vector3d& A, const vector3d& B, const vector3d& C){
+    double a_sq = B.dist_sq( C );
+    double b_sq = C.dist_sq( A );
+    double c_sq = A.dist_sq( B );
+    return (b_sq + c_sq - a_sq) / (2 * sqrt(b_sq * c_sq) );
 }

@@ -93,7 +93,7 @@ public:
 	TetVertex(pointType* a) : TetElement(), _p(a), e0(NULL), vs_rel(NULL) { INIT_GLOBAL_INDEX; }
 	TetVertex(double x, double y, double z) : TetElement(), _p(new explicitPoint(x,y,z)), e0(NULL), vs_rel(NULL) { INIT_GLOBAL_INDEX; }
 	TetVertex(pointType* a, bool dont_index) : TetElement(), _p(a), e0(NULL), vs_rel(NULL) { }
-	//~TetVertex(){ DEINIT_GLOBAL_INDEX; }
+	~TetVertex(){ DEINIT_GLOBAL_INDEX; }
 #ifdef USE_MEMORY_POOLS
 	void* operator new (std::size_t count);
 	void operator delete(void* pointer);
@@ -118,8 +118,24 @@ public:
 	void unlink() { e0 = NULL; }
 	bool isLinked() const { return (e0 != NULL); }
 
-	const pointType* getPoint() const { return _p; }
+	pointType* getPoint() const { return _p; }
 	void setPoint(pointType* a) { _p = a; }
+
+	void print_vertex() const {
+		explicitPoint3D coords;
+		getPoint()->apapExplicit(coords);
+		std::cout<<"vertex["<< getIndex() <<"] = "<<coords<<"\n";
+	}
+
+	void print_vertex_and_type() const {
+		explicitPoint3D coords;
+		if(getPoint()->isExplicit3D()) std::cout<<"(E3D) ";
+		else if(getPoint()->isLNC()) std::cout<<"(LNC) ";
+		else if(getPoint()->isBPT()) std::cout<<"(BPT) ";
+		else std::cout<<"(T-"<<getPoint()->getType()<<") ";
+		getPoint()->apapExplicit(coords);
+		std::cout<<"vertex["<< getIndex() <<"] = "<<coords<<"\n";
+	}
 };
 
 typedef std::vector<TetVertex*> TetVertices;
@@ -319,6 +335,16 @@ public:
 
 	bool isEncroachedBy(const pointType* p) {
 		return pointType::inGabrielSphere(*p, *v0()->getPoint(), *v1()->getPoint(), *v2()->getPoint()) <= 0;
+	}
+
+	inline void print_tri_indices() {
+		std::cout<< v0()->getIndex() <<" "<< v1()->getIndex() <<" "<< v2()->getIndex(); 
+	}
+	inline void print_tri_vrtscoord() {
+		v0()->print_vertex();
+		v1()->print_vertex();
+		v2()->print_vertex();
+		std::cout<<endl;
 	}
 };
 
@@ -583,6 +609,16 @@ public:
 		getMinMaxTetDihedralAngles(min, max, v);
 	}
 	double minDihedral() const { return (180/M_PI)*acos(minTetDihedralAngleCos(v0()->getPoint(), v1()->getPoint(), v2()->getPoint(), v3()->getPoint())); }
+
+	void printVrtsInds() const {
+		std::cout<<"< "<<v0()->getIndex()<<" "<<v1()->getIndex()<<" "<<v2()->getIndex()<<" "<<v3()->getIndex()<<" >"<<std::endl;
+	}
+	void printVrtsCoords() const {
+		v0()->print_vertex();
+		v1()->print_vertex();
+		v2()->print_vertex();
+		v3()->print_vertex();
+	}
 };
 
 #ifdef USE_MEMORY_POOLS
@@ -890,15 +926,24 @@ public:
 			if (genericPoint::misaligned(*v0, *v1, *v2)) {
 				if (v0->isBPT()) {
 					const implicitPoint3D_BPT& b = v0->toBPT();
-					ref_t[0] = &b.P(); ref_t[1] = &b.R(); ref_t[2] = &b.Q();
+					assert(b.P().isExplicit3D() && b.R().isExplicit3D() && b.Q().isExplicit3D());
+					ref_t[0] = &b.P().toExplicit3D(); 
+					ref_t[1] = &b.R().toExplicit3D(); 
+					ref_t[2] = &b.Q().toExplicit3D();
 				}
 				else if (v1->isBPT()) {
 					const implicitPoint3D_BPT& b = v1->toBPT();
-					ref_t[0] = &b.P(); ref_t[1] = &b.R(); ref_t[2] = &b.Q();
+					assert(b.P().isExplicit3D() && b.R().isExplicit3D() && b.Q().isExplicit3D());
+					ref_t[0] = &b.P().toExplicit3D(); 
+					ref_t[1] = &b.R().toExplicit3D(); 
+					ref_t[2] = &b.Q().toExplicit3D();
 				}
 				else if (v2->isBPT()) {
 					const implicitPoint3D_BPT& b = v2->toBPT();
-					ref_t[0] = &b.P(); ref_t[1] = &b.R(); ref_t[2] = &b.Q();
+					assert(b.P().isExplicit3D() && b.R().isExplicit3D() && b.Q().isExplicit3D());
+					ref_t[0] = &b.P().toExplicit3D(); 
+					ref_t[1] = &b.R().toExplicit3D(); 
+					ref_t[2] = &b.Q().toExplicit3D();
 				}
 				else if (v0->isExplicit3D() && v1->isExplicit3D() && v2->isExplicit3D()) {
 					ref_t[0] = &v0->toExplicit3D();
@@ -909,12 +954,36 @@ public:
 
 					const explicitPoint3D* p[6];
 					size_t i = 0;
-					if (v0->isLNC()) { p[i++] = &v0->toLNC().P(); p[i++] = &v0->toLNC().Q(); }
-					else { p[i++] = &v0->toExplicit3D(); }
-					if (v1->isLNC()) { p[i++] = &v1->toLNC().P(); p[i++] = &v1->toLNC().Q(); }
-					else { p[i++] = &v1->toExplicit3D(); }
-					if (v2->isLNC()) { p[i++] = &v2->toLNC().P(); p[i++] = &v2->toLNC().Q(); }
-					else { p[i++] = &v2->toExplicit3D(); }
+					if (v0->isLNC()) { 
+						const implicitPoint3D_LNC& b = v0->toLNC();
+						assert(b.P().isExplicit3D() && b.Q().isExplicit3D());
+						p[i++] = &b.P().toExplicit3D(); 
+						p[i++] = &b.Q().toExplicit3D(); 
+					}
+					else {
+						assert(v0->isExplicit3D()); 
+						p[i++] = &v0->toExplicit3D(); 
+					}
+					if (v1->isLNC()) { 
+						const implicitPoint3D_LNC& b = v1->toLNC();
+						assert(b.P().isExplicit3D() && b.Q().isExplicit3D());
+						p[i++] = &b.P().toExplicit3D(); 
+						p[i++] = &b.Q().toExplicit3D(); 
+					}
+					else {
+						assert(v1->isExplicit3D()); 
+						p[i++] = &v1->toExplicit3D(); 
+					}
+					if (v2->isLNC()) { 
+						const implicitPoint3D_LNC& b = v2->toLNC();
+						assert(b.P().isExplicit3D() && b.Q().isExplicit3D());
+						p[i++] = &b.P().toExplicit3D(); 
+						p[i++] = &b.Q().toExplicit3D();  
+					}
+					else {
+						assert(v2->isExplicit3D()); 
+						p[i++] = &v2->toExplicit3D(); 
+					}
 					for (size_t j = i; j < 6; j++) p[j] = NULL;
 
 					size_t k = 1;
@@ -1255,21 +1324,26 @@ public:
 
 	void initWithTetgen(int num_vertices, double vertices[], int num_triangles, uint32_t triangles[], bool quality, bool no_erosion);
 
-	double initFromVerticesAndTets(const std::vector<pointType*>& vertices, const std::vector<uint32_t>& tet_nodes, double bb_diag_len=1.0) {
+	double initFromVerticesAndTets(const std::vector<pointType*>& vertices, 
+									const std::vector<uint32_t>& tet_nodes) {
 		initVertices(vertices);
 
+		const uint32_t* tn = tet_nodes.data();
 		for (uint32_t t = 0; t < (uint32_t)tet_nodes.size(); t += 4)
-			if (tet_nodes[t+3]!=INFINITE_VERTEX)
-				createTet(V[tet_nodes[t   ]], V[tet_nodes[t + 2]], V[tet_nodes[t + 1]], V[tet_nodes[t + 3]]);
+			if (tet_nodes[t+3]!=INFINITE_VERTEX) 
+				createTet(V[tn[t]], V[tn[t + 2]], V[tn[t + 1]], V[tn[t + 3]] );
 
 		for (auto* v : V) deleteFullVE(v);
 		for (auto* e : E) deleteFullEF(e);
 
 		// closest points
 		double ad, cp = DBL_MAX;
-		for (auto* e : E) if ((ad = euclideanDistance(e->v0(), e->v1())) < cp) cp = ad;
+		for (auto* e : E) {
+			ad = euclideanDistance(e->v0(), e->v1());
+			if(ad < cp) cp = ad; 
+		}
 
-		return cp / bb_diag_len;
+		return cp;
 	}
 
 	void replaceVertex(TetVertex* old_vrt_ptr, TetVertex* new_vrt_ptr){
@@ -1493,7 +1567,11 @@ public:
 		bool rec = false;
 
 		while (!dirty_Segments.empty()) {
-			//printf("\r\r\r\r\r\r\r\r\r\r%zu                    ", dirty_Segments.size()); fflush(stdout);
+			
+			// #ifdef DISP_PROGRESS
+			// 	printf("\r\r\r\r\r\r\r\r\r\r%zu                    ", dirty_Segments.size()); fflush(stdout);
+			// #endif
+			
 			PLC_Segment* s = dirty_Segments.back();
 			dirty_Segments.pop_back();
 			s->unsetDirty();
@@ -1505,7 +1583,11 @@ public:
 			}
 			else e->segment = s;
 		}
-		//		printf("\n");
+		
+		// #ifdef DISP_PROGRESS
+		// 	printf("\n");
+		// #endif
+		
 		return rec;
 	}
 
@@ -1620,6 +1702,7 @@ public:
 				// The triangle might not be deleted in this case. Need to check
 				const DelTriangles& T = f->getTriangles();
 				if (std::find(T.begin(), T.end(), t)!=T.end()) queueDirtyTriangle(t);
+
 				return;
 			}
 		}
@@ -1663,6 +1746,7 @@ public:
 	}
 
 	bool encroachesPLCSegment(const pointType* p, const Tetrahedra& cavity, PLC_Segment** es) {
+
 		TetEdges cedges;
 		TetEdge* e;
 		for (Tetrahedron* t : cavity) {
@@ -1673,25 +1757,54 @@ public:
 			e = t->e4(); if (e->segment != NULL && !e->isMarked<7>()) { e->mark<7>(); cedges.push_back(e); }
 			e = t->e5(); if (e->segment != NULL && !e->isMarked<7>()) { e->mark<7>(); cedges.push_back(e); }
 		}
+		for (TetEdge* e : cedges) e->unmark<7>();
 
 		*es = NULL;
 		for (TetEdge* e : cedges) {
 			if (e->segment->isEncroachedBy(p)) {
 				*es = e->segment;
-				break;
+				// break;
+				return true;
 			}
 		}
-		for (TetEdge* e : cedges) e->unmark<7>();
+
+		// For each edge 'e' INTERNAL to cavity, check if the opposite vertex
+		// of a tet-face incident at 'e' eancroaches 'e'.
+		for (TetEdge* e : cedges){ 
+
+			// The following body calls both ET and EF (by isEncroached), may be optimized??
+			if(e->segment->isEncroached()){
+
+				bool is_internal = true;
+				for(Tetrahedron* t : cavity) t->mark<7>();
+				Tetrahedra itets;
+				e->ET(itets);
+				for(Tetrahedron* t : itets) if(!(t->isMarked<7>())){ 
+					is_internal = false;
+					break;
+				}
+				for(Tetrahedron* t : cavity) t->unmark<7>();
+				if(!is_internal) continue;
+
+				*es = e->segment;
+				return true;
+			}
+		}
 
 		// Always check for encroachment with the outer bounding box
-		if ((*es)==NULL) {
+		// if ((*es)==NULL) {
+			assert((*es)==NULL);
 			for (auto f = G.end() - 6; f != G.end(); f++) {
-				for (PLC_Segment* s : (*f)->segments) if (s->inc_PLCfaces[0] == (*f) && s->isEncroachedBy(p)) { *es = s; return true; }
+				for (PLC_Segment* s : (*f)->segments) if (s->inc_PLCfaces[0] == (*f) && s->isEncroachedBy(p)) { 
+					*es = s; 
+					return true; 
+				}
 			}
 			return false;
-		}
+		// }
 
-		return ((*es) != NULL);
+		// return ((*es) != NULL);
+		return false;
 	}
 
 	bool encroachesPLCTriangle(const pointType* p, const Tetrahedra& cavity, PLC_Face** ef, DelTriangle** et) {
@@ -1704,27 +1817,65 @@ public:
 			f = t->f2(); if (f->deltri != NULL && !f->isMarked<7>()) { f->mark<7>(); cfaces.push_back(f); }
 			f = t->f3(); if (f->deltri != NULL && !f->isMarked<7>()) { f->mark<7>(); cfaces.push_back(f); }
 		}
+		for (TetFace* f : cfaces) f->unmark<7>();
 
 		*et = NULL;
 		for (TetFace* f : cfaces) {
 			if (pointType::inGabrielSphere(*p, *f->v0()->getPoint(), *f->v1()->getPoint(), *f->v2()->getPoint()) <= 0) {
 				*et = f->deltri;
 				*ef = (PLC_Face*)f->deltri->getInfo();
-				break;
+				return true;
 			}
 		}
-		for (TetFace* f : cfaces) f->unmark<7>();
 
+		// For each face 'f' INTERNAL to cavity, check if the opposite vertex
+		// of an incident tetrahedron eancroaches 'f'.
+		TetFaces icfaces;
+		for (Tetrahedron* t : cavity) t->mark<7>();
+		for (Tetrahedron* t : cavity) {
+			f = t->f0(); if (f->deltri != NULL && !f->isMarked<7>() && f->t2() != NULL && f->t1()->isMarked<7>() && f->t2()->isMarked<7>()) { f->mark<7>(); icfaces.push_back(f); }
+			f = t->f1(); if (f->deltri != NULL && !f->isMarked<7>() && f->t2() != NULL && f->t1()->isMarked<7>() && f->t2()->isMarked<7>()) { f->mark<7>(); icfaces.push_back(f); }
+			f = t->f2(); if (f->deltri != NULL && !f->isMarked<7>() && f->t2() != NULL && f->t1()->isMarked<7>() && f->t2()->isMarked<7>()) { f->mark<7>(); icfaces.push_back(f); }
+			f = t->f3(); if (f->deltri != NULL && !f->isMarked<7>() && f->t2() != NULL && f->t1()->isMarked<7>() && f->t2()->isMarked<7>()) { f->mark<7>(); icfaces.push_back(f); }
+		}
+		for (Tetrahedron* t : cavity) t->unmark<7>();
+		for (TetFace* cf : icfaces) cf->unmark<7>();
+		
+		for(TetFace* f : icfaces){
+			// Check for tet-connected vertices encroachements
+			PLC_Face* plcf = (PLC_Face*)f->deltri->getInfo();
+			const pointType* o1 = f->t1()->oppositeVertex(f)->getPoint();
+			if (pointType::inGabrielSphere(*o1, *f->v0()->getPoint(), *f->v1()->getPoint(), *f->v2()->getPoint()) <= 0) {
+				*et = f->deltri;
+				*ef = plcf;
+				return true;
+			}
+			if(f->t2() != NULL){
+				const pointType* o2 = f->t2()->oppositeVertex(f)->getPoint();
+				if (pointType::inGabrielSphere(*o2, *f->v0()->getPoint(), *f->v1()->getPoint(), *f->v2()->getPoint()) <= 0) {
+					*et = f->deltri;
+					*ef = plcf;
+					return true;
+				}
+			}
+		}
+		
 		// Always check for encroachment with the outer bounding box
-		if ((*et)==NULL) {
+		//if ((*et)==NULL) {
+			assert((*et)==NULL);
 			for (auto f = G.end() - 6; f != G.end(); f++) {
 				DelTriangle* t = getEncroachedTriangleInFace(*f, p);
-				if (t != NULL) { *ef = *f; *et = t; return true; }
+				if (t != NULL) { 
+					*ef = *f; 
+					*et = t; 
+					return true; 
+				}
 			}
-			return false;
-		}
+			//return false;
+		//}
 
-		return ((*et) != NULL);
+		//return ((*et) != NULL);
+		return false;
 	}
 
 	// Calculate the cost and init tet's info field with an explicitPoint of its circumcenter
@@ -1766,35 +1917,44 @@ public:
 	}
 
 	bool optimizeOneTet(Tetrahedron* t, double off_center_tr) {
+
 		PLC_Face* encroached_face;
 		DelTriangle* encroached_triangle;
 		PLC_Segment* encroached_segment;
 		bool split = false;
 
 		double ccc[3];
-		const pointType* v[4] = { t->v0()->getPoint(), t->v1()->getPoint(), t->v2()->getPoint(), t->v3()->getPoint() };
+		const pointType* v[4] = { t->v0()->getPoint(), 
+								  t->v1()->getPoint(), 
+								  t->v2()->getPoint(), 
+								  t->v3()->getPoint() };
 		getTetCircumSpherePrecise(v, ccc, off_center_tr);
 		explicitPoint3D cc(ccc[0], ccc[1], ccc[2]);
 
 		TETMESH_STATIC Tetrahedra cavity;
-		TetVertex vm(&cc, true);
-		getCavity(&vm, cavity, t);
+		// TetVertex vm(&cc, true);
+		// getCavity(&vm, cavity, t);
+		TetVertex* vm = new TetVertex(new explicitPoint3D(cc));
+		getCavity(vm, cavity, t);
 
-		//   Check whether cc encroaches upon any segment
+		// Check whether cc encroaches upon any segment
 		if (encroachesPLCSegment(&cc, cavity, &encroached_segment)) {
+			delete(vm);
 			splitSegment(encroached_segment);
 			recoverAllDirtyTriangles();
 			split = true;	
 		}
-		//   Check whether cc encroaches upon any face triangle
-		else if (encroachesPLCTriangle(&cc, cavity, &encroached_face, &encroached_triangle)) {
+		// Check whether cc encroaches upon any face triangle
+		else if (encroachesPLCTriangle(&cc, cavity, 
+									&encroached_face, &encroached_triangle)) {
+			delete(vm);
 			recoverDelaunayTriangle(encroached_face, encroached_triangle);
 			split = true;
 			recoverAllDirtyTriangles();
 		}
-		//   If cc does not encroach upon any triangle, just insert it in the mesh
+		// If cc does not encroach upon any triangle, just insert it in the mesh
 		else if (!cavity.empty()) {
-			TetVertex* vm = new TetVertex(new explicitPoint3D(cc));
+			// TetVertex* vm = new TetVertex(new explicitPoint3D(cc));
 			V.push_back(vm);
 			retetrahedrizeCavity(vm, cavity);
 			vm->setIncidentSegments(new PLC_Segments);
@@ -1806,7 +1966,8 @@ public:
 	}
 
 	// Calculate the cost of a virtual tetrahedron
-	static double computeVirtTetCost(const pointType* v0, const pointType* v1, const pointType* v2, const pointType* v3) {
+	static double computeVirtTetCost(const pointType* v0, const pointType* v1, 
+									 const pointType* v2, const pointType* v3) {
 		double ccc[3];
 		const pointType* v[4] = { v0, v1, v2, v3 };
 		const double shortest_edge_sqlen = getTetShortestEdgeSqLength(v);
@@ -1863,11 +2024,15 @@ public:
 				size_t tets_before = T.size();
 
 				if (optimizeOneTet(t, offcenter_tr)) {
+
 					if (num_vertices() >= max_num_vertices) {
 						split = false;
 						break;
 					}
 					split = true;
+
+					assert( checkAllFaces() ); // DEBUG
+					assert( compareDelTris(true) ); // DEBUG
 				}
 				
 				for (size_t i = tets_before; i < T.size(); i++) if (T[i]->isLinked()) {
@@ -1875,7 +2040,16 @@ public:
 				}
 			}
 			removeUnlinkedElements();
+			
+			#ifdef DISP_PROGRESS
 			printf("\n");
+			#endif
+
+			assert( checkConnectivity() == 0 ); // DEBUG
+			assert( checkAllFaces() ); // DEBUG
+			assert( compareDelTris(true) ); // DEBUG
+			assert( checkDelaunayCondition() ); // DEBUG
+
 		} while (split);
 
 		for (Tetrahedron* t : T) t->setInfo(NULL);
@@ -1883,6 +2057,11 @@ public:
 		deleteVSRelation();
 
 		removeUnlinkedElements();
+
+		assert( checkConnectivity() == 0 ); // DEBUG
+		assert( checkAllFaces() ); // DEBUG
+		assert( compareDelTris(true) ); // DEBUG
+		assert( checkDelaunayCondition() ); // DEBUG
 	}
 
 	// REPORT AND STATS
@@ -2075,7 +2254,8 @@ public:
 
 		// DEBUG start
 		// if(cavity.size() > 10000){
-		// 	std::cout << "\nPROGRAM ABORTED: too large cavity (" << cavity.size() << " tetrahedra).\n\n\n";
+		// 	std::cout << "\nPROGRAM ABORTED: too large cavity (" 
+		//  		  << cavity.size() << " tetrahedra).\n\n\n";
 		// 	exit(13);
 		// }
 		// DEBUG end
@@ -2106,6 +2286,55 @@ public:
 			for (PLC_Face* fi : s->inc_PLCfaces) delaunizeFaceOnEdge(fi, vm, s->v0(), ns->v1());
 	}
 
+	bool checkMidPoint(const pointType* mp, const pointType* e0, const pointType* e1){
+
+		assert(pointType::pointInInnerSegment(*mp,*e0,*e1));
+		assert(!pointType::misaligned(*e0,*e1,*mp));
+
+		if (mp->isLNC() && (mp->toLNC().T() <= 0.0 || mp->toLNC().T() >= 1.0)) {
+
+			double x0, y0, z0; e0->getApproxXYZCoordinates(x0, y0, z0);
+			double x1, y1, z1; e1->getApproxXYZCoordinates(x1, y1, z1);
+			std::cout << "v0 = " << vector3d(x0, y0, z0) << " , v1 = " << vector3d(x1, y1, z1) << "\n";
+			std::cout << "t=" << mp->toLNC().T() << "\n";
+			std::cout << "of len = " << sqrt(vector3d(x0, y0, z0).dist_sq(vector3d(x1, y1, z1))) << "\n";
+			std::cout << "on original < " << mp->toLNC().P() << " , " << mp->toLNC().Q() << " > \n";
+			double xp, yp, zp; (mp->toLNC().P()).getApproxXYZCoordinates(xp, yp, zp);
+			double xq, yq, zq; (mp->toLNC().Q()).getApproxXYZCoordinates(xq, yq, zq);
+			std::cout << "original len = " << sqrt(vector3d(xp, yp, zp).dist_sq(vector3d(xq, yq, zq))) << "\n";
+
+			// ip_error("Could not split further! Did you verify whether your PLC is non-acute?\n");
+			std::cout<<"[tetmesh.h - splitSegment()]  Could not split further! Verify whether your PLC is non-acute\n"; 
+			return false;
+		}
+
+		if (mp->isBPT() && (mp->toBPT().U() <= 0.0 || mp->toBPT().U() >= 1.0 || mp->toBPT().V() <= 0.0 || mp->toBPT().V() >= 1.0)) {
+
+			// DEBUG
+			double x0, y0, z0; e0->getApproxXYZCoordinates(x0, y0, z0);
+			double x1, y1, z1; e1->getApproxXYZCoordinates(x1, y1, z1);
+			std::cout << "v0 = " << vector3d(x0, y0, z0) << " , v1 = " << vector3d(x1, y1, z1) << "\n";
+			std::cout << "u=" << mp->toBPT().U() << "\n";
+			std::cout << "v=" << mp->toBPT().V() << "\n";
+			std::cout << "of len = " << sqrt(vector3d(x0, y0, z0).dist_sq(vector3d(x1, y1, z1))) << "\n";
+			std::cout << "on original < " << mp->toBPT().P() << " , " << mp->toBPT().Q() << " , " << mp->toBPT().R() << " > \n";
+			double xp, yp, zp; (mp->toBPT().P()).getApproxXYZCoordinates(xp, yp, zp);
+			double xq, yq, zq; (mp->toBPT().Q()).getApproxXYZCoordinates(xq, yq, zq);
+			double xr, yr, zr; (mp->toBPT().R()).getApproxXYZCoordinates(xr, yr, zr);
+			std::cout << "original len PQ= " << sqrt(vector3d(xp, yp, zp).dist_sq(vector3d(xq, yq, zq))) << "\n";
+			std::cout << "original len QR= " << sqrt(vector3d(xr, yr, zr).dist_sq(vector3d(xq, yq, zq))) << "\n";
+			std::cout << "original len RP= " << sqrt(vector3d(xp, yp, zp).dist_sq(vector3d(xr, yr, zr))) << "\n";
+
+			// ip_error("Could not split further! Did you verify whether your PLC is non-acute?\n");
+			std::cout<<"[tetmesh.h - splitSegment()]  Could not split further! Verify whether your PLC is non-acute\n"; 
+			return false;
+		}
+
+		assert(!pointType::coincident(*e0, *mp));
+		assert(!pointType::coincident(*e1, *mp));
+		return true;
+	}
+
 	void splitSegment(PLC_Segment* s) {
 		pointType* vmp;
 
@@ -2113,46 +2342,7 @@ public:
 
 		vmp = createMidPoint(v0p, v1p);
 
-		if (vmp->isLNC() && (vmp->toLNC().T() <= 0.0 || vmp->toLNC().T() >= 1.0)) {
-
-			// DEBUG
-			double x0, y0, z0; v0p->getApproxXYZCoordinates(x0, y0, z0);
-			double x1, y1, z1; v1p->getApproxXYZCoordinates(x1, y1, z1);
-			std::cout << "v0 = " << vector3d(x0, y0, z0) << " , v1 = " << vector3d(x1, y1, z1) << "\n";
-			std::cout << "t=" << vmp->toLNC().T() << "\n";
-			std::cout << "of len = " << sqrt(vector3d(x0, y0, z0).dist_sq(vector3d(x1, y1, z1))) << "\n";
-			std::cout << "on original < " << vmp->toLNC().P() << " , " << vmp->toLNC().Q() << " > \n";
-			double xp, yp, zp; (vmp->toLNC().P()).getApproxXYZCoordinates(xp, yp, zp);
-			double xq, yq, zq; (vmp->toLNC().Q()).getApproxXYZCoordinates(xq, yq, zq);
-			std::cout << "original len = " << sqrt(vector3d(xp, yp, zp).dist_sq(vector3d(xq, yq, zq))) << "\n";
-
-			// ip_error("Could not split further! Did you verify whether your PLC is non-acute?\n");
-			std::cout<<"[tetmesh.h - splitSegment()]  Could not split further! Verify whether your PLC is non-acute\n"; exit(1);
-		}
-
-		if (vmp->isBPT() && (vmp->toBPT().U() <= 0.0 || vmp->toBPT().U() >= 1.0 || vmp->toBPT().V() <= 0.0 || vmp->toBPT().V() >= 1.0)) {
-
-			// DEBUG
-			double x0, y0, z0; v0p->getApproxXYZCoordinates(x0, y0, z0);
-			double x1, y1, z1; v1p->getApproxXYZCoordinates(x1, y1, z1);
-			std::cout << "v0 = " << vector3d(x0, y0, z0) << " , v1 = " << vector3d(x1, y1, z1) << "\n";
-			std::cout << "u=" << vmp->toBPT().U() << "\n";
-			std::cout << "v=" << vmp->toBPT().V() << "\n";
-			std::cout << "of len = " << sqrt(vector3d(x0, y0, z0).dist_sq(vector3d(x1, y1, z1))) << "\n";
-			std::cout << "on original < " << vmp->toBPT().P() << " , " << vmp->toBPT().Q() << " , " << vmp->toBPT().R() << " > \n";
-			double xp, yp, zp; (vmp->toBPT().P()).getApproxXYZCoordinates(xp, yp, zp);
-			double xq, yq, zq; (vmp->toBPT().Q()).getApproxXYZCoordinates(xq, yq, zq);
-			double xr, yr, zr; (vmp->toBPT().R()).getApproxXYZCoordinates(xr, yr, zr);
-			std::cout << "original len PQ= " << sqrt(vector3d(xp, yp, zp).dist_sq(vector3d(xq, yq, zq))) << "\n";
-			std::cout << "original len QR= " << sqrt(vector3d(xr, yr, zr).dist_sq(vector3d(xq, yq, zq))) << "\n";
-			std::cout << "original len RP= " << sqrt(vector3d(xp, yp, zp).dist_sq(vector3d(xr, yr, zr))) << "\n";
-
-			// ip_error("Could not split further! Did you verify whether your PLC is non-acute?\n");
-			std::cout<<"[tetmesh.h - splitSegment()]  Could not split further! Verify whether your PLC is non-acute\n"; exit(1);
-		}
-
-		assert(!pointType::coincident(*v0p, *vmp));
-		assert(!pointType::coincident(*v1p, *vmp));
+		assert( checkMidPoint(vmp, v0p, v1p) ); // DEBUG
 
 		splitSegment(s, vmp);
 	}
@@ -2372,6 +2562,9 @@ public:
 	}
 
 	bool inTetCircumsphere(TetVertex* v, const Tetrahedron* t) const {
+
+		// return inTetCircumsphereBF(v, t);
+
 		const TetVertex* v1 = t->v0();
 		const TetVertex* v2 = t->v1();
 		const TetVertex* v3 = t->v2();
@@ -2385,9 +2578,134 @@ public:
 			const TetVertex* idx[5] = { v, v1, v2, v3, v4 };
 			det = symbolicPerturbation(idx);
 		}
+		
 		return (det > 0);
 	}
 
+	bool inTetCircumsphereApprox(TetVertex* v, const Tetrahedron* t) const {
+		const TetVertex* v1 = t->v0();
+		const TetVertex* v2 = t->v1();
+		const TetVertex* v3 = t->v2();
+		const TetVertex* v4 = t->v3();
+		const pointType* p0 = v->getPoint();
+		const pointType* p1 = v1->getPoint();
+		const pointType* p2 = v2->getPoint();
+		const pointType* p3 = v3->getPoint();
+		const pointType* p4 = v4->getPoint();
+
+		explicitPoint3D a0, a1, a2, a3, a4;
+		p0->apapExplicit(a0);
+		p1->apapExplicit(a1);
+		p2->apapExplicit(a2);
+		p3->apapExplicit(a3);
+		p4->apapExplicit(a4);
+
+		int det = pointType::inSphere(a0, a1, a2, a3, a4);
+		if (det == 0) {
+			// std::cout<<"[SYM_P AX]\n";
+			const TetVertex* idx[5] = { v, v1, v2, v3, v4 };
+			det = symbolicPerturbation(idx);
+		}
+		return (det > 0);
+	}
+
+	bool inTetCircumsphereBF(TetVertex* v, const Tetrahedron* t) const {
+		const TetVertex* v1 = t->v0();
+		const TetVertex* v2 = t->v1();
+		const TetVertex* v3 = t->v2();
+		const TetVertex* v4 = t->v3();
+		const pointType* p = v->getPoint();
+		const pointType* p1 = v1->getPoint();
+		const pointType* p2 = v2->getPoint();
+		const pointType* p3 = v3->getPoint();
+		const pointType* p4 = v4->getPoint();
+		
+		// uint32_t nb = 50;
+		// bigrational x0,y0,z0;
+		// p->getExactXYZCoordinates(x0,y0,z0);
+		// bigfloat pax(x0.get_bigfloat(nb)), pay(y0.get_bigfloat(nb)), paz(z0.get_bigfloat(nb));
+		
+		// bigrational x1,y1,z1;
+		// p1->getExactXYZCoordinates(x1,y1,z1);
+		// bigfloat pbx(x1.get_bigfloat(nb)), pby(y1.get_bigfloat(nb)), pbz(z1.get_bigfloat(nb));
+		
+		// bigrational x2,y2,z2;
+		// p2->getExactXYZCoordinates(x2,y2,z2);
+		// bigfloat pcx(x2.get_bigfloat(nb)), pcy(y2.get_bigfloat(nb)), pcz(z2.get_bigfloat(nb));
+		
+		// bigrational x3,y3,z3;
+		// p3->getExactXYZCoordinates(x3,y3,z3);
+		// bigfloat pdx(x3.get_bigfloat(nb)), pdy(y3.get_bigfloat(nb)), pdz(z3.get_bigfloat(nb));
+		
+		// bigrational x4,y4,z4;
+		// p4->getExactXYZCoordinates(x4,y4,z4);
+		// bigfloat pex(x4.get_bigfloat(nb)), pey(y4.get_bigfloat(nb)), pez(z4.get_bigfloat(nb));
+
+		vec3d_bf a0,a1,a2,a3,a4;
+		bigfloat den;
+		p->getBigfloatLambda(a0.c[0], a0.c[1], a0.c[2], den); assert(den == bigfloat(1));
+		p1->getBigfloatLambda(a1.c[0], a1.c[1], a1.c[2], den); assert(den == bigfloat(1));
+		p2->getBigfloatLambda(a2.c[0], a2.c[1], a2.c[2], den); assert(den == bigfloat(1));
+		p3->getBigfloatLambda(a3.c[0], a3.c[1], a3.c[2], den); assert(den == bigfloat(1));
+		p4->getBigfloatLambda(a4.c[0], a4.c[1], a4.c[2], den); assert(den == bigfloat(1));
+
+		bigfloat pax = a0.c[0], pay = a0.c[1], paz = a0.c[2];
+		bigfloat pbx = a1.c[0], pby = a1.c[1], pbz = a1.c[2];
+		bigfloat pcx = a2.c[0], pcy = a2.c[1], pcz = a2.c[2];
+		bigfloat pdx = a3.c[0], pdy = a3.c[1], pdz = a3.c[2];
+		bigfloat pex = a4.c[0], pey = a4.c[1], pez = a4.c[2];
+
+		// int det = inSphere_t<bigfloat, bigfloat>(pax,pay,paz, pbx,pby,pbz, pcx,pcy,pcz, pdx,pdy,pdz, pex,pey,pez);
+
+		const bigfloat aex = (pax-pex);
+		const bigfloat aey = (pay-pey);
+		const bigfloat aez = (paz-pez);
+		const bigfloat alift = (ipow2(aex)+(ipow2(aey)+ipow2(aez)));
+		const bigfloat bex = (pbx-pex);
+		const bigfloat bey = (pby-pey);
+		const bigfloat bez = (pbz-pez);
+		const bigfloat blift = (ipow2(bex)+(ipow2(bey)+ipow2(bez)));
+		const bigfloat cex = (pcx-pex);
+		const bigfloat cey = (pcy-pey);
+		const bigfloat cez = (pcz-pez);
+		const bigfloat clift = (ipow2(cex)+(ipow2(cey)+ipow2(cez)));
+		const bigfloat dex = (pdx-pex);
+		const bigfloat dey = (pdy-pey);
+		const bigfloat dez = (pdz-pez);
+		const bigfloat dlift = (ipow2(dex)+(ipow2(dey)+ipow2(dez)));
+		const bigfloat ab = ((aex*bey)-(bex*aey));
+		const bigfloat bc = ((bex*cey)-(cex*bey));
+		const bigfloat cd = ((cex*dey)-(dex*cey));
+		const bigfloat da = ((dex*aey)-(aex*dey));
+		const bigfloat ac = ((aex*cey)-(cex*aey));
+		const bigfloat bd = ((bex*dey)-(dex*bey));
+		const bigfloat abc = (((aez*bc)-(bez*ac))+(cez*ab));
+		const bigfloat bcd = (((bez*cd)-(cez*bd))+(dez*bc));
+		const bigfloat cda = ((cez*da)+((dez*ac)+(aez*cd)));
+		const bigfloat dab = ((dez*ab)+((aez*bd)+(bez*da)));
+		const bigfloat d = (((clift*dab)-(dlift*abc))+((alift*bcd)-(blift*cda)));
+		int det = sgn(d);
+
+		if (det == 0) {
+			// std::cout<<"[SYM_P BF]\n";
+			const TetVertex* idx[5] = { v, v1, v2, v3, v4 };
+			det = symbolicPerturbation(idx);
+		}
+		return (det > 0);
+	}
+
+private:
+
+	inline void ifTetInCavityAddToCavity(Tetrahedron* t, Tetrahedra& cavity,
+										TetVertex* v) {
+		if(t == NULL) return;
+		if(t->isMarked<7>()) return;
+		if(!inTetCircumsphere(v, t)) return;
+		cavity.push_back(t);
+		t->mark<7>();
+	}
+
+public:
 	void getCavity(TetVertex *v, Tetrahedra& cavity, Tetrahedron* t0 = NULL) {
 		if (t0 == NULL) t0 = searchTet(v->getPoint());
 		assert(t0 != NULL);
@@ -2396,10 +2714,26 @@ public:
 		cavity.push_back(t0); t0->mark<7>();
 		for (size_t i = 0; i < cavity.size(); i++) {
 			t = cavity[i];
-			s = t->t0(); if (s != NULL && !s->isMarked<7>() && inTetCircumsphere(v, s)) { cavity.push_back(s); s->mark<7>(); }
-			s = t->t1(); if (s != NULL && !s->isMarked<7>() && inTetCircumsphere(v, s)) { cavity.push_back(s); s->mark<7>(); }
-			s = t->t2(); if (s != NULL && !s->isMarked<7>() && inTetCircumsphere(v, s)) { cavity.push_back(s); s->mark<7>(); }
-			s = t->t3(); if (s != NULL && !s->isMarked<7>() && inTetCircumsphere(v, s)) { cavity.push_back(s); s->mark<7>(); }
+			// s = t->t0(); 
+			// if (s != NULL && !s->isMarked<7>() && inTetCircumsphere(v, s)) { 
+			//	cavity.push_back(s); s->mark<7>(); 
+			// }
+			// s = t->t1(); 
+			// if (s != NULL && !s->isMarked<7>() && inTetCircumsphere(v, s)) { 
+			//	cavity.push_back(s); s->mark<7>(); 
+			// }
+			// s = t->t2(); 
+			// if (s != NULL && !s->isMarked<7>() && inTetCircumsphere(v, s)) { 
+			//	cavity.push_back(s); s->mark<7>(); 
+			// }
+			// s = t->t3(); 
+			// if (s != NULL && !s->isMarked<7>() && inTetCircumsphere(v, s)) { 
+			// 	cavity.push_back(s); s->mark<7>(); 
+			// }
+			ifTetInCavityAddToCavity(t->t0(), cavity, v);
+			ifTetInCavityAddToCavity(t->t1(), cavity, v);
+			ifTetInCavityAddToCavity(t->t2(), cavity, v);
+			ifTetInCavityAddToCavity(t->t3(), cavity, v);
 		}
 
 		for (Tetrahedron* t : cavity) t->unmark<7>();
@@ -2411,7 +2745,7 @@ public:
 			if (f->t2()!=NULL)
 			assert(vOrient3D(f->t2()->oppositeVertex(f), f->v0(), f->v2(), f->v1()) > 0);
 		}
-		std::cout << "checkFaceOrientations passed!\n";
+		// std::cout << "checkFaceOrientations passed!\n";
 	}
 
 	void retetrahedrizeCavity(TetVertex* v, Tetrahedra& cavity) {
@@ -2733,23 +3067,60 @@ protected:
 			if (nm) assert(0 && "checkConnectivity: detected non manifold vertex!\n");
 		}
 
-		printf("checkConnectivity Passed.\n");
+		// printf("checkConnectivity Passed.\n");
 
 		return 0;
 	}
 
-	void checkDelaunayCondition() {
+	bool checkLocalDelaunayCondition(const TetFace* f, bool check_choerence=false) {
+		assert(f->t2()!=NULL);
+
+		Tetrahedron* t1 = f->t1();
+		const TetVertex* v1 = f->t2()->oppositeVertex(f);
+		if (inTetCircumsphere((TetVertex*)v1, t1)){ 
+			std::cout<<"t1 circumsphere contains opposite vertex!\n";
+			return false;
+		}
+			
+		Tetrahedron* t2 = f->t2();
+		const TetVertex* v2 = f->t1()->oppositeVertex(f);
+		if (inTetCircumsphere((TetVertex*)v2, t2)){ 
+			std::cout<<"t2 circumsphere contains opposite vertex!\n";
+			return false;
+		}
+	
+		if(!check_choerence) return true;
+
+		int is1, is2;
+		const pointType* p1 = v1->getPoint();
+		const pointType* a1 = t1->v0()->getPoint();
+		const pointType* b1 = t1->v1()->getPoint();
+		const pointType* c1 = t1->v2()->getPoint();
+		const pointType* d1 = t1->v3()->getPoint();
+		const pointType* p2 = v2->getPoint();
+		const pointType* a2 = t2->v0()->getPoint();		
+		const pointType* b2 = t2->v1()->getPoint();
+		const pointType* c2 = t2->v2()->getPoint();
+		const pointType* d2 = t2->v3()->getPoint();
+		is1 = pointType::inSphere(*p1,*a1,*b1,*c1,*d1);
+		is2 = pointType::inSphere(*p2,*a2,*b2,*c2,*d2);
+		if(is1!=is2){
+			std::cout<<"inSphere symmetry broken!\n";
+			return false;
+		}
+
+		return true;
+	}
+
+	bool checkDelaunayCondition() {
 		Tetrahedron* t;
 		const TetVertex* v;
 		for (TetFace* f : F) if (f->isLinked() && !f->isOnBoundary()) {
-			t = f->t1();
-			v = f->t2()->oppositeVertex(f);
-			if (inTetCircumsphere((TetVertex*)v, t)) assert(0 && "t1 circumsphere contains opposite vertex!\n");
-			t = f->t2();
-			v = f->t1()->oppositeVertex(f);
-			if (inTetCircumsphere((TetVertex*)v, t)) assert(0 && "t2 circumsphere contains opposite vertex!\n");
+			checkLocalDelaunayCondition(f, true);
 		}
-		printf("checkDelaunayCondition Passed.\n");
+		// printf("checkDelaunayCondition Passed.\n");
+
+		return true;
 	}
 
 
@@ -2798,8 +3169,167 @@ protected:
 		fclose(fp);
 	}
 
-	void checkAllFaces() {
+	bool saveSomeTet(const char* filename, Tetrahedra tets)
+	{
+		uint64_t idx = 0;
+		std::vector<TetVertex*> tv;
+		for (Tetrahedron* t : tets){
+			if((t->v0()->getInfo())==NULL){ t->v0()->setInfo((void *)idx++); tv.push_back(t->v0()); }
+			if((t->v1()->getInfo())==NULL){ t->v1()->setInfo((void *)idx++); tv.push_back(t->v1()); }
+			if((t->v2()->getInfo())==NULL){ t->v2()->setInfo((void *)idx++); tv.push_back(t->v2()); }
+			if((t->v3()->getInfo())==NULL){ t->v3()->setInfo((void *)idx++); tv.push_back(t->v3()); }
+		}
+		FILE* fp;
+		if ((fp = fopen(filename, "w")) == NULL) return false;
+
+		fprintf(fp, "OFF\n%zu %zu 0\n", tv.size(), 4*tets.size());
+		double x, y, z;
+		for (TetVertex* v : tv) {
+			const pointType* p = v->getPoint();
+			p->getApproxXYZCoordinates(x, y, z);
+			fprintf(fp, "%f %f %f\n", x, y, z);
+		}
+		for (Tetrahedron* t : tets) {
+			size_t i0 = (size_t)t->v0()->getInfo();
+			size_t i1 = (size_t)t->v1()->getInfo();
+			size_t i2 = (size_t)t->v2()->getInfo();
+			size_t i3 = (size_t)t->v3()->getInfo();
+			fprintf(fp, "3 %zu %zu %zu\n", i0, i2, i1);
+			fprintf(fp, "3 %zu %zu %zu\n", i0, i1, i3);
+			fprintf(fp, "3 %zu %zu %zu\n", i0, i3, i2);
+			fprintf(fp, "3 %zu %zu %zu\n", i1, i2, i3);
+		}
+
+		for (TetVertex* v : V) v->setInfo(NULL);
+		fclose(fp);
+		return true;
+	}
+
+	void check_ALL_plcFaces_are_represented(){ 
+		for(PLC_Face* f : G) for(DelTriangle* t : f->T){ 
+			if(t->is_internal ){
+				TetFace* h = getTriangle(t->v0(), t->v1(), t->v2());
+				assert(h!=NULL);
+			}
+		} 
+	}
+
+	size_t count_DelTrisUsingG(){
+		size_t counter = 0;
+		for (auto g = G.begin(); g < G.end() - 6; g++)
+			for (DelTriangle* f : (*g)->getTriangles()) if (f->is_internal) {
+				counter++;
+			}
+		return counter;
+	}
+	
+	size_t count_DelTris(bool exclude_bbtris, bool skip_unlink = true) const {
+		size_t counter = 0;
+		
+		for(const TetFace* tri : F) if(tri->deltri != NULL){
+			if(exclude_bbtris && (tri->t1()==NULL || tri->t2()==NULL) ) continue; // do not count bounding box boundary faces
+			if(skip_unlink && !tri->isLinked() ) continue;
+			counter++;
+		}
+		return counter;
+	}
+
+	bool compareDelTris(bool skip_unlinked = false){
+		size_t countp = count_DelTrisUsingG();
+		size_t countf = count_DelTris(true, skip_unlinked);
+		if(countp == countf) return true;
+
+		// check_ALL_plcFaces_are_represented();
+			
+		if(countp > countf){
+
+			std::cout<<"ERROR: del tris mismatch ("<<countp<<" PLCdt > "<<countf<<" TFdt)\n";
+
+			for (auto g = G.begin(); g < G.end() - 6; g++)
+				for (DelTriangle* dt : (*g)->getTriangles()) if (dt->is_internal) {
+					bool match = false;
+
+					for(TetFace* tf : F) if(tf->isLinked() && tf->deltri!=NULL){
+						if( *dt == *(tf->deltri) ){ 
+							match = true;
+							break;
+						}
+					}
+					if(match) continue;
+
+					for(TetFace* tf : F) if(tf->isLinked() && tf->deltri==NULL){
+						TetVertex* u0 = dt->v0(), * u1 = dt->v1(), * u2 = dt->v2();
+						TetVertex* v0 = tf->v0(), * v1 = tf->v1(), * v2 = tf->v2();
+						if((v0==u0 || v0==u1 || v0==u2) &&
+							(v1==u0 || v1==u1 || v1==u2) &&
+							(v2==u0 || v2==u1 || v2==u2)   ){
+								match = true;
+								std::cout<<"NULL deltri tet-face "; tf->print_tri_indices();
+								std::cout<<", matches deltri "; dt->print_tri_indices();
+								std::cout<<"\n\n";
+						}
+					}
+					if(match) continue;
+
+					std::cout<<"NO match for deltri "; dt->print_tri_indices();
+					std::cout<<"\n"; dt->print_tri_vrtscoord();
+
+					TetVertex* u0 = dt->v0(), * u1 = dt->v1(), * u2 = dt->v2();
+					const pointType* u0c = dt->v0()->getPoint();
+					const pointType* u1c = dt->v1()->getPoint();
+					const pointType* u2c = dt->v2()->getPoint();
+
+					for(Tetrahedron* tet : T)if(tet->isLinked()){
+
+						TetEdges te;
+						te.assign({tet->e0(), tet->e1(), tet->e2(), tet->e3(), tet->e4(), tet->e5()});
+
+						for(TetEdge* e : te){
+							TetVertex* e0 = e->v0(), * e1 = e->v1();
+							const pointType* t0 = e->v0()->getPoint();
+							const pointType* t1 = e->v1()->getPoint();
+							if( e0!=u0 && e1!=u0 && e0!=u1 && e1!=u1 && e0!=u2 && e1!=u2 &&
+								pointType::innerSegmentCrossesTriangle(*t0,*t1, *u0c,*u1c,*u2c)){
+								std::cout<<"tet edge "<<e0->getIndex()<<" "<<e1->getIndex()
+										<<" intersects missing deltri\n"; 
+								e0->print_vertex();
+								e1->print_vertex(); std::cout<<"\n";
+									
+								Tetrahedra etrel;
+								e->ET(etrel);
+								char et_file_name[2048] = "";
+								char e0_tochar[10+sizeof(char)];
+								std::sprintf(e0_tochar, "%lu_", e0->getIndex());
+								char e1_tochar[10+sizeof(char)];
+								std::sprintf(e1_tochar, "%lu_", e1->getIndex());
+								strcat(et_file_name, e0_tochar);
+								strcat(et_file_name, e1_tochar);
+								strcat(et_file_name, "et_rel.off");
+								std::cout<<et_file_name<<"\n";
+								saveSomeTet(et_file_name, etrel);
+							}
+						}
+					}
+
+					for(const TetVertex* v : V){
+						if(v==u0 || v==u1 || v==u2) continue;
+						if( vInDiametralSphere(v,u0,u1,u2) ){
+							std::cout<<"the missing triangle is encroached by ";
+							v->print_vertex(); std::cout<<"\n";
+						}
+						
+				}
+			}
+		}
+		else std::cout<<"ERROR: del tris mismatch ("<<countp<<" PLCdt < "<<countf<<" TFdt)\n";
+		
+		savePLCFaces("finalPLCfaces.off");
+		exit(1); 
+	}
+
+	bool checkAllFaces() {
 		for (PLC_Face* f : G) f->check();
+		return true;
 	}
 
 	void export_DelTris_asTriVrtsInds(std::vector<uint32_t>& del_tri, bool exclude_bbtris) const {
@@ -2813,14 +3343,7 @@ protected:
 					  (uint32_t) t->v2()->getIndex() } );
 		}
 	}
-	size_t count_DelTris(bool exclude_bbtris) const {
-		size_t counter = 0;
-		for(const TetFace* tri : F) if(tri->deltri != NULL){
-			if(exclude_bbtris && (tri->t1()==NULL || tri->t2()==NULL) ) continue; // do not count bounding box boundary faces
-			counter++;
-		}
-		return counter;
-	}
+	
 };
 
 
@@ -3365,8 +3888,9 @@ void PLC_Face::check() {
 	for (DelTriangle* t : T)
 		if (!t->e0()->hasTriangle(t) || !t->e1()->hasTriangle(t) || !t->e2()->hasTriangle(t))
 			assert(0 && "Wrong edges\n");
-	for (DelTriangle* t : T)
-			assert(vOrient2D(t->v0(), t->v1(), t->v2()) > 0);
+	for (DelTriangle* t : T) {
+		assert(vOrient2D(t->v0(), t->v1(), t->v2()) > 0);
+	}
 	for (DelEdge* e : E) {
 		assert(vOrient2D(e->v0(), e->v1(), e->firstTriangle()->oppositeVertex(e)) > 0);
 		if (e->secondTriangle() != NULL)

@@ -14,34 +14,19 @@ void TetMesh::init_vertices(std::vector<genericPoint*>& pts) {
     marked_vertex.resize(vertices.size(), 0);
 }
 
-double TetMesh::addBoundingBoxVertices(double dist) {
-    double bbmin[3] = { DBL_MAX, DBL_MAX, DBL_MAX };
-    double bbmax[3] = { -DBL_MAX, -DBL_MAX, -DBL_MAX };
-    for (genericPoint* p : vertices) {
-        double v[3];
-        p->getApproxXYZCoordinates(v[0], v[1], v[2]);
-        for (int j = 0; j < 3; j++) {
-            if (v[j] < bbmin[j]) bbmin[j] = v[j];
-            if (v[j] > bbmax[j]) bbmax[j] = v[j];
-        }
-    }
-    const double bbox[3] = { bbmax[0] - bbmin[0], bbmax[1] - bbmin[1], bbmax[2] - bbmin[2] };
-    for (int j = 0; j < 3; j++) {
-        bbmin[j] -= bbox[j] * dist;
-        bbmax[j] += bbox[j] * dist;
-    }
-
-    const int idx[] = { 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 1, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1 };
-
-    double coordinates[24];
-    for (int j = 0; j < 24; j++) coordinates[j] = (idx[j] ? (bbmax[j % 3]) : (bbmin[j % 3]));
-    for (int j = 0; j < 24; j += 3)
-        vertices.push_back(new explicitPoint3D(coordinates[j], coordinates[j + 1], coordinates[j + 2]));
-
+void TetMesh::addBoundingBoxVertices(const std::vector<double>& bbox_coords) {
+    assert(bbox_coords.size() == 24);
+    vertices.insert( vertices.end(), {
+        new explicitPoint3D(bbox_coords[0], bbox_coords[1], bbox_coords[2]),
+        new explicitPoint3D(bbox_coords[3], bbox_coords[4], bbox_coords[5]),
+        new explicitPoint3D(bbox_coords[6], bbox_coords[7], bbox_coords[8]),
+        new explicitPoint3D(bbox_coords[9], bbox_coords[10], bbox_coords[11]),
+        new explicitPoint3D(bbox_coords[12], bbox_coords[13], bbox_coords[14]),
+        new explicitPoint3D(bbox_coords[15], bbox_coords[16], bbox_coords[17]),
+        new explicitPoint3D(bbox_coords[18], bbox_coords[19], bbox_coords[20]),  
+       new explicitPoint3D(bbox_coords[21], bbox_coords[22], bbox_coords[23])});
     inc_tet.resize(vertices.size(), UINT64_MAX);
     marked_vertex.resize(vertices.size(), 0);
-
-    return sqrt(vector3d(vertices.back()).dist_sq(vector3d(vertices[vertices.size()-8]))); // bb-diag length
 }
 
 void TetMesh::init(uint32_t& unswap_k, uint32_t& unswap_l){
@@ -1264,45 +1249,210 @@ bool TetMesh::is_constrained_edge(uint32_t ep0, uint32_t ep1, const std::vector<
     return false;
 }
 
-// UNEFFICIENT
-double TetMesh::compute_closest_features_dist(const std::vector<bool>& constr_tri_asCorners){
-    // to compute efficiently the following minimum distances we need the CDT struture 
-    // related to the PLC. The adjacencies of the PLC itself sre not sufficient since 
-    // closest features may not be adjacent.
+// it is ASSUMED that input vertices are all explicit while 
+// steiner points are all LNC (of explicit vrts)
+inline bool TetMesh::are_vrts_connected_in_inputPLC(uint32_t v, uint32_t w) const {
 
-    // closet point-triangle and point-edge distance on the plc
-    double md = DBL_MAX, dist;
-    for(uint32_t vi=0; vi<numVertices(); vi++){
+    const pointType* v_pt = vertices[v];
+    const pointType* w_pt = vertices[w];
+
+    bool v_is_steiner = !v_pt->isExplicit3D();
+    bool w_is_steiner = !w_pt->isExplicit3D();
+
+    assert( (v_is_steiner && v_pt->isLNC()) || v_pt->isExplicit3D() );
+    assert( (w_is_steiner && w_pt->isLNC()) || w_pt->isExplicit3D() );
+    
+    // two input vertices are always different entities
+    if( !v_is_steiner && !w_is_steiner )  return false; 
+    
+    if( v_is_steiner && !w_is_steiner ){
+        // If 'v' is a point inserted on a segment incident at 'w',
+        // then they are "connected", i.e. belong to incident entities.
+        const explicitPoint3D* pv = &v_pt->toLNC().P().toExplicit3D();
+        const explicitPoint3D* qv = &v_pt->toLNC().Q().toExplicit3D();
+        const explicitPoint3D* we = &w_pt->toExplicit3D();
+        return (*we == *pv || *we == *qv);
+    }
+    
+    if(!v_is_steiner && w_is_steiner){
+        // If 'w' is a point inserted on a segment incident at 'v',
+        // then they are "connected", i.e. belong to incident entities.
+        const explicitPoint3D* pw = &w_pt->toLNC().P().toExplicit3D();
+        const explicitPoint3D* qw = &w_pt->toLNC().Q().toExplicit3D();
+        const explicitPoint3D* ve = &v_pt->toExplicit3D();
+        return (*ve == *pw || *ve == *qw);
+    }
+        
+    // both are Steiner vertices
+    // If 'v' and 'w' have been inserted on two segments sharing at least an
+    // endpoint, then they are "connected", i.e. belong to incident entities.
+    const explicitPoint3D* pv = &v_pt->toLNC().P().toExplicit3D();
+    const explicitPoint3D* qv = &v_pt->toLNC().Q().toExplicit3D();
+    const explicitPoint3D* pw = &w_pt->toLNC().P().toExplicit3D();
+    const explicitPoint3D* qw = &w_pt->toLNC().Q().toExplicit3D();
+    return (*pv == *pw || *pv == *qw || *qv == *pw || *qv == *qw);
+
+}
+
+bool TetMesh::tet_intersects_ballCR(uint64_t tet, uint32_t vi, double rsq){
+    
+    const vector3d c( vertices[vi] );
+
+    uint64_t tb = tet << 2;
+    vector3d p0(vertices[tet_node[tb  ]]);
+    vector3d p1(vertices[tet_node[tb+1]]);
+    vector3d p2(vertices[tet_node[tb+2]]);
+    vector3d p3(vertices[tet_node[tb+3]]);
+
+    // if a tet-vertex is closer to v less than sqrt(rsq) there is an intersection
+    if( c.dist_sq(p0) <= rsq ) return true;
+    if( c.dist_sq(p1) <= rsq ) return true;
+    if( c.dist_sq(p2) <= rsq ) return true;
+    if( c.dist_sq(p3) <= rsq ) return true;
+    
+    // if a tet-edge is closer to v less than sqrt(rsq) there is an intersection
+    if( c.sq_dist_segment(p0, p1) <= rsq ) return true;
+    if( c.sq_dist_segment(p0, p2) <= rsq ) return true;
+    if( c.sq_dist_segment(p0, p3) <= rsq ) return true;
+    if( c.sq_dist_segment(p1, p2) <= rsq ) return true;
+    if( c.sq_dist_segment(p1, p3) <= rsq ) return true;
+    if( c.sq_dist_segment(p2, p3) <= rsq ) return true;
+
+    // if a tet-face is closer to v less than sqrt(rsq) there is an intersection
+    if( c.sq_dist_triangle(p0, p1, p2) <= rsq ) return true;
+    if( c.sq_dist_triangle(p0, p1, p3) <= rsq ) return true;
+    if( c.sq_dist_triangle(p0, p2, p3) <= rsq ) return true;
+    if( c.sq_dist_triangle(p1, p2, p3) <= rsq ) return true;
+
+    // all the sub-simplex are out from the ball
+    return false;
+}
+
+// UNEFFICIENT
+double TetMesh::compute_inputPLC_LFS( const std::vector<double>& input_coords,
+                                const std::vector<uint32_t>& input_tris,
+                            const std::vector<bool>& constr_tri_asCorners ) {
+    // to compute efficiently the following minimum distances we need the CDT 
+    // struture related to the PLC. The adjacencies of the PLC itself are not 
+    // sufficient since closest features may not be adjacent.
+
+    // Here we ASSUME that input vertices are all explicit while steiner points 
+    // are all LNC (of explicit vrts)
+
+    // First thing is to "measure" all input triangles, to detect the minimum 
+    // between the shortest input triangle edge and the shortest input triangle 
+    // heigh. This will be the initialization value of the LFS.
+
+    // 'md' is stores the minimum measured distance (must be initialized)
+    double dist, md = vector3d(vertices[0]).dist_sq(vector3d(vertices[1]));
+
+    uint32_t va3, vb3, vc3;
+    for(size_t i=0; i<input_tris.size()/3; i++) {
+        va3 = input_tris[i*3   ] * 3;
+        vb3 = input_tris[i*3 +1] * 3;
+        vc3 = input_tris[i*3 +2] * 3;
+        vector3d Oa(input_coords[va3], input_coords[va3+1], input_coords[va3+2]);
+        vector3d Ob(input_coords[vb3], input_coords[vb3+1], input_coords[vb3+2]);
+        vector3d Oc(input_coords[vc3], input_coords[vc3+1], input_coords[vc3+2]);
+        dist = Oa.dist_sq(Ob);  if(md > dist) md = dist;
+        dist = Oa.dist_sq(Oc);  if(md > dist) md = dist;
+        dist = Ob.dist_sq(Oc);  if(md > dist) md = dist;
+        dist = Oa.sq_dist_segment(Ob, Oc); if(md > dist) md = dist; 
+        dist = Ob.sq_dist_segment(Oc, Oa); if(md > dist) md = dist; 
+        dist = Oc.sq_dist_segment(Oa, Ob); if(md > dist) md = dist; 
+    }
+
+    // Now have to consider all the features that are not connected by input
+    // triangles.
+    // Given a mesh-vertex 'vi' we have to consider the set of all its incident 
+    // tetrahedra (VT) and we have to add all the other tetrahdera that ar 
+    // progressivelly adjacent and inside a ball of radius R (which is the 
+    // current minimum distance 'md') centered in V.
+    // Then we have to chek the distance between constrained simplexes incident 
+    // at 'vi' and "non-connected" and constrained simplexes contained in the  
+    // set of tetrahedra.
+    
+    // Consider each mesh vertex
+    for(uint32_t vi=0; vi<numVertices(); vi++) {
         std::vector<uint64_t> vt; VT(vi,vt); // tets incident at vi
         vector3d Ov(vertices[vi]);
 
+        // Growing VT untill all tetrahedra near to 'vi' than distance 'md'
+        // are included. 
+        for(uint64_t t : vt) mark_Tet_30(t);
+        for(size_t i=0; i<vt.size(); i++){
+            uint64_t t = vt[i];
+            // get adjacents tets and collect them if intersects the ball
+            const uint64_t* adj_tet_corn = getTetNeighs(t << 2);
+            for(size_t j=0; j<4; j++) if( !isGhost(adj_tet_corn[j] >> 2) ) {
+                uint64_t tj = adj_tet_corn[j] >> 2;
+                if(!is_marked_Tet_30(tj) && tet_intersects_ballCR(tj, vi, md)){
+                    vt.push_back(tj); 
+                    mark_Tet_30(tj);
+                }
+            }
+        }
+        for(uint64_t t : vt) unmark_Tet_30(t);
+        
+        // Computing the minimum distance relative to vi
+        uint64_t tb;
         for(uint64_t t : vt) {
 
-            for(size_t i=0; i<4; i++) if(constr_tri_asCorners[t*4+i]){ 
-                uint64_t c = t*4+i; // tet-corner opposite to a constrained triangle
+            mark_Tet_30(t); // visited: avoid evaluate faces two times
+            tb = t << 2;
+            for(uint64_t c = tb; c < tb+4; c++) if(constr_tri_asCorners[c]){ 
+                // c is tet-corner identifing a constrained tri
+
+                // When the adjacent tetrahedron has been already visited: 
+                // skip to next corner
+                if(is_marked_Tet_30( tet_neigh[c] >> 2 )) continue;
+
                 uint32_t fv[3]; getFaceVertices(c, fv);
 
-                if(tet_node[c]==vi){ // tet-face opposite at vi
-                    vector3d Ou0(vertices[fv[0]]), Ou1(vertices[fv[1]]), Ou2(vertices[fv[2]]);
-                    dist = Ov.sq_dist_triangle(Ou0,Ou1,Ou2);
-                    if(dist < md) md = dist; // contribute to vrt-vrt, vrt-edge, vrt-face distances
-                }
-                else{ // tet-faces incident at vi
-                    // we have to check both edges <vi,u[0]>, <vi,u[1]>
-                    uint32_t u[] = {fv[0], fv[1]};
-                    if(fv[0]==vi){ u[0]=fv[1]; u[1]=fv[2]; }
-                    else if(fv[1]==vi){ u[0]=fv[0]; u[1]=fv[2]; }
+                if(fv[0]!=vi && fv[1]!=vi && fv[2]!=vi) { 
 
-                    for(size_t j=0; j<2; j++){
-                        // consider the contrained edge <uj,vi>
-                        vector3d Ou(vertices[u[j]]);
-                        uint32_t ev[]={vi , u[j]}, w[2];
-                        std::vector<uint64_t> et; ET(vi,u[j], et);
+                    // If 'vi' and a face vertex belong to two incident 
+                    // input PLC segment (are "connected"), then they both 
+                    // belong to the same triangle. 
+                    // (Measured during initialization) 
+                    if( are_vrts_connected_in_inputPLC(vi, fv[0]) ||
+                        are_vrts_connected_in_inputPLC(vi, fv[1]) ||
+                        are_vrts_connected_in_inputPLC(vi, fv[2]) ) continue;
+
+                    vector3d Of0(vertices[fv[0]]);
+                    vector3d Of1(vertices[fv[1]]);
+                    vector3d Of2(vertices[fv[2]]);
+                    dist = Ov.dist_sq( Ov.closestPointTriangle(Of0, Of1, Of2) );
+                    if(dist < md) md = dist; 
+                    // contribute to vrt-edge, vrt-face distances
+                }
+                else {                  
+                    // tet-faces incident at vi
+
+                    // We have to check both edges <vi,u[0]>, <vi,u[1]>
+                    uint32_t u[] = {fv[0], fv[1]};
+                    if(     fv[0] == vi){ u[0] = fv[2]; }
+                    else if(fv[1] == vi){ u[1] = fv[2]; }
+
+                    for(size_t k=0; k<2; k++){
+                        // consider the contrained edge <vi, uk>
+                        uint32_t e_vuk[] = { vi , u[k] }, oe_vuk[2];
+                        std::vector<uint64_t> et; ET(vi,u[k], et);
                         for(size_t x : et){
-                            oppositeTetEdge(4*x, ev, w);
-                            if(is_constrained_edge(w[0],w[1],constr_tri_asCorners)){
-                                vector3d Ow0(vertices[w[0]]), Ow1(vertices[w[1]]);
-                                dist = Ov.sq_dist_seg_seg(Ou,Ow0,Ow1);
+                            oppositeTetEdge( (x << 2), e_vuk, oe_vuk);
+
+                            if(is_constrained_edge(oe_vuk[0], oe_vuk[1],
+                                                   constr_tri_asCorners)){
+
+                                if( are_vrts_connected_in_inputPLC(vi, oe_vuk[0]) ||
+                                    are_vrts_connected_in_inputPLC(vi, oe_vuk[1]) ||
+                                    are_vrts_connected_in_inputPLC(u[k], oe_vuk[0]) ||
+                                    are_vrts_connected_in_inputPLC(u[k], oe_vuk[1]) ) continue;
+
+                                dist = Ov.sq_dist_seg_seg(vertices[u[k]], 
+                                                          vertices[oe_vuk[0]],
+                                                          vertices[oe_vuk[1]]);
+
                                 if(dist < md) md = dist;
                             }
                         }
@@ -1310,12 +1460,17 @@ double TetMesh::compute_closest_features_dist(const std::vector<bool>& constr_tr
                 }
             }
         }
+        for(uint64_t t : vt) unmark_Tet_30(t);
     }
 
     return sqrt(md);
 }
 
-void TetMesh::compute_min_inputPLC_dist(const std::vector<bool>& constr_tri_asCorners){
-    min_inputPLC_dist = compute_closest_features_dist(constr_tri_asCorners);
+void TetMesh::set_inputPLC_LFS(
+    const std::vector<double>& input_coords,
+    const std::vector<uint32_t>& input_tris,
+    const std::vector<bool>& constr_tri_asCorners){
+    inputPLC_LFS = compute_inputPLC_LFS(input_coords, input_tris, 
+                                            constr_tri_asCorners);
 }
 
