@@ -34,7 +34,7 @@ public:
         
         FILE* file = fopen(filename, "w");
         
-        fprintf(file, "OFF\n%zu %zu 0\n", np, ne);
+        fprintf(file, "OFF\n%u %u 0\n", np, ne);
         
         for(uint32_t i = 0; i < np; i++) {
             get_point_coords(i, xp, yp, zp);
@@ -54,7 +54,7 @@ public:
 
         FILE* file = fopen(filename, "w");
         
-        fprintf(file, "OFF\n%zu %zu 0\n", np, ne);
+        fprintf(file, "OFF\n%u %u 0\n", np, ne);
         
         for(uint32_t i = 0; i < np; i++) {
             get_point_coords(i, xp, yp, zp);
@@ -64,7 +64,7 @@ public:
         uint32_t pos = 0;
         for(uint32_t i = 0; i < ne; i++) {
             uint32_t n_pol_vrts = *(fnv + i);
-            fprintf(file, "%zu ", n_pol_vrts);
+            fprintf(file, "%u ", n_pol_vrts);
             for(size_t j = 0; j < n_pol_vrts; j++) 
                 fprintf(file, "%u ", *(inds + (pos++)));
             fprintf(file, "\n");
@@ -74,7 +74,7 @@ public:
     
     void save_tetrahedral_mesh() {
         FILE* fp = fopen(filename, "w");
-        fprintf(fp, "OFF\n%zu %zu 0\n", np, ne);
+        fprintf(fp, "OFF\n%u %u 0\n", np, ne);
         // MISSING
     }
 
@@ -140,7 +140,7 @@ public:
         pos = 0;
         for(uint32_t poly_i = 0; poly_i < ne; poly_i++) {
             uint32_t n_poly_vrts = *(fnv + poly_i);
-            fprintf(file, "%zu ", n_poly_vrts);
+            fprintf(file, "%u ", n_poly_vrts);
             for(size_t j = 0; j < n_poly_vrts; j++) 
                 fprintf(file, "%u ", used_vrt[ *(inds + (pos++)) ] );
             fprintf(file, "\n");

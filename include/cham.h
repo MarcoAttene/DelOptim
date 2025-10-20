@@ -1102,7 +1102,7 @@ public:
                 if( !e1.isFlat() && !e2.isFlat() &&
                     isAcuteAngle( v[vl], v[vc], v[vr]) ) {
                     std::cout<<"edge "<<e1<<" and edge "<<e2<<" form an "
-                             <<"angle at face "<<fi<<" boundary.\n"; 
+                             <<"acute angle at face "<<fi<<" boundary.\n"; 
                     // saveFace(f, "acute_face.off");
                     // saveTriangle(vl, vc, vl, "acute_angle.off");
                     // return false;
@@ -1118,21 +1118,33 @@ public:
             ve_rel[ edges[i].ep[0] ].push_back(i);
             ve_rel[ edges[i].ep[1] ].push_back(i);
         }
-        for(uint32_t vi=0; vi<vertices.size(); vi++) if(!ve_rel[vi].empty()) {
-            assert(ve_rel[vi].size() > 1);
-            for(size_t ei=0; ei<ve_rel[vi].size()-1; ei++)
-                for(size_t ej=ei+1; ej<ve_rel[ei].size(); ej++) {
+        for(uint32_t vk=0; vk<vertices.size(); vk++) if(!ve_rel[vk].empty()) {
+            assert(ve_rel[vk].size() > 1);
+            for(size_t i=0; i<ve_rel[vk].size()-1; i++) {
+                uint32_t ei = ve_rel[vk][i];
+                for(size_t j=i+1; j<ve_rel[vk].size(); j++) {
+                    uint32_t ej = ve_rel[vk][j];
                     uint32_t ui = edges[ei].ep[0], uj = edges[ej].ep[0];
-                    if(ui == vi) ui = edges[ei].ep[1];
-                    if(uj == vi) uj = edges[ej].ep[1];
-                    if(isAcuteAngle( v[ui], v[vi], v[uj]) ) {
-                        std::cout<<"edge "<<ei<<" and edge "<<ej<<" form an "
-                                 <<"angle at vertex "<<vi<<".\n"; 
-                        // saveTriangle(ui, vi, vj, "acute_angle.off");
+                    if(ui == vk) ui = edges[ei].ep[1];
+                    if(uj == vk) uj = edges[ej].ep[1];
+                    if(isAcuteAngle( v[ui], v[vk], v[uj]) ) {
+                        double ampl = getAngle(v[vk], v[ui], v[uj]);
+                        std::cout<<"WARNING: "
+                                    "edge "<<ei<<" and edge "<<ej<<" form an "
+                                    "acute angle ("<< ampl <<") at vertex "
+                                    <<vk<<".\n"; 
+                        // We may have no control on such angles, which in any
+                        // case must be very close to pi/2.
+
+                        // UNCOMMENT next 2 lines to save acute angle as .off 
+                        // saveTriangle(ui, vk, uj, "acute_angle.off");
                         // return false;
-                        error = true;
+                        
+                        // UNCOMMENT next line to treat these cases as errors 
+                        // error = true;
                     }
                 }
+            }
         }
 
         if(error){

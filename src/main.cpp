@@ -8,7 +8,7 @@
 // #define ONLY_LFS // If uncomment, computes the local feature size of the 
 					// input triangulation (using a CDT algorithm) and exit.
 
-#define DISP_PROGRESS // If uncommented, progress during Delaunay Refinement
+// #define DISP_PROGRESS // If uncommented, progress during Delaunay Refinement
 					  	 // segment recovery, face recovery and optimization
 					  	 // phases are displaied on standard output. It is
 					  	 // suggested to use -v (verbose) command line option.
@@ -77,14 +77,10 @@ void  printUsageAndExit() {
 
 
 #ifdef ONLY_LFS
-void comp_bboxdiag_and_lfs(inputPLC& plc, double bbox_factor, 
-										bool verbose, bool log){
-	// start timing
-	chrono_clock::time_point internal_time_point = chrono_clock::now(); 
-
+void comp_bboxdiag_and_lfs(inputPLC& plc, bool verbose, bool log){
 	// By default the input is enclosed in a bounding box whose diagonal is 
 	// (1 + 2 * bbox_factor) * diagonal_of_the_minimal_bounding_box.
-	double BBox_len = plc.bbDiag() * (1.0 + 2.0 * bbox_factor);
+	double BBox_len = plc.get_BBox_diag();
 
 	// Compute the minum distance between any two mesh elements (vertices, 
 	// edges, triangles): a cdt is needed to make this computation efficient.
@@ -95,10 +91,9 @@ void comp_bboxdiag_and_lfs(inputPLC& plc, double bbox_factor,
 						<< min_PLC_dist << "\n";
 	if (log){ 
 		logDouble("lfs", min_PLC_dist);
-		logTimeChunk("T_closestDist(ms)"); // time to compute closest_dist
-		take_time(internal_time_point); // sincronize internal clock
+		logTimeChunk("T_inPLC_lfs(ms)"); 
 	}
-	if (log) advance_ProcessLogging("closest_dist");
+	if (log) advance_ProcessLogging("lfs");
 }
 #endif
 
@@ -169,11 +164,12 @@ int main(int argc, char* argv[])
 	// Load a valid PLC from file
 	inputPLC plc;
 	plc.initFromFile(filename, verbose_mode);
+	plc.setBoundingBox(bbox_factor);
 	if (log_mode) log_inputPLC_stats(plc);
 
 #ifdef ONLY_LFS
 	
-	comp_bboxdiag_and_lfs(plc, bbox_factor, verbose_mode, log_mode); 
+	comp_bboxdiag_and_lfs(plc, verbose_mode, log_mode); 
 
 #elif USE_TETGEN
 	
@@ -189,11 +185,22 @@ int main(int argc, char* argv[])
 	epsilon = DBL_MAX; // use the as great as possible epsilon
 	chamfering_interface cham(cham_safe, cham_simpl, cham_out);
 	cham.perform_chamfering(plc, epsilon, verbose_mode);
-	if (log_mode) log_chamferPLC_stats(cham);
+	if (log_mode) log_chamferPLC_stats(cham, plc);
+
+	// TMP start -- for chamfering test --------
+	delRef_interface DR_tmp(plc, cham, verbose_mode, log_mode);
+	DR_tmp.init(comp_inLFS, min_dist_exp);
+	if(log_mode){ 
+		logInteger("Peak Mem (byte)", (uint64_t)getPeakRSS());
+		finishLogging();
+	}
+	std::cout << "Execution correctly COMPLETED.\n\n\n";
+	return 0;
+	// TMP end -- for chamfering test --------
 
 	// Delaunay Refinement of the chamfered PLC
 	delRef_interface DR(plc, cham, verbose_mode, log_mode);
-	DR.init(bbox_factor, comp_inLFS, min_dist_exp);
+	DR.init(comp_inLFS, min_dist_exp);
 	DR.recover_segments();
 	DR.recover_faces();
 	DR.optimize_tetrahedra(optim_ratio, remove_slivers, max_vrts);

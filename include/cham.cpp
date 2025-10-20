@@ -661,28 +661,28 @@ uint32_t PLCc::new_vrts_in_inputTri(const uint32_t fi, const uint32_t vi,
 // splt edge 'ei' at distance 'd' from endpoint edeges[ei].ep[ep_i]
 void PLCc::chamfer_edge_ep(const size_t ei, double d, const uint32_t ep_i){
 
-    CHAMedge& e = edges[ei]; // e = <e0,e1>
-    const uint32_t e0 = e.ep[0];
+    const uint32_t e0 = edges[ei].ep[0], e1 = edges[ei].ep[1];
+    const uint32_t oe0 = edges[ei].oep[0], oe1 = edges[ei].oep[1];
 
     #ifdef PLCC_VERBOSE_DEBUG
     std::cout<<"\nchamfering (d="<<d<<") ep "<<ep_i<<" of "; print_edge(ei);
     #endif
 
-    const uint32_t Pt_i = new_vrt_on_segment(e.oep[0], e.oep[1], d, ep_i);
+    const uint32_t Pt_i = new_vrt_on_segment(oe0, oe1, d, ep_i);
 
-    assert( vPointInInnerSegment(Pt_i, e.ep[0], e.ep[1]) );
+    assert( vPointInInnerSegment(Pt_i, e0, e1) );
     
     // Update PLCedges
-    CHAMedge new_e(e); // copy e
-    e.ep[1] = Pt_i; // Update PLCedge e endpoints: <e0,e1> becomes <e0,Pt>
+    CHAMedge new_e( edges[ei] ); // copy e
+    edges[ei].ep[1] = Pt_i; // Update endpoints: <e0,e1> becomes <e0,Pt>
     new_e.ep[0] = Pt_i; // New edge is <Pt_i,e1>
     edges.push_back( new_e ); // <Pt,e1> 
     mark_edges.push_back(0);
 
-    assert( ( e.ep[0]==e.oep[0] || 
-                vPointInInnerSegment(e.ep[0], e.oep[0], e.ep[1]) ) &&
-            ( e.ep[1] == e.oep[1] || 
-                vPointInInnerSegment(e.ep[1], e.ep[0], e.oep[1]) ) );
+    assert(edges[ei].ep[0] == edges[ei].oep[0] || 
+      vPointInInnerSegment(edges[ei].ep[0], edges[ei].oep[0], edges[ei].ep[1]));
+    assert(edges[ei].ep[1] == edges[ei].oep[1] || 
+      vPointInInnerSegment(edges[ei].ep[1], edges[ei].ep[0], edges[ei].oep[1]));
 
     // Update type
     if(ep_i==1) edges.back().type = CHAMedge_t::junk;
@@ -1299,9 +1299,10 @@ void PLCc::chamfered_plc_simplification(){
                 const CHAMedge& e = edges[ fbnd[i] ];
                 b.set_bridge_edge(fbnd[i], vertices[e.ep[0]],vertices[e.ep[1]]);
                 i++;
-            } while( edges[ fbnd[i] ].same_bridge(edges[ fbnd[i-1] ])) ;
+            } while( i<fbnd.size() && 
+                    edges[ fbnd[i] ].same_bridge(edges[ fbnd[i-1] ])) ;
 
-            if(edges[ fbnd[i] ].isBridgeEdge()) i--;
+            if(i<fbnd.size() && edges[ fbnd[i] ].isBridgeEdge()) i--;
         }
     }
 

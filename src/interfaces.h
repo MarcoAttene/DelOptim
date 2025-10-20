@@ -271,12 +271,12 @@ inline void log_inputPLC_stats(inputPLC& plc){
 	advance_ProcessLogging("load_input");
 }
 
-inline void log_chamferPLC_stats(chamfering_interface& cham){
+inline void log_chamferPLC_stats(chamfering_interface& cham, inputPLC& plc){
 	logBoolean("manifold", cham.input_is_manifold);
 	logBoolean("open", !cham.input_has_interior);
 	logInteger("cham_nVrts", cham.get_num_out_vrts());
 	logInteger("cham_nTris", cham.get_num_out_faces());
-	logDouble("cham_part_LFS", cham.get_chamPLC_part_lfs());
+	logDouble("cham_part_LFS", cham.get_chamPLC_part_lfs() / plc.get_BBox_diag());
 	logTimeChunk("T_cham(ms)");
 	advance_ProcessLogging("chamfering");
 }
@@ -368,7 +368,7 @@ class delRef_interface {
 					 verbose(_verbose), log(_log),  
 					 BBox_len(0), closest_dist(0) { };
 
-	void init(double bbox_factor, bool comp_inLFS, uint32_t min_dist_exp){
+	void init(bool comp_inLFS, uint32_t min_dist_exp){
 		// start timing
 		chrono_clock::time_point internal_time_point = chrono_clock::now(); 
 
@@ -377,9 +377,8 @@ class delRef_interface {
 
 		// Adds to tin.vertices 8 new vertices defining a bounding box, 
 		// by default dist = 1.0
-        std::vector<double> bbox_coords;
-        plc.getBoundingBoxVertices(bbox_coords, bbox_factor);
-        BBox_len = plc.bbDiag() * (1 + 2*bbox_factor);
+        const std::vector<double> bbox_coords = plc.get_BBox_vrt_coords();
+        BBox_len = plc.get_BBox_diag();
 		tin.addBoundingBoxVertices(bbox_coords);
 		tin.tetrahedrize();
 		if (log) advance_ProcessLogging("Del_vertices");
@@ -416,9 +415,9 @@ class delRef_interface {
 		}
 
 		if (log){
-            logDouble("INplc lfs", min_PLC_dist); 
-			logDouble("closest_dist", closest_dist);
-			logTimeChunk("T_closestDist(ms)"); // time to compute closest_dist
+			logDouble("VrtMesh_short_edge", closest_dist/BBox_len);
+            logDouble("INplc_lfs", min_PLC_dist); 
+			logTimeChunk("T_INplc_lfs(ms)"); // time to compute closest_dist
 			take_time(internal_time_point); // sincronize internal clock
 		}
 

@@ -101,7 +101,7 @@ inline void logMemInfo()
 inline void logMemInfo() {
     struct rusage r_usage;
     getrusage(RUSAGE_SELF, &r_usage);
-    fprintf(log_fp, ", %.2f", r_usage.ru_maxrss); // bytes
+    fprintf(log_fp, ", %.2ld", r_usage.ru_maxrss); // bytes
     fflush(log_fp);
 }
 #endif

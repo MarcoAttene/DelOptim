@@ -277,6 +277,11 @@ void read_nodes_and_constraints(double* coords_A, uint32_t npts_A,
 }
 
 class inputPLC {
+private:
+    double min_boundingBox_diag;
+    double boundingBox_diag;
+    std::vector<double> boundingBox_vrts;
+
 public:
     std::vector<double> coordinates; // x1,y1,z1,x2,y2,z2, ..., xn,yn,zn
     std::vector<uint32_t> triangle_vertices; // t1_v1,t1_v2,t1_v3, t2_v1,t2_v2, 
@@ -285,7 +290,7 @@ public:
     uint32_t numVertices() const { return (uint32_t)coordinates.size() / 3; }
     uint32_t numTriangles() const {return (uint32_t)triangle_vertices.size()/3;}
 
-    inputPLC() {}
+    inputPLC() : min_boundingBox_diag(DBL_MAX), boundingBox_diag(DBL_MAX) {}
 
     inputPLC(const char* filename) { initFromFile(filename, true); }
 
@@ -359,29 +364,10 @@ public:
                         (uint32_t)triangle_vertices.size() / 3);
     }
 
-    double bbDiag() {
-        double bbmin[3] = { DBL_MAX, DBL_MAX, DBL_MAX };
-        double bbmax[3] = { -DBL_MAX, -DBL_MAX, -DBL_MAX };
-        for (uint32_t i = 0; i < numVertices(); i++) {
-            const double* v = coordinates.data() + i * 3;
-            for (int j = 0; j < 3; j++) {
-                if (v[j] < bbmin[j]) bbmin[j] = v[j];
-                if (v[j] > bbmax[j]) bbmax[j] = v[j];
-            }
-        }
-        // bounding box diagonal as vector
-        const double diag[3] = { bbmax[0] - bbmin[0], 
-                                 bbmax[1] - bbmin[1], 
-                                 bbmax[2] - bbmin[2] };
-
-        return sqrt(diag[0]*diag[0] + diag[1]*diag[1] + diag[2]*diag[2]);
-    }
-
     // Fills 'bbv_coords' with eight vertices (24 coordinates) to enclose the 
     // input in a bounding box with diagonal '2 * ampl_factor' the minimal 
     // bounding box
-    void getBoundingBoxVertices(std::vector<double>& bbv_coords, 
-                                                double dist = 0.25) {
+    void setBoundingBox(double ampl_factor = 0.25) {
         double bbmin[3] = { DBL_MAX, DBL_MAX, DBL_MAX };
         double bbmax[3] = { -DBL_MAX, -DBL_MAX, -DBL_MAX };
         for (uint32_t i = 0; i < numVertices(); i++) {
@@ -391,13 +377,18 @@ public:
                 if (v[j] > bbmax[j]) bbmax[j] = v[j];
             }
         }
-        const double diag[3] = { bbmax[0] - bbmin[0], 
-                                 bbmax[1] - bbmin[1], 
-                                 bbmax[2] - bbmin[2] };
+        const double d[3] = {   bbmax[0] - bbmin[0], 
+                                bbmax[1] - bbmin[1], 
+                                bbmax[2] - bbmin[2]     };
+
+        min_boundingBox_diag = sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
+
         for (int j = 0; j < 3; j++) {
-            bbmin[j] -= diag[j] * dist;
-            bbmax[j] += diag[j] * dist;
+            bbmin[j] -= d[j] * ampl_factor;
+            bbmax[j] += d[j] * ampl_factor;
         }
+
+        boundingBox_diag = min_boundingBox_diag * (1 + 2 * ampl_factor);
 
         const int idx[] = { 0, 0, 0, 
                             0, 0, 1, 
@@ -409,7 +400,14 @@ public:
                             1, 1, 1 };
 
         for (int j = 0; j < 24; j++)
-            bbv_coords.push_back(idx[j] ? (bbmax[j%3]) : (bbmin[j%3]));
+            boundingBox_vrts.push_back(idx[j] ? (bbmax[j%3]) : (bbmin[j%3]));
+    }
+
+    double get_BBox_diag() const { return boundingBox_diag; }
+    double get_minBBox_diag() const { return min_boundingBox_diag; }
+    const std::vector<double>& get_BBox_vrt_coords() const { 
+        assert(!boundingBox_vrts.empty());
+        return boundingBox_vrts; 
     }
 
     void report_input_error_and_exit(const char* msg) {
