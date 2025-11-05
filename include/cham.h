@@ -321,6 +321,8 @@ private:
 
 public:
     const double epsilon;
+    const double cham_ratio = 6; // The chamfered part of a segment is 
+                                 // 1/cham_ratio of its total length
 
     // input vertex -> incident triangle relaion;
     // computed in initalize() and used in search_acute_angles())
@@ -443,7 +445,7 @@ public:
         auto a = closest_vv_dist(vi, vv_i);
         auto b = closest_vt_dist(vi, vt_i);
         auto c = min(a, b);
-        return c / 3;
+        return c / cham_ratio;
     }
   
     // Chamfering
@@ -460,6 +462,8 @@ public:
     uint32_t new_vrts_in_inputTri(const uint32_t fi, const uint32_t vi, 
                                   const uint32_t u0, const uint32_t ou0, 
                                   const uint32_t u1, const uint32_t ou1);
+    void add_SteinerPts_onFace(uint32_t fi);
+    void update_lfs_before_edge_chamfering();
     void chamfering_face(uint32_t fi);
 
     // Safe chamfering (optional)
@@ -664,7 +668,6 @@ public:
     }
 
     // DEBUG
-
     void print_vertex(uint32_t vi) const { 
         std::cout<<"vertex["<<vi<<"] = "<< *vertices[vi] <<"\n"; 
     }
@@ -747,50 +750,7 @@ public:
     // During vertex chamfering (v0 is the chamfered vertex, the other 4 vi
     // are the ordered LNC-BPT-BPT-LNC bridge vertices)
     bool check_bridge(uint32_t v0, 
-                    uint32_t v1, uint32_t v2, uint32_t v3, uint32_t v4) const {
-        bool error = false;
-        const uint32_t v[] = {v0, v1, v2, v3, v4};
-        const pointType* po = vertices[v0];
-        const pointType* p1 = vertices[v1];
-        const pointType* p2 = vertices[v2];
-        const pointType* p3 = vertices[v3];
-        const pointType* p4 = vertices[v4];
-        const bool v_match_type[] = { po->isExplicit3D(), p1->isLNC(),
-                                        p2->isBPT(), p3->isBPT(), p4->isLNC() };
-        const string type_str[] = {"EXPLICIT3D", "LNC", "BPT", "BPT", "LNC"};
-        for(int i = 0; i < 5; i++) if( !v_match_type[i] ) {
-            std::cout << "v" << i << " is not an " << type_str[i] << "\n"; 
-            print_vertex_info(v[i]); std::cout<<"\n";
-            error = true;
-        }
-        
-        if(!error){
-            const explicitPoint3D& expo = po->toExplicit3D();
-            const pointType* p0 = (p1->toLNC().P().toExplicit3D() == expo) ? 
-                                    &p1->toLNC().Q() : &p1->toLNC().P();
-            const pointType* p5 = (p4->toLNC().P().toExplicit3D() == expo) ? 
-                                    &p4->toLNC().Q() : &p4->toLNC().P();
-            const pointType* p[] = {p0, p1, p2, p3, p4, p5};
-            for(int i = 1; i < 5; i++) if(isAcuteAngle(p[i-1], p[i], p[i+1])) {
-                std::cout<<"acute angle at v["<<i<<"]\n"; 
-                error = true;
-            }
-
-            if(!error){
-                if( pointType::innerSegmentsCross(*po, *p0, *p2, *p3) ||
-                    pointType::innerSegmentsCross(*po, *p0, *p3, *p4) ||
-                    pointType::innerSegmentsCross(*p1, *p2, *p3, *p4) ||
-                    pointType::innerSegmentsCross(*po, *p5, *p1, *p2) ||
-                    pointType::innerSegmentsCross(*po, *p5, *p2, *p3)   ) {
-                    error = true;
-                    std::cout<< "edge bridges overlap\n";
-                }
-            }
-        }
-        
-        if(error) std::cout<<"[cham.h - check_bridge()] ERROR detected\n";
-        return !error;
-    }
+                    uint32_t v1, uint32_t v2, uint32_t v3, uint32_t v4) const;
 
     // during simplification
     void print_all_bridge_edges() const {
@@ -1048,123 +1008,7 @@ public:
     }
 
     // To check absence of acute angles after chamfering
-    bool check_acuteness() const {
-
-        bool error = false;
-        const std::vector<pointType*>& v = vertices;
-
-        // Check that each couple of faces incident at an edges do not form 
-        // an acute dihedral angle
-        for(uint32_t ei=0; ei<edges.size(); ei++){
-            const CHAMedge& e = edges[ei];
-
-            if(e.inc_face.size() == 1) continue;
-            if(e.inc_face.size() > 4)
-                std::cout<<"edges["<<ei<<"] is acute: it has "
-                         << e.inc_face.size() <<" incident faces.\n";
-
-            uint32_t ui, uj;
-            const pointType* p0 = vertices[ e.oep[0] ];
-            const pointType* p1 = vertices[ e.oep[1] ];
-            assert(p0->isExplicit3D() && p1->isExplicit3D());
-            const CHAMedge orig_e(e.oep[0], e.oep[1], UINT32_MAX);
-            std::vector<uint32_t> in_tri;
-            for(uint32_t fi : e.inc_face) in_tri.push_back(faces[fi].triangle);
-            for(size_t i = 0; i < in_tri.size()-1; i++)
-                for(size_t j = i+1; j < in_tri.size(); j++) {
-                    ui = inTri_opp_vrt(orig_e, in_tri[i]);
-                    uj = inTri_opp_vrt(orig_e, in_tri[j]);
-                    if( isAcuteDihedral_exact(p0, p1, v[ui], v[uj]) ){
-                        std::cout<<"edges["<<ei<<"] is acute.\n";
-                        error = true;
-                        // saveTriangle(ui,e.oep[0],o.oep[1], "acute_tri1.off");
-                        // saveTriangle(uj,e.oep[0],o.oep[1], "acute_tri2.off");
-                        // return false;
-                    }
-                }
-            
-        }
-
-        // Check that each face has not acute angles at any two consecutive 
-        // sides.
-        for(uint32_t fi=0; fi<faces.size(); fi++){
-            const CHAMface& f = faces[fi];
-            const std::vector<uint32_t>& fbnd = f.bounding_edges;
-            size_t it = 0;
-            while(it < fbnd.size()){
-                size_t nit = it; f.advance_on_bnd(nit);
-                uint32_t vc, vl, vr;
-                const CHAMedge& e1 = edges[ f.bounding_edges[it] ];
-                const CHAMedge& e2 = edges[ f.bounding_edges[nit] ];
-                vc = e1.commonVertex(e2);
-                vl = e1.notCommonVertex(e2);
-                vr = e2.notCommonVertex(e1);
-                if( !e1.isFlat() && !e2.isFlat() &&
-                    isAcuteAngle( v[vl], v[vc], v[vr]) ) {
-                    std::cout<<"edge "<<e1<<" and edge "<<e2<<" form an "
-                             <<"acute angle at face "<<fi<<" boundary.\n"; 
-                    // saveFace(f, "acute_face.off");
-                    // saveTriangle(vl, vc, vl, "acute_angle.off");
-                    // return false;
-                    error = true;
-                }
-                ++it;
-            }
-        }
-
-        // Check that there are no acute vertices
-        std::vector< std::vector<uint32_t> > ve_rel(vertices.size());
-        for(size_t i = 0; i < edges.size(); i++) if(!edges[i].isFlat()) {
-            ve_rel[ edges[i].ep[0] ].push_back(i);
-            ve_rel[ edges[i].ep[1] ].push_back(i);
-        }
-        for(uint32_t vk=0; vk<vertices.size(); vk++) if(!ve_rel[vk].empty()) {
-            assert(ve_rel[vk].size() > 1);
-            for(size_t i=0; i<ve_rel[vk].size()-1; i++) {
-                uint32_t ei = ve_rel[vk][i];
-                for(size_t j=i+1; j<ve_rel[vk].size(); j++) {
-                    uint32_t ej = ve_rel[vk][j];
-                    uint32_t ui = edges[ei].ep[0], uj = edges[ej].ep[0];
-                    if(ui == vk) ui = edges[ei].ep[1];
-                    if(uj == vk) uj = edges[ej].ep[1];
-                    if(isAcuteAngle( v[ui], v[vk], v[uj]) ) {
-                        double ampl = getAngle(v[vk], v[ui], v[uj]);
-                        std::cout<<"WARNING: "
-                                    "edge "<<ei<<" and edge "<<ej<<" form an "
-                                    "acute angle ("<< ampl <<") at vertex "
-                                    <<vk<<".\n"; 
-                        // We may have no control on such angles, which in any
-                        // case must be very close to pi/2.
-
-                        // UNCOMMENT next 2 lines to save acute angle as .off 
-                        // saveTriangle(ui, vk, uj, "acute_angle.off");
-                        // return false;
-                        
-                        // UNCOMMENT next line to treat these cases as errors 
-                        // error = true;
-                    }
-                }
-            }
-        }
-
-        if(error){
-            std::cout<<"[cham.h - check_acuteness()] ERROR\n";
-            return false;
-        }
-        return true;
-    }
-
-    //
-    bool checkEdges_beforeJunkDeletion() const {
-        for(const CHAMedge& e : edges)if(!e.isIsolated()){
-            uint32_t e0 = e.ep[0], e1 = e.ep[1];
-            if(e.isJunk()){ 
-                if( !is_acute_vrt(e0) && !is_acute_vrt(e1) ) return false;
-            }
-            else if( is_acute_vrt(e0) || is_acute_vrt(e1) ) return false;
-        }
-        return true;
-    }
+    bool check_acuteness() const ;
 
 
     #ifdef PLCC_VERBOSE_DEBUG

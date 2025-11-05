@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <set>
 
-
 // ------ //
 // POINTS //
 // ------ //
@@ -27,6 +26,40 @@ inline void get_baricentric_coords(double& xi, double& eta, const pointType* B){
 // ANGLES //
 // ------ //
 
+// If the following macro is defined only for acute angle checking (not for 
+// deciding when to chamfer) a tolerance is introduced and angles that are 
+// "very close" to pi/2 are treated as pi/2. This is necessary as exact 
+// arithmetics is used for eavaluating orthogonality, while BPTs may not create 
+// exact rigth angles at face boundary as their parameters 'xi' and 'eta' are
+// floating points numbers.
+#define TOLERANCE_ON_ACUTE_ANGLE_CHECK
+
+#ifdef TOLERANCE_ON_ACUTE_ANGLE_CHECK
+const double right_angle_cos_toll = 0.0003; // cos(499/1000 pi) ~= 0.003
+                                            // cos(4999/10000 pi) ~= 0.0003
+#else
+const double right_angle_cos_toll = 0.0;
+#endif
+
+// TRUE if pqr is "very close to" a right angle at q.
+// Always returns FALSE when TOLERANCE_ON_ACUTE_ANGLE_CHECK is not defined.
+bool is_almost_right_angle(const pointType* p, 
+                                const pointType* q, const pointType* r) {
+    #ifdef TOLERANCE_ON_ACUTE_ANGLE_CHECK
+        vec3d_bf PQ = vec3d_bf(p) - vec3d_bf(q);
+        vec3d_bf RQ = vec3d_bf(r) - vec3d_bf(q);
+        bigfloat cos_alpha_num = PQ * RQ;
+        cos_alpha_num = cos_alpha_num * cos_alpha_num.sgn();
+        bigfloat PQ_sqlen = PQ.sq_length();
+        bigfloat RQ_sqlen = RQ.sq_length();
+        bigfloat cos_alpha_den = (PQ_sqlen * RQ_sqlen).sqrt(256);
+        bigfloat ref_cos_alpha = right_angle_cos_toll; 
+        return (cos_alpha_num - (ref_cos_alpha * cos_alpha_den)).sgn() < 0;
+    #else
+        return false;
+    #endif
+}
+
 // Let be "tau" the plane for the triangle t = <'q','r','s'>.
 // Returns TRUE if both following conditions holds:
 // 1) segment <'q','p'> forms an acute angle at 'q' with the triangle t,
@@ -38,6 +71,20 @@ inline void get_baricentric_coords(double& xi, double& eta, const pointType* B){
 bool isAcuteAngle(const pointType* p, const pointType* q, 
                     const pointType* r, const pointType* s) {
     return (isAcuteDihedral_exact(s,q,r,p) && isAcuteDihedral_exact(r,q,s,p));
+}
+
+// TRUE if pqr is NOT an acute angle at q.
+// Acute angles very close to pi/2 are treated as not acute if 
+// TOLERANCE_ON_ACUTE_ANGLE_CHECK is defined.
+bool check_notAcuteAngle(const pointType* p, 
+                                const pointType* q, const pointType* r) {
+    if( !isAcuteAngle(p,q,r) ) return true;
+    if( is_almost_right_angle(p,q,r) ){ 
+        std::cout << "WARNING: this angle is acute, but |cos_alpha| < "
+                  << right_angle_cos_toll << "\n";
+        return true;
+    }
+    return false;
 }
 
 // ------------------ //
@@ -381,11 +428,14 @@ void PLCc::search_acute_angles(){
 
     // Chamfering distance must take in to account flat edge lenght,
     // otherwise flat edges may be "cutted out". 
+    double e_len, max_chd;
+    uint32_t e0, e1;
     for(const CHAMedge& e : edges ) if( e.isFlat() ){
-        uint32_t e0 = e.ep[0], e1 = e.ep[1];
-        double e_len = sqrt( vPtsSqDist(e0, e1) );
-        if( vrt_ch_dist[e0] * 3 > e_len ) vrt_ch_dist[e0] = e_len / 3;
-        if( vrt_ch_dist[e1] * 3 > e_len ) vrt_ch_dist[e1] = e_len / 3;
+        e0 = e.ep[0]; e1 = e.ep[1];
+        e_len = sqrt( vPtsSqDist(e0, e1) );
+        max_chd = e_len / cham_ratio;
+        if( vrt_ch_dist[e0] * cham_ratio > e_len ) vrt_ch_dist[e0] = max_chd;
+        if( vrt_ch_dist[e1] * cham_ratio > e_len ) vrt_ch_dist[e1] = max_chd;
     }
 
     #ifdef PLCC_VERBOSE_DEBUG
@@ -429,27 +479,6 @@ bool is_BPT_representable(double xi, double eta) {
     return (xi > 0.0  &&  eta > 0.0  &&  xi + eta < 1.0);
 }
 
-// DEBUG
-bool disp_non_representable_bpt_info(double xi0, double eta0,
-                                     double xi1, double eta1,
-                                     double t0, double t1,
-                                     double cos_alpha,
-                                     double teta, double psi, double psi_lim) {
-
-    std::cout << "WARNING: [get_bpt_coeff] "
-              << "Steiner point not representable as BPT.\n"
-              << "Computed baricentric coordinates: \n"
-              << "xi0 = " << xi0 << ", eta0 = " << eta0 << "\n"
-              << "xi1 = " << xi1 << ", eta1 = " << eta1 << "\n"
-              << "Input parameters: \n"
-              << "t0 = " << t0 << ", t1 = " << t1 << "\n"
-              << "Internal parameters: \n"
-              << "cos_alpha = " << cos_alpha << "\n"
-              << "teta = " << teta 
-              << ", psi = " << psi << ", psi_lim = " << psi_lim << "\n";
-    return false;
-}
-
 // A segment with 'L' (LNC) and 'B' (BPT) endpoints shoul be orthogonal to the 
 // side <'R','P'> or <'R','Q'> which 'L' belongs to. 
 // By the way, due to numerical rounding of BPT baricentric coordinates 'xi'
@@ -459,10 +488,181 @@ bool disp_non_representable_bpt_info(double xi0, double eta0,
 // while if acute angle is outside it does not matter as it will be increased by
 // the amplitude of the external angle of the other face incident at 'L'.
 // A trivial solution is to perturbate 'B' in order to satisfy the condition.
-bool correct_coeff(double& xi, double& eta, 
+// THIS FUNCTION WILL BE REMOVED AS SOON WE GET A NEW POINT TYPE TO MANAGE 
+// ORTHOGONAL BPTs.
+const size_t correct_coeff_max_it = 1000;
+
+bool correct_coeff_var(double& xi, double& eta,
                    const pointType* P, const pointType* Q, const pointType* R,
-                    const pointType* L, const pointType* E) {
+                    const pointType* L) {
     
+    const pointType* E = (L->toLNC().P().toExplicit3D() == R->toExplicit3D()) ?
+                                    &L->toLNC().Q() : &L->toLNC().P();
+    assert( P->isExplicit3D() );
+    assert( Q->isExplicit3D() );
+    assert( R->isExplicit3D() );
+    assert( L->isLNC() );
+    assert( L->toLNC().P().toExplicit3D() == R->toExplicit3D() || 
+            L->toLNC().Q().toExplicit3D() == R->toExplicit3D()      );
+    assert( E->isExplicit3D() );
+    assert( E->toExplicit3D() == P->toExplicit3D() || 
+            E->toExplicit3D() == Q->toExplicit3D()      );
+
+    double xi_0 = xi, eta_0 = eta;
+
+    // vector3d B = P * xi + Q * eta + R * (1 - (xi+eta));
+    double xi_out = xi, eta_out = eta;
+    pointType* B_out = new implicitPoint3D_BPT(*P,*Q,*R, xi_out,eta_out);
+
+    if(!isAcuteAngle(B_out, L, E)){ 
+        // no need to correct not acute angle
+        delete B_out;
+        return true; 
+    }
+
+    // BTP 'B_out' should stay on the line orhogonal to segment for 'L' nad 'E',
+    // but due to numerical errors it forms an acute angle very close to pi/2.
+    // 'B_out' is out from the non-acute region delimited from segment 'LR' and
+    // the line orthogonal to 'EL' passing throug 'L'. If we can move the BPT in
+    // that region (thus forming an anle which is very close to pi/2 but 
+    // not-acute) we can guarantee not acuteness at that face since the segment
+    // 'LR' will be removed guring chamfering.
+
+    bool rel_to_Q = (E->toExplicit3D() == Q->toExplicit3D());
+
+    // Binary search
+    // When LNC 'L' belong to RP 'eta' is constant and 'xi' is out from the 
+    // not-acute region. When 'L' belong to RQ the role of 'xi' and 'eta' are
+    // excanged.
+    double in_param;
+    double out_param = xi_out, fix_param = eta_out;
+    if(rel_to_Q) std::swap(out_param, fix_param);
+
+    // Compute a suitable initial value for 'in_param'
+    vec3d_bf BL = vec3d_bf(B_out) - vec3d_bf(L);
+    vec3d_bf EL = vec3d_bf(E) - vec3d_bf(L);
+    bigfloat delta = BL * EL;
+    if(delta.sgn() > 0.0){
+        bigfloat a_sq, b_sq, c_sq, a, b, c, p;
+        vec3d_bf PR = vec3d_bf(P) - vec3d_bf(R);
+        vec3d_bf QR = vec3d_bf(Q) - vec3d_bf(R);
+        vec3d_bf PQ = vec3d_bf(P) - vec3d_bf(Q);
+        a_sq = vec3d_bf(P).dist_sq(Q);
+        b_sq = vec3d_bf(R).dist_sq(P);
+        c_sq = vec3d_bf(R).dist_sq(Q);
+        bigrational num, den;
+        bigfloat det = b_sq + c_sq - a_sq;
+        num = 4.0 * b_sq * c_sq - det * det;
+        a = a_sq.sqrt(256);
+        b = b_sq.sqrt(256);
+        c = c_sq.sqrt(256);
+        p = a + b + c;
+        a = p - 2.0 * a; // becomes p - 2*a, to compute area via Erone's formula
+        b = p - 2.0 * b;
+        c = p - 2.0 * c;
+
+        (rel_to_Q) ? den = b_sq : den = c_sq;
+        den = den * p * a * b * c;
+
+        in_param = (2.0*delta * (num/den).get_bigfloat(256).sqrt(256)).get_d();
+        in_param = out_param - in_param;
+    }
+     
+    if(in_param <= 0.0 || in_param >= out_param) 
+        in_param = std::nextafter(0.0, DBL_MAX);
+    
+    double xi_in = in_param, eta_in = fix_param;
+    if(rel_to_Q) std::swap(xi_in, eta_in);
+    pointType* B_in = new implicitPoint3D_BPT(*P,*Q,*R,xi_in,eta_in);
+    if(isAcuteAngle(B_in,L,E)){
+        in_param = std::nextafter(0.0, DBL_MAX);
+        xi_in = in_param, eta_in = fix_param;
+        if(rel_to_Q) std::swap(xi_in, eta_in);
+        delete B_in;
+        B_in = new implicitPoint3D_BPT(*P,*Q,*R,xi_in,eta_in);
+    }
+    
+    if(isAcuteAngle(B_in,L,E)){ 
+        // the acute angle cannot be corrected
+        std::cout << "WARNING: there is no enought 'floating-point' numbers to "
+                     "have a non-acute angle at this BPT-LNC segment.\n";
+        delete B_out;
+        delete B_in;
+        xi = xi_0;
+        eta = eta_0;
+        return false; 
+    }
+    
+    // Binary search start
+    bool success = false;
+    size_t count_it = 0;
+    double mid_param, xi_mid, eta_mid;
+    while(true) {
+        count_it++;
+        // double angle = getAngle_accurate(L,E,B_in); // DEBUG
+        // printf("\r%u bin serach step, (%f angle) ..                ", count_it, angle); fflush(stdout); // DEBUG
+        
+        assert(isAcuteAngle(B_out,L,E));
+        assert(!isAcuteAngle(B_in,L,E));
+
+        mid_param = (out_param - in_param) * 0.5 + in_param;
+        xi_mid = mid_param;
+        eta_mid = fix_param;
+        if(rel_to_Q) std::swap(xi_mid, eta_mid);
+        pointType* B_mid = new implicitPoint3D_BPT(*P,*Q,*R, xi_mid,eta_mid);
+
+        if( isAcuteAngle(B_mid,L,E) ){
+            out_param = mid_param;
+            delete B_out;
+            B_out = new implicitPoint3D_BPT(*P,*Q,*R, xi_mid, eta_mid);
+        }
+        else if( isAcuteAngle(B_mid,L,R) ){
+            in_param = mid_param;
+            xi_in = xi_mid;
+            eta_in = eta_mid;
+            delete B_in;
+            B_in = new implicitPoint3D_BPT(*P,*Q,*R, xi_mid,eta_mid);
+        }
+        else {
+            delete B_in;
+            B_in = new implicitPoint3D_BPT(*P,*Q,*R, xi_mid,eta_mid);
+            delete B_mid;
+            break;
+        }
+
+        delete B_mid;
+
+        if(count_it == correct_coeff_max_it) break;
+
+        // If a perturbation on B_in brings it to out of non-acute region, exit
+        double pert_param = std::nextafter(in_param, DBL_MAX);
+        double xi_pert = pert_param, eta_pert = fix_param;
+        if(rel_to_Q) std::swap(xi_pert, eta_pert);
+        pointType* B_pert = new implicitPoint3D_BPT(*P,*Q,*R, xi_pert,eta_pert);
+        if( isAcuteAngle(B_pert,L,E) ){
+            delete B_pert;
+            break;
+        }
+        delete B_pert;
+
+    }
+    // printf("\n"); // DEBUG
+
+    assert(isAcuteAngle(B_out,L,E));
+    assert(!isAcuteAngle(B_in,L,E));
+    
+    get_baricentric_coords(xi, eta, B_in);
+    delete B_out;
+    delete B_in;
+    return true;
+}
+
+bool correct_coeff(double& xi, double& eta,
+                   const pointType* P, const pointType* Q, const pointType* R,
+                    const pointType* L) {
+    
+    const pointType* E = (L->toLNC().P().toExplicit3D() == R->toExplicit3D()) ?
+                                    &L->toLNC().Q() : &L->toLNC().P();
     assert( P->isExplicit3D() );
     assert( Q->isExplicit3D() );
     assert( R->isExplicit3D() );
@@ -475,38 +675,76 @@ bool correct_coeff(double& xi, double& eta,
     assert( L->toLNC().P().toExplicit3D() == E->toExplicit3D() || 
             L->toLNC().Q().toExplicit3D() == E->toExplicit3D()      );
 
+    double xi_init = xi, eta_init = eta;
+
     // vector3d B = P * xi + Q * eta + R * (1 - (xi+eta));
     pointType* B = new implicitPoint3D_BPT(*P,*Q,*R,xi,eta);
 
+    bool rel_to_P = (E->toExplicit3D() == P->toExplicit3D());
+
     bool success = true;
-    bigfloat k = eta/xi;
-    // Removed angle R-L-B must be acute so that its supplementar angle
-    // (internal to chamfered face) will result non-acute.
+    bigrational xi_br = xi, eta_br = eta;
+    bigrational k;
+    bool decrease_xi = ( xi_br > eta_br );
+    if(decrease_xi) k = eta_br / xi_br;
+    else k = xi_br / eta_br;
+    
+    size_t count_it = 0;
     while( isAcuteAngle(E,L,B) ) {
 
+        count_it++;
+        // double angle = getAngle(L,E,B); // DEBUG
+        // printf("\r%u moves, (%f angle) ..                ", count_it, angle); fflush(stdout); // DEBUG
+        
         assert(isAcuteAngle(B,L,E));
         assert(!isAcuteAngle(B,L,R));
         assert(!isAcuteAngle(R,L,B));
-        
-        // try a perturbation reducing t0 or t1 while they remain positive
-        xi = std::nextafter(xi, -DBL_MAX);
-        if(xi <= 0) { success=false; break; }
-        eta = (xi * k).get_d();
-        if(eta <= 0) { success=false; break; }
+
+        if(decrease_xi){
+            xi = std::nextafter(xi, -DBL_MAX);
+            if(xi <= 0) { success=false; break; }
+            xi_br = xi;
+            eta = (k * xi_br).get_d();
+            if(eta <= 0) { success=false; break; }
+        }
+        else{
+            eta =  std::nextafter(eta, -DBL_MAX);
+            if(eta <= 0) { success=false; break; }
+            eta_br = eta;
+            xi = (k * eta_br).get_d();
+            if(xi <= 0) { success=false; break; }
+        }
 
         delete B;
         B = new implicitPoint3D_BPT(*P,*Q,*R,xi, eta);
+
+        if(count_it == correct_coeff_max_it) break;
+    }
+    // printf("\n"); // DEBUG
+
+    if(count_it == correct_coeff_max_it) {
+        // std::cout << "WARNING: not corrected after " << correct_coeff_max_it 
+        //           << " iterations.. (try variant)\n";
+        xi = xi_init;
+        eta = eta_init;
+        correct_coeff_var(xi, eta, P,Q,R,L);
+        delete B;
+        B = new implicitPoint3D_BPT(*P,*Q,*R,xi, eta);
+    }
+    else{
+        assert(!success || isAcuteAngle(B,L,R) || 
+                pointType::dotProductSign3D(*B, *R, *L) == 0);
+        assert(!success || isAcuteAngle(R,L,B) || 
+                pointType::dotProductSign3D(*R, *B, *L) == 0);
     }
 
+    // assert(check_notAcuteAngle(B,L,E));
     assert(!isAcuteAngle(B,L,E));
-    assert(!success || isAcuteAngle(B,L,R) || 
-            pointType::dotProductSign3D(*B, *R, *L) == 0);
-    assert(!success || isAcuteAngle(R,L,B) || 
-            pointType::dotProductSign3D(*R, *B, *L) == 0);
-
+    
     delete B;
     return success;
 }
+
 // interface for above function
 bool correct_coeff(double& xi, double& eta, 
                     double t0, double t1,
@@ -519,96 +757,169 @@ bool correct_coeff(double& xi, double& eta,
     const pointType* L = relative_to_Q ? 
             new implicitPoint3D_LNC(R->toExplicit3D(), Q->toExplicit3D(), t1) :
             new implicitPoint3D_LNC(R->toExplicit3D(), P->toExplicit3D(), t0);
-    const pointType* E = relative_to_Q ? 
-                            new explicitPoint3D(OQ.c[0],OQ.c[1],OQ.c[2]) :
-                            new explicitPoint3D(OP.c[0],OP.c[1],OP.c[2]);
-    return correct_coeff(xi,eta, P,Q,R, L,E);
+    return correct_coeff(xi,eta, P,Q,R, L);
+}
+
+bool get_bpt_coeff_precise(double& xi0, double& eta0, double& xi1, double& eta1, 
+                   const vector3d& Ov, const vector3d& Ou0, const vector3d& Ou1, 
+                   double t0, double t1){
+
+    uint32_t n_bit = 256;
+
+    vec3d_bf Ov_bf = vec3d_bf(Ov.c[0], Ov.c[1], Ov.c[2]);
+    vec3d_bf Ou0_bf = vec3d_bf(Ou0.c[0], Ou0.c[1], Ou0.c[2]);
+    vec3d_bf Ou1_bf = vec3d_bf(Ou1.c[0], Ou1.c[1], Ou1.c[2]);
+    
+    bigfloat a_sq = Ou0_bf.dist_sq( Ou1_bf );
+    bigfloat b_sq = Ou1_bf.dist_sq( Ov_bf );
+    bigfloat c_sq = Ov_bf.dist_sq( Ou0_bf );
+
+    bigfloat bc = (b_sq * c_sq).sqrt(n_bit);
+    bigfloat sqrt_bc = (bc).sqrt(n_bit);
+
+    bigfloat delta = b_sq + c_sq - a_sq + 2.0 * bc;
+
+    if( bc.sgn() <= 0.0 ) std::cout<<"ERROR: accurate b * c <= 0\n";
+    if( delta.sgn() <= 0.0 ) std::cout<<"ERROR: accurate delta <= 0\n";
+
+    bigfloat psi = delta.sqrt(n_bit);
+
+    if( psi.sgn() <= 0.0 ) std::cout<<"ERROR: accurate psi <= 0\n"; 
+
+    psi = psi + sqrt_bc;
+
+    bigrational den = delta + psi;
+    bigrational num1 = 2.0 * bc;
+    bigrational num2 = num1 + psi;
+
+    bigrational term1 = num1 / den;
+    bigrational term2 = num2 / den;
+
+    // approx to double
+    xi0 = (t0 * term2).get_d();
+    eta0 = (t1 * term1).get_d();
+    xi1 = (t0 * term1).get_d();
+    eta1 = (t1 * term2).get_d();
+
+    if(!correct_coeff(xi0, eta0, t0, t1, Ou0, Ou1, Ov, 0)) return false;
+    if(!correct_coeff(xi1, eta1, t0, t1, Ou0, Ou1, Ov, 1)) return false;
+
+    return true;
 }
 
 bool PLCc::get_bpt_coeff(double& xi0, double& eta0, double& xi1, double& eta1, 
                    const vector3d& Ov, const vector3d& Ou0, const vector3d& Ou1, 
                    double t0, double t1, const double zero_toll){
 
-    double ang = getAngle(new explicitPoint3D(Ov.c[0],Ov.c[1],Ov.c[2]),
-            new explicitPoint3D(Ou0.c[0],Ou0.c[1],Ou0.c[2]) ,
-            new explicitPoint3D(Ou1.c[0],Ou1.c[1],Ou1.c[2]) );
+    bool need_precision = false;
 
-    double cos_alpha = cosOfAngle_at(Ov, Ou0, Ou1); // cos at v
+    assert(t0 < 0.3334 && t1 < 0.3334);
 
-    double one_plus_cos_alpha = 1+cos_alpha;
-    double one_min_cos_alpha = 1-cos_alpha;
-
-    if(abs( one_plus_cos_alpha ) < zero_toll ||
-       abs( one_min_cos_alpha ) < zero_toll    ){ 
-        std::cout<<"WARNING: [get_bpt_coeff] "
-                   "internal parameters below zero_toll.\n";
-    }
-
-    // Baricentric coordinates of BPTs depend on 3 different parameters:
-    // - the angle at V through its cosine "cos_alpha", 
-    // - the chamfering distance "d" = dist(V, LNC_i)
-    // - a free parameter "k" (which is determined by the equal length request).
-    // To have <LNC_0,BPT_0>, <BPT_0,BPT_1>, <BPT_1,LNC_1> of equal length,
-    // the following relation between "k" and "d" must hold:
-    // k = (d * sqrt(2) * sqrt(1 - cos_alpha))  /  
-    //     (1 + sqrt(2) * sqrt(1 + cos_alpha)).
-
-    // To short notation we use 2 derived parameter "teta" and "psi" instead of
-    // "cos_aplta" and "d".
-
-    double teta = 1.0 / one_plus_cos_alpha;
-    double psi, psi_max;
-    
-    // Being psi = (k / d) * sqrt( (1 + cos_alpha) / (1 - cos_alpha ) )
-    // and substituting the value of "k" that gives equal length:
-    psi = 1.0  /  ( 1.0 + 1.0 / sqrt(one_plus_cos_alpha * 2.0) );
-
-    // Geometrically, "k" represents the distance between BPT_i and LNC_i,
-    // which cannot be greater that "d" itself, otherwise BPTs may be 
-    // placed outside non-acute triangles.
-    // When "k" = "d" we get the maximum distance that cannot be exceded.
-    psi_max = sqrt( one_plus_cos_alpha / one_min_cos_alpha ); 
-    // BTPs have to stay at most at distance d from triangle side, when 
-    // psi is forced to psi_max bridge-edges have no more same length:
-    // as uinque consequence shorter edges are generated.
-    if(psi > psi_max) psi = psi_max; 
-    
-    // In case of non-acute angles at V, BPTs may stay outside triangle or
-    // too close to triangle side opposite to V.
-    // if teta * (t0+t1) < 1.0 THEN BTPs SHURELY stay inside the triangle.
-    double psi_lim = -1.0;
-    if( teta * (t0+t1) >= 1.0 ){ 
+    while(true) {
+        // cos at v
+        double a_sq = Ou0.dist_sq( Ou1 );
+        double b_sq = Ov.dist_sq( Ou0 );
+        double c_sq = Ou1.dist_sq( Ov );
         
-        assert(cos_alpha <= 0); // This happens for non-acute angles at V
+        double a = sqrt(a_sq);
+        double b = sqrt(b_sq);
+        double c = sqrt(c_sq);
 
-        // BPTs may not stay inside triangle <Ov,Ou0,Ou1>
-        double psi_lim_0 = (1.0-t0) / ( (teta-1.0)*t0 + teta*t1 );
-        double psi_lim_1 = (1.0-t1) / ( (teta-1.0)*t1 + teta*t0 );
-        // The value of psi_lim_0 correspond to a point aligned with LNC_0 and
-        // BPT_0 on the triangle side opposite to V. Similarly for psi_lim_1.
-        psi_lim = min(psi_lim_0, psi_lim_1) / 3;
-        if( psi > psi_lim )psi = psi_lim;
+        double p = a + b + c;
+        double p_2a = p - a * 2.0; // b + c - a
+        double p_2b = p - b * 2.0; // c + a - b
+        double p_2c = p - c * 2.0; // a + b - c
+        double bc = b*c;
+
+        if(p_2a <= 0.0 || p_2b <= 0.0 || p_2c <= 0.0){ 
+            need_precision = true;
+            std::cout<<"need precision tri ineq"<<endl; // DEBUG
+            break;
+        }
+
+        // cosine law: a*a = b*b + c*c - 2*b*c * cos_alpha
+        // cos_alpha =  ( p * p_2a / (2 * bc) ) - 1;
+        //double one_plus_cos_alpha = p * p_2a / (2.0 * bc);
+        //double one_min_cos_alpha = 2.0 - one_plus_cos_alpha;
+
+        // Baricentric coordinates of BPTs depend on 3 different parameters:
+        // - the angle at V through its cosine "cos_alpha", 
+        // - the chamfering distance "d" = dist(V, LNC_i)
+        // - a free parameter "k" (which is determined by the equal length request).
+        // To have <LNC_0,BPT_0>, <BPT_0,BPT_1>, <BPT_1,LNC_1> of equal length,
+        // the following relation between "k" and "d" must hold:
+        // k = (d * sqrt(2) * sqrt(1 - cos_alpha))  /  
+        //     (1 + sqrt(2) * sqrt(1 + cos_alpha)).
+
+        // To short notation we use 2 derived parameter "teta" and "psi" instead of
+        // "cos_alpha" and "d".
+
+        // teta = 1 / (1 + cos_alpha) = b*c / ((a+b+c)*(b+c-a))
+        double teta_num = 2.0 * bc;
+        double teta_den = p * p_2a;
+
+        // teta in (0,1] means that angle alpha is in (0, pi/2],
+        // teta > 1 means that angle alpha is in (pi/2, pi).
+
+        if(teta_num <= 0.0 || teta_den <= 0.0) {
+            need_precision = true;
+            std::cout<<"need precision teta"<<endl; // DEBUG
+            break;
+        }
+        
+        // Being psi = (k / d) * sqrt( (1 + cos_alpha) / (1 - cos_alpha ) )
+        // and substituting the value of "k" that gives equal length:
+        // psi = 1.0  /  ( 1.0 + 1.0 / sqrt(one_plus_cos_alpha * 2.0) );
+        // being 1 + cos_alpha = (b+c-a)*(a+b+c)/(b*c)
+        // psi = sqrt((b+c-a)*(a+b+c)) / ( sqrt((b+c-a)*(a+b+c)) + sqrt(b*c) )
+        double psi_num = sqrt(teta_den);
+        double psi_den = psi_num + sqrt(bc);
+        double psi = psi_num / psi_den;
+
+        if (psi_num <= 0.0 || psi_num >= psi_den) {
+            need_precision = true;
+            std::cout<<"need precision psi"<<endl; // DEBUG
+            break;
+        }
+        
+        // psi_teta = psi * teta;
+        // term = 1.0 + psi * (teta - 1.0);
+
+        double psiteta_num = psi_num * teta_num;
+        double psiteta_den = psi_den * teta_den;
+
+        double term_num = psiteta_den + psiteta_num - psi_num * teta_den;
+        // term_den = psiteta_den;
+
+        double psi_teta = psiteta_num / psiteta_den;
+        double term = term_num / psiteta_den;
+
+        xi0 = t0 * term;
+        eta0 = t1 * psi_teta;
+        xi1 = t0 * psi_teta;
+        eta1 = t1 * term;
+
+        if(!is_BPT_representable(xi0, eta0) || !is_BPT_representable(xi1, eta1)){
+            need_precision = true;
+            std::cout<<"need precision coeff"<<endl; // DEBUG
+        }
+
+        break;
     }
-    
-    double psi_teta = psi * teta;
-    double term = 1.0 + psi * (teta - 1.0);
 
-    xi0 = t0 * term;
-    eta0 = t1 * psi_teta;
-    xi1 = t0 * psi_teta;
-    eta1 = t1 * term;
+    if( need_precision ||
+        !correct_coeff(xi0, eta0, t0, t1, Ou0, Ou1, Ov, 0) ||
+        !correct_coeff(xi1, eta1, t0, t1, Ou0, Ou1, Ov, 1)   ) {
 
-    if(!correct_coeff(xi0, eta0, t0, t1, Ou0, Ou1, Ov, 0)) {
-        report_error_and_exit("cannot get non-acute angle at LNC\n");
-    }
-    if(!correct_coeff(xi1, eta1, t0, t1, Ou0, Ou1, Ov, 1)) {
-        report_error_and_exit("cannot get non-acute angle at LNC\n");
+        if(!need_precision) std::cout<<"need prcision: cannot correct"<<endl; // DEBUG
+
+        if(!get_bpt_coeff_precise(xi0, eta0, xi1, eta1, Ov, Ou0, Ou1, t0, t1))
+            report_error_and_exit("cannot get non-acute angle at LNC\n");
     }
 
     // DEBUG
     if( !is_BPT_representable(xi0, eta0) || !is_BPT_representable(xi1, eta1) ){
-        return disp_non_representable_bpt_info( xi0, eta0, xi1, eta1, t0, t1,
-                                                cos_alpha, teta, psi, psi_lim );
+        return false;
     }
 
     assert(is_BPT_representable(xi0, eta0) && is_BPT_representable(xi1, eta1));
@@ -641,9 +952,9 @@ uint32_t PLCc::new_vrts_in_inputTri(const uint32_t fi, const uint32_t vi,
     const explicitPoint3D& pu1 = vertices[ou1]->toExplicit3D();
 
     double t0 = vertices[u0]->toLNC().T();
-    if(vertices[u0]->toLNC().Q().toExplicit3D() == pv) t0 = 1-t0;
+    if(vertices[u0]->toLNC().Q().toExplicit3D() == pv) t0 = std::nextafter(1.0 - t0, -DBL_MAX);
     double t1 = vertices[u1]->toLNC().T();
-    if(vertices[u1]->toLNC().Q().toExplicit3D() == pv) t1 = 1-t1;
+    if(vertices[u1]->toLNC().Q().toExplicit3D() == pv) t1 = std::nextafter(1.0 - t1, -DBL_MAX);
 
     if(!get_bpt_coeff(xi0,eta0,xi1,eta1, Ov,Ou0,Ou1,t0,t1)) return INVALID_BPT;
 
@@ -734,12 +1045,12 @@ void PLCc::chamfering_vrts(){
 
 // safe chamfering
 implicitPoint3D_BPT* move_BPT_toward_LNC(
-                                pointType* bpt, pointType* lnc, double min_d){
+                const pointType* bpt, const pointType* lnc_in, double min_d){
     
-    assert(bpt->isBPT() && lnc->isLNC());
+    assert(bpt->isBPT() && lnc_in->isLNC());
 
     const implicitPoint3D_BPT* BPT = &(bpt->toBPT());
-    const implicitPoint3D_LNC* LNC = &(lnc->toLNC());
+    const implicitPoint3D_LNC* LNC = &(lnc_in->toLNC());
 
     const explicitPoint3D* P = &(BPT->P().toExplicit3D());
     const explicitPoint3D* Q = &(BPT->Q().toExplicit3D());
@@ -751,49 +1062,57 @@ implicitPoint3D_BPT* move_BPT_toward_LNC(
     const explicitPoint3D* A = &(LNC->P().toExplicit3D());
     const explicitPoint3D* B = &(LNC->Q().toExplicit3D());
     double t = LNC->T();
-    // LNC = t * A + (1 - t) * B
+    // LNC = (1 - t) * A + t * B
 
     // By construction 'R' must be shared by both LNC and BPT, while
     // the other explicit point of the LNC must be equal to 'P' or 'Q'
     assert(*A == *R || *B == *R);
-    assert(*A == *P || *A == *Q || *B == *P || *B == *Q);
-
-    // To simplify the algoith we assume that when 't' = 1 we get the explicit
-    // point of LNC corresponding to 'R', i.e. 'A' = 'R'. 
-    // If this is not the case just reverse 't'.
-    if(*B == *R) t = 1.0 - t;
+    assert( ( *A == *R && (*B == *P || *B == *Q) ) || 
+            ( *B == *R && (*A == *P || *A == *Q) )      );
 
     // Since one LNC explicit points is 'R' there are only two possibilities:
     // 1) the other LNC explicit point is 'P',
     // 2) the other LNC explicit point is 'Q'
     bool common_is_P = (*A == *P || *B == *P);
 
-    assert(!isAcuteAngle((*A==*P) ? A : B, lnc, bpt));
+    // To simplify the algoith we assume that when 't' = 0 we get the explicit
+    // point of LNC corresponding to 'R', i.e. 'A' = 'R'. 
+    // If this is not the case just reverse 't'.
+    if(*B == *R) t = std::nextafter(1.0 - t, -DBL_MAX);
+
+    assert(t < 0.5);
+
+    // 'lnc' is an equivalent representation of 'lnc_in' with t < 0.5, 
+    // and traveled from 'R' to 'P' (or 'Q') as 't' goes from 0 to 1.
+    const pointType* lnc = 
+                        new implicitPoint3D_LNC(*R, common_is_P ? *P : *Q, t);
+    
+    assert( check_notAcuteAngle(&lnc->toLNC().Q(), lnc, bpt) );
 
     vector3d OP(P), OQ(Q), OR(R);
     double distsq_PR = OP.dist_sq(OR);
     double distsq_QR = OQ.dist_sq(OR);
     double dotprod_PR_QR = (OP-OR).dot(OQ-OR);
 
-    double a = old_xi, b = t - old_eta; // when common is Q
-    if(common_is_P){ a = t - old_xi;  b = old_eta; }
+    double a = old_xi, b = old_eta - t; // when common is Q
+    if(common_is_P){ a = old_xi - t;  b = old_eta; }
 
-    double k = a*a * distsq_PR + b*b * distsq_QR - 2*a*b * dotprod_PR_QR;
+    double k = a*a * distsq_PR + b*b * distsq_QR + 2*a*b * dotprod_PR_QR;
     k = sqrt( abs(k) ); // avoid rounding errors when close to 0
 
     double c = min_d / k;
-    double eta = t - c * b, xi = c * a; // when common is Q
-    if(common_is_P){ xi = t - c * a;  eta = c * b; }
+    double xi = c * a, eta = t + c * b; // when common is Q
+    if(common_is_P){ xi = t + c * a;  eta = c * b; }
 
-    if(!correct_coeff(xi, eta, P, Q, R, lnc, common_is_P ? P : Q)) {
-        std::cout<<"[cham.cpp - move_BPT_toward_LNC()] "
-                 <<"cannot get non-acute angle at LNC\n";
-        exit(1);
-    }
+    correct_coeff(xi, eta, P, Q, R, lnc);
 
     assert( is_BPT_representable(xi, eta) );
 
-    return new implicitPoint3D_BPT(*P, *Q, *R, xi, eta);
+    pointType* new_bpt = new implicitPoint3D_BPT(*P, *Q, *R, xi, eta);
+
+    assert( check_notAcuteAngle(&lnc->toLNC().Q(), lnc, new_bpt) );
+
+    return &new_bpt->toBPT();
 }
 
 // If the face has at least an acute edge, all the face edges connecting 
@@ -832,15 +1151,13 @@ void PLCc::normalize_face(uint32_t fi){
     assert( check_face(fi, true) );
 }
 
-//
-void PLCc::chamfering_face(uint32_t fi){
-
+void PLCc::add_SteinerPts_onFace(uint32_t fi) {
+   
     #ifdef PLCC_VERBOSE_DEBUG
     std::cout<<"\nchamfering "; print_face_edges(fi);
     #endif
 
-    // Part 1:
-    // each couple of edges incident at an acute vertex will be replaced by 3
+    // Each couple of edges incident at an acute vertex will be replaced by 3
     // new edges, i.e. the size of bounding_edges have to be rised by the
     // number of acute vertices on face boundary.
 
@@ -937,14 +1254,9 @@ void PLCc::chamfering_face(uint32_t fi){
     // introducing new acute angles is performed. 
     if(safe_mode && has_acute_edge(fi)) normalize_face(fi);
 
-    // Part 2:
-    // each acute edge will be removed the face by creating a new edge on each
-    // incident face connecting two appropriate bridge points.
+}
 
-    #ifdef PLCC_VERBOSE_DEBUG
-    std::cout<<"\nChamfer acute edges\n\n";
-    #endif
-
+void PLCc::update_lfs_before_edge_chamfering() {
     // Compute the distance between BPT facing the same acute edge to 
     // estimate the size of the "hole" created by removing the acute edge.
     // This will contribute to determinate the LFS of the chamfered PLC.
@@ -969,6 +1281,18 @@ void PLCc::chamfering_face(uint32_t fi){
         
         lfs = min(lfs, sqrt(min_dist_sq));
     }
+}
+
+void PLCc::chamfering_face(uint32_t fi){
+
+    #ifdef PLCC_VERBOSE_DEBUG
+    std::cout<<"\nChamfer acute edges\n\n";
+    #endif
+
+    std::vector<uint32_t>& fbnd = faces[fi].bounding_edges;
+
+    // Each acute edge will be removed from the face by creating a new edge on
+    // each incident face connecting two appropriate bridge points.
 
     // Edge chamfering
     for(size_t i=0; i < fbnd.size(); i++ ) if( fbnd[i] != EMPTY_PLACE ){
@@ -979,40 +1303,42 @@ void PLCc::chamfering_face(uint32_t fi){
         std::cout<<"\ncurr "; print_edge(ei);
         #endif
 
-        if( edges[ei].isAcute() ){
+        if( !edges[ei].isAcute() ) continue;
 
-            assert( !edges[ei].isFlat() );
+        #ifdef PLCC_VERBOSE_DEBUG
+        std::cout<<"is acute edge\n";
+        #endif
 
-            #ifdef PLCC_VERBOSE_DEBUG
-            std::cout<<"is acute\n";
-            #endif
+        assert( !edges[ei].isFlat() );
+
+        #ifdef PLCC_VERBOSE_DEBUG
+        std::cout<<"is acute\n";
+        #endif
             
-            const CHAMface& f = faces[fi];
-            size_t ni = i, pi = i;
-            f.advance_on_pierced_bnd(ni);
-            f.reverse_on_pierced_bnd(pi);
-            uint32_t vn = edges[ fbnd[ni] ].notCommonVertex( edges[ei] );
-            uint32_t vp = edges[ fbnd[pi] ].notCommonVertex( edges[ei] );
+        const CHAMface& f = faces[fi];
+        size_t ni = i, pi = i;
+        f.advance_on_pierced_bnd(ni);
+        f.reverse_on_pierced_bnd(pi);
+        uint32_t vn = edges[ fbnd[ni] ].notCommonVertex( edges[ei] );
+        uint32_t vp = edges[ fbnd[pi] ].notCommonVertex( edges[ei] );
 
-            edges.push_back( CHAMedge( vn, vp, fi) );
-            mark_edges.push_back(0);
+        edges.push_back( CHAMedge( vn, vp, fi) );
+        mark_edges.push_back(0);
 
-            edges[ fbnd[ni] ].inc_face.clear(); // incident only at 'fi'
-            edges[ fbnd[pi] ].inc_face.clear(); // incident only at 'fi'
-            edges[ ei ].removeIncidentFace(fi);
-            faces[fi].bounding_edges[i] = (uint32_t) edges.size()-1;
-            faces[fi].bounding_edges[ni] = EMPTY_PLACE;
-            faces[fi].bounding_edges[pi] = EMPTY_PLACE;
+        edges[ fbnd[ni] ].inc_face.clear(); // incident only at 'fi'
+        edges[ fbnd[pi] ].inc_face.clear(); // incident only at 'fi'
+        edges[ ei ].removeIncidentFace(fi);
+        faces[fi].bounding_edges[i] = (uint32_t) edges.size()-1;
+        faces[fi].bounding_edges[ni] = EMPTY_PLACE;
+        faces[fi].bounding_edges[pi] = EMPTY_PLACE;
 
-            #ifdef PLCC_VERBOSE_DEBUG
-            std::cout<<"\nupdated face bnd "; print_face_edges(fi);
-            #endif
+        #ifdef PLCC_VERBOSE_DEBUG
+        std::cout<<"\nupdated face bnd "; print_face_edges(fi);
+        #endif
 
-            assert( check_face(fi, true) );
+        assert( check_face(fi, true) );
 
-            i = ni;
-        }
-
+        i = ni;
     }
 
     faces[fi].remove_empty_places();
@@ -1023,6 +1349,7 @@ void PLCc::chamfering_face(uint32_t fi){
 
     assert( check_face(fi, true) );
 }
+
 
 // --------------- //
 // CHAMFERING MAIN //
@@ -1036,9 +1363,17 @@ void PLCc::chamfering(){
 
     if(verbose) std::cout<<"Vertex chamfering COMPLETED\n";
 
-    assert( checkEdges_beforeJunkDeletion() );
+    for(uint32_t fi=0; fi<faces.size(); fi++) add_SteinerPts_onFace(fi);
+
+    if(verbose) std::cout<<"BPT placing COMPLETED\n";
+
+    update_lfs_before_edge_chamfering();
+    
+    if(verbose) std::cout<<"lfs update COMPLETED\n";
 
     for(uint32_t fi=0; fi<faces.size(); fi++) chamfering_face(fi);
+
+    if(verbose) std::cout<<"Acute edges chamfering COMPLETED\n";
 
     // Delete junk edges (and all isoleted edges) from edges vector
     for(CHAMedge& e : edges) if( e.isJunk() ){ e.inc_face.clear(); }
@@ -1523,3 +1858,155 @@ void PLCc::get_complementar_tri(const std::vector<uint32_t>& out_tri, std::vecto
         }
     }
 }
+
+// --------------- //
+//  CHECK & DEBUG  //
+// --------------- //
+
+bool PLCc::check_bridge(uint32_t v0, 
+                    uint32_t v1, uint32_t v2, uint32_t v3, uint32_t v4) const {
+    bool error = false;
+    const uint32_t v[] = {v0, v1, v2, v3, v4};
+    const pointType* po = vertices[v0];
+    const pointType* p1 = vertices[v1];
+    const pointType* p2 = vertices[v2];
+    const pointType* p3 = vertices[v3];
+    const pointType* p4 = vertices[v4];
+    const bool v_match_type[] = { po->isExplicit3D(), p1->isLNC(),
+                                        p2->isBPT(), p3->isBPT(), p4->isLNC() };
+    const string type_str[] = {"EXPLICIT3D", "LNC", "BPT", "BPT", "LNC"};
+    for(int i = 0; i < 5; i++) if( !v_match_type[i] ) {
+        std::cout << "v" << i << " is not an " << type_str[i] << "\n"; 
+        print_vertex_info(v[i]); std::cout<<"\n";
+        error = true;
+    }
+        
+    if(!error){
+        const explicitPoint3D& expo = po->toExplicit3D();
+        const pointType* p0 = (p1->toLNC().P().toExplicit3D() == expo) ? 
+                                    &p1->toLNC().Q() : &p1->toLNC().P();
+        const pointType* p5 = (p4->toLNC().P().toExplicit3D() == expo) ? 
+                                    &p4->toLNC().Q() : &p4->toLNC().P();
+        const pointType* p[] = {p0, p1, p2, p3, p4, p5};
+        for(int i = 1; i < 5; i++) 
+            if(!check_notAcuteAngle(p[i-1], p[i], p[i+1])) {
+                double ampl = getAngle_accurate(v[i], v[i-1], v[i+1]);
+                std::cout<<"acute angle (" << ampl << ") at v["<<i<<"] = " 
+                         << v[i] <<"\n"; 
+                error = true;
+            }
+
+        if(!error){
+            if( pointType::innerSegmentsCross(*po, *p0, *p2, *p3) ||
+                pointType::innerSegmentsCross(*po, *p0, *p3, *p4) ||
+                pointType::innerSegmentsCross(*p1, *p2, *p3, *p4) ||
+                pointType::innerSegmentsCross(*po, *p5, *p1, *p2) ||
+                pointType::innerSegmentsCross(*po, *p5, *p2, *p3)   ) {
+                error = true;
+                std::cout<< "edge bridges overlap\n";
+            }
+        }
+    }
+        
+    if(error) std::cout<<"[cham.cpp - check_bridge()] ERROR detected\n";
+    return !error;
+}
+
+bool PLCc::check_acuteness() const {
+
+    bool error = false;
+    const std::vector<pointType*>& v = vertices;
+
+    // Check that each couple of faces incident at an edges do not form 
+    // an acute dihedral angle
+    for(uint32_t ei=0; ei<edges.size(); ei++){
+        const CHAMedge& e = edges[ei];
+
+        if(e.inc_face.size() == 1) continue;
+        if(e.inc_face.size() > 4) std::cout<<"edges["<<ei<<"] is acute: it has "
+                                    << e.inc_face.size() <<" incident faces.\n";
+
+        uint32_t ui, uj;
+        const pointType* p0 = vertices[ e.oep[0] ];
+        const pointType* p1 = vertices[ e.oep[1] ];
+        assert(p0->isExplicit3D() && p1->isExplicit3D());
+        const CHAMedge orig_e(e.oep[0], e.oep[1], UINT32_MAX);
+        std::vector<uint32_t> in_tri;
+        for(uint32_t fi : e.inc_face) in_tri.push_back(faces[fi].triangle);
+        for(size_t i = 0; i < in_tri.size()-1; i++)
+            for(size_t j = i+1; j < in_tri.size(); j++) {
+                ui = inTri_opp_vrt(orig_e, in_tri[i]);
+                uj = inTri_opp_vrt(orig_e, in_tri[j]);
+                if( isAcuteDihedral_exact(p0, p1, v[ui], v[uj]) ){
+                    std::cout<<"edges["<<ei<<"] is acute.\n";
+                    error = true;
+                    // saveTriangle(ui,e.oep[0],o.oep[1], "acute_tri1.off");
+                    // saveTriangle(uj,e.oep[0],o.oep[1], "acute_tri2.off");
+                    // return false;
+                }
+            }
+    }
+
+    // Check that each face has not acute angles at any two consecutive sides.
+    for(uint32_t fi=0; fi<faces.size(); fi++){
+        const CHAMface& f = faces[fi];
+        const std::vector<uint32_t>& fbnd = f.bounding_edges;
+        size_t it = 0;
+        while(it < fbnd.size()){
+            size_t nit = it; f.advance_on_bnd(nit);
+            uint32_t vc, vl, vr;
+            const CHAMedge& e1 = edges[ f.bounding_edges[it] ];
+            const CHAMedge& e2 = edges[ f.bounding_edges[nit] ];
+            vc = e1.commonVertex(e2);
+            vl = e1.notCommonVertex(e2);
+            vr = e2.notCommonVertex(e1);
+            if( !e1.isFlat() && !e2.isFlat() &&
+                !check_notAcuteAngle( v[vl], v[vc], v[vr]) ) {
+                std::cout<<"edge "<<e1<<" and edge "<<e2<<" form an "
+                             <<"acute angle at face "<<fi<<" boundary.\n"; 
+                // saveFace(f, "acute_face.off");
+                // saveTriangle(vl, vc, vl, "acute_angle.off");
+                // return false;
+                error = true;
+            }
+            ++it;
+        }
+    }
+
+    // Check that there are no acute vertices
+    std::vector< std::vector<uint32_t> > ve_rel(vertices.size());
+    for(size_t i = 0; i < edges.size(); i++) if(!edges[i].isFlat()) {
+        ve_rel[ edges[i].ep[0] ].push_back(i);
+        ve_rel[ edges[i].ep[1] ].push_back(i);
+    }
+    for(uint32_t vk=0; vk<vertices.size(); vk++) if(!ve_rel[vk].empty()) {
+        assert(ve_rel[vk].size() > 1);
+        for(size_t i=0; i<ve_rel[vk].size()-1; i++) {
+            uint32_t ei = ve_rel[vk][i];
+            for(size_t j=i+1; j<ve_rel[vk].size(); j++) {
+                uint32_t ej = ve_rel[vk][j];
+                uint32_t ui = edges[ei].ep[0], uj = edges[ej].ep[0];
+                if(ui == vk) ui = edges[ei].ep[1];
+                if(uj == vk) uj = edges[ej].ep[1];
+                if(!check_notAcuteAngle( v[ui], v[vk], v[uj]) ) {
+                    double ampl = getAngle_accurate(v[vk], v[ui], v[uj]);
+                    std::cout<<"edge "<<ei<<" = "<< edges[ei] << ", and edge "
+                             << ej <<" = " << edges[ej] <<" form an acute "
+                                "angle ("<< ampl <<") at vertex "<<vk<<".\n"; 
+
+                        // UNCOMMENT next 2 lines to save acute angle as .off 
+                        // saveTriangle(ui, vk, uj, "acute_angle.off");
+                        // return false;
+
+                        error = true;
+                    }
+                }
+            }
+        }
+
+        if(error){
+            std::cout<<"[cham.cpp - check_acuteness()] ERROR\n";
+            return false;
+        }
+        return true;
+    }

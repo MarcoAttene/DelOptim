@@ -829,10 +829,43 @@ inline double getAngle(double a, double b, double c) {
 	if (den == 0.0) return 180.0;
 	if (num == 0.0) return 0.0;
 
-	return 180.0 * ((atan(sqrt((num / den))) * 2) / M_PI);
+	return 180.0 * ((atan(sqrt((num / den))) * 2.0) / M_PI);
+}
+
+inline double getAngle_accurate(bigfloat a, bigfloat b, bigfloat c) {
+
+	assert(a.sgn() > 0.0 && b.sgn() > 0.0 && c.sgn() > 0.0 &&
+													"ERROR: negative side\n");
+	assert( ((a-(b+c)).sgn() < 0.0) && ((b-(a+c)).sgn() < 0.0) && 
+			((c-(a+b)).sgn() < 0.0) && "ERROR: triangle inequality violated\n"); 
+
+	if ((a-b).sgn() < 0.0) std::swap(a, b); // must be a > b
+
+	bigfloat mu;
+	if ((c-b).sgn() < 0.0) mu = c - (a - b);
+	else	  			   mu = b - (a - c);
+
+	bigfloat num = ((a - b) + c) * mu;
+	bigfloat den = (a + (b + c)) * ((a - c) + b);
+
+	assert(((den != 0.0) || (num != 0.0)) && 
+				"ERROR: Ivalid angle (NaN, both num and den are 0)\n" );
+
+	if (den == 0.0) return 180.0;
+	if (num == 0.0) return 0.0;
+
+	bigrational num_br = num, den_br = den; 
+	return 180.0 * ((atan((num_br / den_br).get_bigfloat(256).sqrt(256).get_d()) * 2.0) / M_PI);
 }
 
 // Returns the angle at v0 between vectors v1-v0 and v2-v0
+inline double getAngle_accurate(const pointType* v0, const pointType* v1, const pointType* v2) {
+	bigfloat a = ((vec3d_bf(v1) - vec3d_bf(v0)).sq_length()).sqrt(256);
+	bigfloat b = ((vec3d_bf(v2) - vec3d_bf(v0)).sq_length()).sqrt(256);
+	bigfloat c = ((vec3d_bf(v2) - vec3d_bf(v1)).sq_length()).sqrt(256);
+	return getAngle_accurate(a, b, c);
+}
+
 inline double getAngle(const pointType* v0, const pointType* v1, const pointType* v2) {
 	double a = sqrt((vector3d(v1) - vector3d(v0)).sq_length());
 	double b = sqrt((vector3d(v2) - vector3d(v0)).sq_length());
