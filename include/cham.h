@@ -310,14 +310,17 @@ public:
 // Chamfered PLC (removes angles < pi/2, from the input PLC)
 class PLCc{
 private:
+    bool iterative;
     bool verbose;
     bool def_interior;
     bool manifold;
     bool safe_mode;
+    bool simplify_mode;
 
-    const inputPLC& plc; // Input PLC enriched with stainer points + CDT
+    inputPLC& plc; 
 
     double lfs;
+    double lfs_toll;
 
 public:
     const double epsilon;
@@ -348,28 +351,95 @@ public:
     std::vector<uint32_t> mark_edges;
     std::vector<uint32_t> mark_faces;
 
-    PLCc(const inputPLC& _plc, const double _epsilon, 
-         bool _safe, bool simplify, bool _verbose) : plc(_plc), 
+    PLCc(inputPLC& _plc, const double _epsilon, 
+         bool _safe, bool _simplify, bool _verbose) : plc(_plc), 
                                                      epsilon(_epsilon), 
                                                 n_in_vrts(_plc.numVertices()), 
                                                      def_interior(true), 
                                                      manifold(true), 
                                                      safe_mode(_safe), 
+                                                     simplify_mode(_simplify),
                                                      verbose(_verbose),
-                                                     lfs(DBL_MAX) {
+                                                     lfs(DBL_MAX),
+                                                     lfs_toll(DBL_MAX),
+                                                     iterative(false) {
         
         #ifdef PLCC_VERBOSE_DEBUG
         verbose = true;
         #endif
+    };
 
+    void standard_chmfering_pipeline() {
         if(verbose) std::cout<<"\nCHAMFERING:\n";
         initialize(); 
         search_acute_angles();    
         chamfering();
-        if(simplify) chamfered_plc_simplification();
+        if(simplify_mode) chamfered_plc_simplification();
         if(verbose) std::cout<<"chamfering COMPLETED\n";
         assert( check_acuteness() );
-    };
+    }
+
+    void reset_chamfering_DS() {
+        for (pointType* v : vertices) { delete v; v = nullptr; }
+	    vertices.clear();
+        for(size_t i=0; i<input_vt.size(); i++) input_vt[i].clear();
+        input_vt.clear();
+        edges.clear();
+        faces.clear();
+        vrt_ch_dist.clear();
+        ref_exp3D_vrt.clear();
+        mark_vrts.clear();
+        mark_edges.clear();
+        mark_faces.clear();
+        lfs = DBL_MAX;
+    }
+
+    void chamfering_size_predictor(double toll_sq);
+    void ignore_chamferedtriangles_with_samll_edges(double toll_sq);
+
+    void iterative_chamfering_pipeline(double toll) {
+        iterative = true;
+        lfs_toll = toll;
+        assert(lfs_toll != UINT32_MAX);
+        if(verbose) std::cout<<"\nITERATIVE CHAMFERING:\n";
+        size_t c_it = 0;
+        size_t n_ignored_plctris = plc.count_ignored_tris();
+        while(n_ignored_plctris < plc.numTriangles()) {
+            if(c_it > 0) reset_chamfering_DS();
+            ++c_it;
+            if(verbose) std::cout<<"\nCHAMFERING iteration n. "<<c_it<<"\n";
+            initialize(); 
+            search_acute_angles();    
+
+            // predict chamfered triangles with samll feature and mark them as
+            // to ignore
+            chamfering_size_predictor(lfs_toll * lfs_toll);
+
+            if(plc.count_ignored_tris() == n_ignored_plctris){
+                chamfering(); // some input triangles can be marked as ignored
+                assert( check_acuteness() ); // DEBUG
+            }
+
+            ignore_chamferedtriangles_with_samll_edges(lfs_toll * lfs_toll);
+                    
+            if(plc.count_ignored_tris() == n_ignored_plctris) break;
+            n_ignored_plctris = plc.count_ignored_tris();
+
+            if(verbose) std::cout<< n_ignored_plctris << " input "
+							<< "triangles ignored (LFS/BB_DIG < "
+                            <<toll/plc.get_BBox_diag()<<").\n";
+        }
+
+        if(n_ignored_plctris == plc.numTriangles()) {
+            if(verbose) std::cout<<"All triangles revoved, "
+                                "iterative chamfering COMPLETED\n";
+            return;
+        }
+
+        if(simplify_mode) chamfered_plc_simplification();
+        assert( check_acuteness() );
+        if(verbose) std::cout<<"iterative chamfering COMPLETED\n";
+    }
 
     // Access private fields
     inline bool input_plc_defines_interior() const { return def_interior; }
@@ -699,7 +769,7 @@ public:
     }
 
     inline void print_input_tri(uint32_t t) const {
-        const uint32_t* tv = plc.triangle_vertices.data() + t*3;
+        const uint32_t* tv = plc.get_triangle_vertices().data() + t*3;
         std::cout << *tv << " " << *(tv+1) << " " << *(tv+2) << "\n";
     }
     inline void print_input_vt(uint32_t vi) const { 
@@ -896,7 +966,7 @@ public:
                 if( !edges_intersects(fbe[i], fbe[j], true) ) continue;
                 std::cout<<"[cam.h - face_boundary_overlaps()] ERROR: "
                          << "overlap detected on face "<< fi << "boundary\n";
-                const uint32_t* tv = plc.triangle_vertices.data() + 
+                const uint32_t* tv = plc.get_triangle_vertices().data() + 
                                                     faces[fi].triangle * 3;
                 saveTriangle(*tv, *(tv+1), *(tv+2), "overlapping_face_tri.off");
                 return true;
@@ -965,7 +1035,7 @@ public:
 
     void get_unchamferableFace_info(uint32_t fi) const {
         const uint32_t tri = faces[fi].triangle;
-        const uint32_t* tv = plc.triangle_vertices.data() + tri*3;
+        const uint32_t* tv = plc.get_triangle_vertices().data() + tri*3;
         std::cout<<"chamfering failed for face["<< fi <<"] (input tri #"
                  << tri <<" <"<<*(tv)<<","<<*(tv+1)<<","<<*(tv+2)<<">)\n";
         print_face_edges(fi);

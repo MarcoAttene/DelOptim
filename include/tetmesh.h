@@ -408,7 +408,7 @@ public:
 	void setFirstTet(Tetrahedron* t) { it1 = t; }
 	void setSecondTet(Tetrahedron* t) { it2 = t; }
 
-	bool isOnBoundary() const { return (it2 == NULL); }
+	bool isOnBoundary() const { return (it2 == nullptr); }
 
 	Tetrahedron* oppositeTet(const Tetrahedron* t) const {
 		if (t == it1) return it2;
@@ -3334,8 +3334,9 @@ protected:
 
 	void export_DelTris_asTriVrtsInds(std::vector<uint32_t>& del_tri, bool exclude_bbtris) const {
 		del_tri.reserve(F.size());
-		for(const TetFace* tri : F) if(tri->deltri != NULL){
-			if(exclude_bbtris && (tri->t1()==NULL || tri->t2()==NULL) ) continue; // do not use bounding box boundary faces
+		for(const TetFace* tri : F) if(tri->deltri != nullptr) {
+			if(exclude_bbtris && tri->isOnBoundary()) continue; // do not use bounding box boundary faces
+			assert(tri->t1() != nullptr);
 			const DelTriangle* t = tri->deltri;
 			del_tri.insert(del_tri.end(), 
 					{ (uint32_t) t->v0()->getIndex(), 

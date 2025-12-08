@@ -20,6 +20,8 @@
 #include <vector>
 #include <chrono>
 
+#include "inputPLC.h"
+
 #pragma intrinsic(fabs)
 
 #define INFINITE_VERTEX UINT32_MAX
@@ -30,6 +32,143 @@
 #define MARKBIT(m, twoPowBit) m |= ((uint32_t)twoPowBit)
 #define UNMARKBIT(m, twoPowBit) m &= (~((uint32_t)twoPowBit))
 #define ISMARKEDBIT(m, twoPowBit) m & ((uint32_t)twoPowBit) 
+
+// NOTES: 1) "both_acute_ep" edges will be immediatelly split by inserting the middle point (each subedge becomes a "one_acute_ep")
+//        2) sub-edges of "no_acute_ep" and "one_acute_ep" inherit type
+//        3) "flat" edges will be ignored by segment recovery algorithm and will not be further classyfied
+typedef enum{
+	undet,
+	no_acute_ep, one_acute_ep, both_acute_ep, flat
+} PLCedge_type;
+
+// An edge or sub-edge of the input triangle mesh (PLC). It is a segment.
+// ep[2] are the two endpoints of the edge.
+// In case the edge is a sub-edge (at least one endpint is a Steiner point)
+// oep[2] are the endpoints of the parent-edge. Otherwise oep[2] = ep[2].
+// type=2 edeges are those that have an acute endpoint (i.e.) exists
+// another incident edge which forms an acute angle.
+// For type=2 edges:
+// - oep[0] is the acute vertex,
+// - ep[0] = oep[0] OR ope[0]<ep[0]<ep[1] along the straight line for the edge,
+// - ep[1] = oep[2] OR ep[0]<ep[1]<oep[1] along the straight line for the edge.
+// The above rules do not hold for type=3 edges: they are all split first and
+// their sub-edges (type=2) have oep[2] = ep[2].
+class PLCedge{
+public:
+    uint32_t ep[2];                 // Endpoints (vertices-inds wrt TetMesh vertices vector)
+    uint32_t oep[2];                // Parent-edge endpoints (vertices-inds wrt TetMesh vertices vector)
+    std::vector<uint32_t> inc_tri;  // Incident triangles (triangle-inds wrt input triangles vector)
+    PLCedge_type type;              // See notes after definition of PLCedge_type.
+
+    inline PLCedge() {}
+
+    inline PLCedge(const uint32_t e0, const uint32_t e1, const uint32_t oe0, const uint32_t oe1,
+        const std::vector<uint32_t>& itri, const PLCedge_type t) : ep{ e0, e1 }, oep{oe0, oe1}, inc_tri(itri), type(t) {}
+
+    bool isFlat() const { return type == flat; }
+
+    inline void swap() { std::swap(ep[0], ep[1]); std::swap(oep[0], oep[1]); }
+
+    inline void fill_preEdge(const uint32_t v0, const uint32_t v1, const uint32_t fi) {
+        if (v0 > v1) { oep[0] = ep[0] = v1; oep[1] = ep[1] = v0; }
+        else { oep[0] = ep[0] = v0; oep[1] = ep[1] = v1; }
+        inc_tri.push_back(fi);
+    }
+
+    void replaceIncidentFace(uint32_t old_f, uint32_t new_f) {
+        std::replace(inc_tri.begin(), inc_tri.end(), old_f, new_f);
+    }
+
+    uint32_t commonVertex(const PLCedge& e) const {
+        if (ep[0] == e.ep[0] || ep[0] == e.ep[1]) return ep[0];
+        else if (ep[1] == e.ep[0] || ep[1] == e.ep[1]) return ep[1];
+        else return UINT32_MAX;
+    }
+
+    bool coincident(const PLCedge& e) const {
+        return (ep[0] == e.ep[0] && ep[1] == e.ep[1]) || (ep[0] == e.ep[1] && ep[1] == e.ep[0]);
+    }
+
+    uint32_t oppositeVertex(uint32_t v) const {
+        if (ep[0] == v) return ep[1];
+        assert(ep[1] == v);
+        return ep[0];
+    }
+
+    uint32_t commonOriginalVertex(const PLCedge& e) const {
+        if (oep[0] == e.oep[0] || oep[0] == e.oep[1]) return oep[0];
+        assert(oep[1] == e.oep[0] || oep[1] == e.oep[1]);
+        return oep[1];
+    }
+
+    uint32_t oppositeOriginalVertex(uint32_t v) const {
+        if (oep[0] == v) return oep[1];
+        assert(oep[1] == v);
+        return oep[0];
+    }
+
+    inline bool isIsolated() const { return (inc_tri.empty()); }
+
+    inline bool hasOriginalVertex(uint32_t v) const {
+        return (oep[0] == v && oep[1] == v);
+    }
+
+    inline bool hasOriginalVertices(uint32_t v1, uint32_t v2) const {
+        return (oep[0] == v1 && oep[1] == v2) || (oep[0] == v2 && oep[1] == v1);
+    }
+
+    // Static functions to be used as predicates in std algorithms
+    static inline bool isIsolatedPtr(const PLCedge& e) { return e.isIsolated(); }
+
+    static inline bool vertexSortFunc(const PLCedge& e1, const PLCedge& e2) {
+        if (e1.ep[0] == e2.ep[0]) return (e1.ep[1] < e2.ep[1]);
+        else return (e1.ep[0] < e2.ep[0]);
+    }
+
+    static inline bool edgeSortFuncPtr(const PLCedge *e1, const PLCedge *e2) {
+        return e1 < e2;
+    }
+};
+
+
+/// <summary>
+/// PLCface
+/// This is a maximal flat face of the input PLC
+/// It is built out of edge-adjacent and coplanar input triangles
+/// It might be bounded by one or more loops of PLCedges
+/// </summary>
+
+class PLCface {
+public:
+    std::vector<uint32_t> triangles; // Original triangles composing the face
+    std::vector<PLCedge *> bounding_edges; // Set of bounding edges
+    std::vector<std::pair<uint32_t, uint32_t>> orig_flat_edges; // Original flat edges
+    std::vector<uint32_t> vertices; // Ordered mesh vertices bounding the face (see savePLC)
+    std::vector<uint32_t> flat_vertices; // Face internal vertices (having a flat neghborhood)
+    int max_comp_normal;    // Max component of face normal (0=x, 1=y, 2=z)
+    bool is_convex;
+    bool is_simply_connected;
+
+    PLCface() {}
+
+    void zip();
+
+    void initConvexity(const class PLCx& plc);
+
+    void replaceEdge(PLCedge* old_e, PLCedge* new_e) {
+        std::replace(bounding_edges.begin(), bounding_edges.end(), old_e, new_e);
+    }
+
+    void makeVertices();
+
+    void absorb(PLCface& f, PLCedge* e);
+
+    void replaceIncidentEdgeFaces(uint32_t old_f, uint32_t new_f) {
+        for (PLCedge* e : bounding_edges) e->replaceIncidentFace(old_f, new_f);
+    }
+
+    static inline bool isEmpty(const PLCface& e) { return e.bounding_edges.empty(); }
+};
 
 // Uncommenting the following macro definition makes the code use modified parts of hxt_SeqDel (Copyright (C) 2018 Célestin Marot).
 // hxt_SeqDel is a sequential Delaunay triangulator hosted at https://git.immc.ucl.ac.be/hextreme/hxt_seqdel as of 2020.
@@ -120,7 +259,7 @@ public:
 
     // Marks internal tets as DT_IN and external as DT_OUT and return the number of internal tets.
     // cornerMask must be TRUE for each corner whose opposite face is a constraint.
-    size_t markInnerTets(std::vector<bool>& cornerMask, uint64_t single_start = UINT64_MAX);
+    size_t markInnerTets(const std::vector<bool>& cornerMask, uint64_t single_start = UINT64_MAX);
 
     // Clear deleted tets after insertions
     void removeDelTets();
@@ -169,7 +308,10 @@ public:
 
     // Return the corner corresponding to vertex 'v' in the tet whose base corner is tb
     uint64_t tetCornerAtVertex(uint64_t tb, uint32_t v) const {
-        return ((tet_node[tb] == v) * (tb)) + ((tet_node[tb + 1] == v) * (tb + 1)) + ((tet_node[tb + 2] == v) * (tb + 2)) + ((tet_node[tb + 3] == v) * (tb + 3));
+        return ((tet_node[tb] == v) * (tb)) + 
+                ((tet_node[tb + 1] == v) * (tb + 1)) + 
+                ((tet_node[tb + 2] == v) * (tb + 2)) + 
+                ((tet_node[tb + 3] == v) * (tb + 3));
 
         //while (tet_node[tb] != v) tb++;
         //return tb;
@@ -391,14 +533,18 @@ public:
 
     bool is_constrained_edge(uint32_t ep0, uint32_t ep1, 
                             const std::vector<bool>& constr_tri_asCorners);
-    bool are_vrts_connected_in_inputPLC(uint32_t v, uint32_t w) const;
+    bool are_vrts_connected_in_inputPLC(uint32_t v, uint32_t w, 
+                                                const inputPLC& plc) const;
     bool tet_intersects_ballCR(uint64_t tet, uint32_t v, double rsq);
-    double compute_inputPLC_LFS( const std::vector<double>& input_coords,
-                            const std::vector<uint32_t>& input_tris,
+    double compute_inputPLC_LFS( inputPLC& plc,
                             const std::vector<bool>& constr_tri_asCorners);
-    void set_inputPLC_LFS( const std::vector<double>& input_coords,
-                            const std::vector<uint32_t>& input_tris,
+    void set_inputPLC_LFS(  inputPLC& plc,
                             const std::vector<bool>& constr_tri_asCorners);
+    void mark_small_tris(   inputPLC& plc,
+                            const std::vector<bool>& constr_tri_asCorners,
+                            const std::vector<uint32_t>& corner_PLCface_map,
+                            const std::vector<PLCface>& PLC_faces,
+                            double bbox_rel_toll );
 };
 
 
@@ -807,143 +953,6 @@ double vector3d::sq_dist_seg_seg(const vector3d& p1, const vector3d& q0, const v
     return diff.dot(diff);
 }
 
-// NOTES: 1) "both_acute_ep" edges will be immediatelly split by inserting the middle point (each subedge becomes a "one_acute_ep")
-//        2) sub-edges of "no_acute_ep" and "one_acute_ep" inherit type
-//        3) "flat" edges will be ignored by segment recovery algorithm and will not be further classyfied
-typedef enum{
-	undet,
-	no_acute_ep, one_acute_ep, both_acute_ep, flat
-} PLCedge_type;
-
-// An edge or sub-edge of the input triangle mesh (PLC). It is a segment.
-// ep[2] are the two endpoints of the edge.
-// In case the edge is a sub-edge (at least one endpint is a Steiner point)
-// oep[2] are the endpoints of the parent-edge. Otherwise oep[2] = ep[2].
-// type=2 edeges are those that have an acute endpoint (i.e.) exists
-// another incident edge which forms an acute angle.
-// For type=2 edges:
-// - oep[0] is the acute vertex,
-// - ep[0] = oep[0] OR ope[0]<ep[0]<ep[1] along the straight line for the edge,
-// - ep[1] = oep[2] OR ep[0]<ep[1]<oep[1] along the straight line for the edge.
-// The above rules do not hold for type=3 edges: they are all split first and
-// their sub-edges (type=2) have oep[2] = ep[2].
-class PLCedge{
-public:
-    uint32_t ep[2];                 // Endpoints (vertices-inds wrt TetMesh vertices vector)
-    uint32_t oep[2];                // Parent-edge endpoints (vertices-inds wrt TetMesh vertices vector)
-    std::vector<uint32_t> inc_tri;  // Incident triangles (triangle-inds wrt input triangles vector)
-    PLCedge_type type;              // See notes after definition of PLCedge_type.
-
-    inline PLCedge() {}
-
-    inline PLCedge(const uint32_t e0, const uint32_t e1, const uint32_t oe0, const uint32_t oe1,
-        const std::vector<uint32_t>& itri, const PLCedge_type t) : ep{ e0, e1 }, oep{oe0, oe1}, inc_tri(itri), type(t) {}
-
-    bool isFlat() const { return type == flat; }
-
-    inline void swap() { std::swap(ep[0], ep[1]); std::swap(oep[0], oep[1]); }
-
-    inline void fill_preEdge(const uint32_t v0, const uint32_t v1, const uint32_t fi) {
-        if (v0 > v1) { oep[0] = ep[0] = v1; oep[1] = ep[1] = v0; }
-        else { oep[0] = ep[0] = v0; oep[1] = ep[1] = v1; }
-        inc_tri.push_back(fi);
-    }
-
-    void replaceIncidentFace(uint32_t old_f, uint32_t new_f) {
-        std::replace(inc_tri.begin(), inc_tri.end(), old_f, new_f);
-    }
-
-    uint32_t commonVertex(const PLCedge& e) const {
-        if (ep[0] == e.ep[0] || ep[0] == e.ep[1]) return ep[0];
-        else if (ep[1] == e.ep[0] || ep[1] == e.ep[1]) return ep[1];
-        else return UINT32_MAX;
-    }
-
-    bool coincident(const PLCedge& e) const {
-        return (ep[0] == e.ep[0] && ep[1] == e.ep[1]) || (ep[0] == e.ep[1] && ep[1] == e.ep[0]);
-    }
-
-    uint32_t oppositeVertex(uint32_t v) const {
-        if (ep[0] == v) return ep[1];
-        assert(ep[1] == v);
-        return ep[0];
-    }
-
-    uint32_t commonOriginalVertex(const PLCedge& e) const {
-        if (oep[0] == e.oep[0] || oep[0] == e.oep[1]) return oep[0];
-        assert(oep[1] == e.oep[0] || oep[1] == e.oep[1]);
-        return oep[1];
-    }
-
-    uint32_t oppositeOriginalVertex(uint32_t v) const {
-        if (oep[0] == v) return oep[1];
-        assert(oep[1] == v);
-        return oep[0];
-    }
-
-    inline bool isIsolated() const { return (inc_tri.empty()); }
-
-    inline bool hasOriginalVertex(uint32_t v) const {
-        return (oep[0] == v && oep[1] == v);
-    }
-
-    inline bool hasOriginalVertices(uint32_t v1, uint32_t v2) const {
-        return (oep[0] == v1 && oep[1] == v2) || (oep[0] == v2 && oep[1] == v1);
-    }
-
-    // Static functions to be used as predicates in std algorithms
-    static inline bool isIsolatedPtr(const PLCedge& e) { return e.isIsolated(); }
-
-    static inline bool vertexSortFunc(const PLCedge& e1, const PLCedge& e2) {
-        if (e1.ep[0] == e2.ep[0]) return (e1.ep[1] < e2.ep[1]);
-        else return (e1.ep[0] < e2.ep[0]);
-    }
-
-    static inline bool edgeSortFuncPtr(const PLCedge *e1, const PLCedge *e2) {
-        return e1 < e2;
-    }
-};
-
-
-/// <summary>
-/// PLCface
-/// This is a maximal flat face of the input PLC
-/// It is built out of edge-adjacent and coplanar input triangles
-/// It might be bounded by one or more loops of PLCedges
-/// </summary>
-
-class PLCface {
-public:
-    std::vector<uint32_t> triangles; // Original triangles composing the face
-    std::vector<PLCedge *> bounding_edges; // Set of bounding edges
-    std::vector<std::pair<uint32_t, uint32_t>> orig_flat_edges; // Original flat edges
-    std::vector<uint32_t> vertices; // Ordered mesh vertices bounding the face (see savePLC)
-    std::vector<uint32_t> flat_vertices; // Face internal vertices (having a flat neghborhood)
-    int max_comp_normal;    // Max component of face normal (0=x, 1=y, 2=z)
-    bool is_convex;
-    bool is_simply_connected;
-
-    PLCface() {}
-
-    void zip();
-
-    void initConvexity(const class PLCx& plc);
-
-    void replaceEdge(PLCedge* old_e, PLCedge* new_e) {
-        std::replace(bounding_edges.begin(), bounding_edges.end(), old_e, new_e);
-    }
-
-    void makeVertices();
-
-    void absorb(PLCface& f, PLCedge* e);
-
-    void replaceIncidentEdgeFaces(uint32_t old_f, uint32_t new_f) {
-        for (PLCedge* e : bounding_edges) e->replaceIncidentFace(old_f, new_f);
-    }
-
-    static inline bool isEmpty(const PLCface& e) { return e.bounding_edges.empty(); }
-};
-
 
 #define UNDET_ORIENTATION   -2
 
@@ -997,6 +1006,7 @@ public:
       return e.inc_tri.size() == 2 && delmesh.vOrient3D(e.ep[0], e.ep[1], opposite_vrt(e, e.inc_tri[0]), opposite_vrt(e, e.inc_tri[1])) == 0;
   }
 
+  uint32_t opposite_vrt(uint32_t e0, uint32_t e1, const uint32_t ti) const;
   uint32_t opposite_vrt(const PLCedge& e, const uint32_t ti) const;
 
   bool faceHasTriangle(const PLCface& f, const uint32_t tv[3]) const;
@@ -1042,7 +1052,9 @@ public:
 
   // Collect tetrahedra whose interior intersects a PLC face.
   // If cornerMask is non-null, each tet face that overlaps with the PLC face is marked
-  void getTetsIntersectingFace(uint32_t fi, std::vector<uint64_t> *i_tets, std::vector<bool> *cornerMask =NULL);
+  void getTetsIntersectingFace(uint32_t fi, std::vector<uint64_t> *i_tets, 
+                                std::vector<bool> *cornerMask,
+                            std::vector<uint32_t> *corn_PLCface_map = nullptr);
 
   // TRUE if v1 and v2 are consecutive in one of the boundary loops of f
   bool adjacentFaceVertices(uint32_t v1, uint32_t v2, const PLCface& f);
@@ -1062,6 +1074,8 @@ public:
   uint64_t expandCavity(std::vector<uint64_t>& bnd, std::vector<uint32_t>& vertices, uint64_t t, const PLCface& f);
 
   size_t markInnerTets_andGetConstrFaces(std::vector<bool>& constr_tri_asCorners);
+  size_t markInnerTets_andGetConstrFaces(std::vector<bool>& constr_tri_asCorners,
+                                        std::vector<uint32_t>& corner_PLCface_map);
 
   //void getTetsIntersectingFaceSlow(uint32_t fi, std::vector<uint64_t>* i_tets) {
   //    const PLCface& f = faces[fi];

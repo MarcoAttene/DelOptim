@@ -153,7 +153,8 @@ inline bool are_flipped_triangles(const uint32_t* u, const uint32_t* v){
 }
 
 void PLCc::orient_initial_triface_bnd(CHAMface& f){
-    const uint32_t* t = plc.triangle_vertices.data() + (f.triangle*3);
+    assert(!plc.is_tri_ignored(f.triangle));
+    const uint32_t* t = plc.get_triangle_vertices().data() + (f.triangle*3);
     const CHAMedge& e0 = edges[ f.bounding_edges[0] ];
     const CHAMedge& e1 = edges[ f.bounding_edges[1] ];
     const CHAMedge& e2 = edges[ f.bounding_edges[2] ];
@@ -193,36 +194,38 @@ void PLCc::initialize(){
     // -- Vertices -- 
     vertices.reserve(n_in_vrts);
     for(uint32_t i=0; i<n_in_vrts; i++) {
-        const double* x = plc.coordinates.data() + i*3;
+        const double* x = plc.get_coordinates().data() + i*3;
         vertices.push_back( new explicitPoint(*x, *(x +1), *(x +2)) ); 
     }
     mark_vrts.resize(vertices.size(),0);
     ref_exp3D_vrt.resize(vertices.size(), UINT32_MAX);
 
     // -- Edges --
-    edges.resize(plc.numTriangles() * 3); // More than necessary, will be merged
-
+    size_t num_triangles = plc.numTriangles() - plc.count_ignored_tris();
+    edges.resize(num_triangles * 3); // More than necessary, will be merged
+    
     // Fill only EV and partial ET relations
     // also fill vt (input_vertex - incident_input_triangle relation)
     input_vt.resize(vertices.size());
-    uint32_t pei, v0,v1,v2;
-    const uint32_t* t_ref = plc.triangle_vertices.data();
-    for(uint32_t ti=0; ti<plc.numTriangles(); ti++){
-        pei = ti*3;
-        v0 = *(t_ref + pei   );  
-        v1 = *(t_ref + pei +1);  
-        v2 = *(t_ref + pei +2);
+    uint32_t hei = 0, ti3, v0,v1,v2;
+    const uint32_t* t_ref = plc.ptr_to_tri_vrts();
+    for(uint32_t ti=0; ti<plc.numTriangles(); ti++) if(!plc.is_tri_ignored(ti)){
+        ti3 = ti*3;
+        v0 = *(t_ref + ti3   );  
+        v1 = *(t_ref + ti3 +1);  
+        v2 = *(t_ref + ti3 +2);
     
         // pre-edges
-        edges[pei  ].fill_preEdge(v0, v1, ti);
-        edges[pei+1].fill_preEdge(v1, v2, ti);
-        edges[pei+2].fill_preEdge(v2, v0, ti);
+        edges[hei++].fill_preEdge(v0, v1, ti);
+        edges[hei++].fill_preEdge(v1, v2, ti);
+        edges[hei++].fill_preEdge(v2, v0, ti);
 
         // vt
         input_vt[v0].push_back(ti);
         input_vt[v1].push_back(ti);
         input_vt[v2].push_back(ti);
     }
+    assert(hei%3 == 0 && hei == edges.size());
 
     // merge duplicated pre-edges and fill edges
     mergePreEdges(); // Now edges contains proper edges.
@@ -245,13 +248,23 @@ void PLCc::initialize(){
     #endif
 
     // Create a face for each input triangle
-    faces.resize( plc.numTriangles() );
-    mark_faces.resize( faces.size(), 0);
-    for(uint32_t i=0; i<plc.numTriangles(); i++) faces[i].triangle = i;
+    faces.resize( num_triangles );
+    size_t fi = 0;
+    mark_faces.resize( num_triangles, 0);
+    std::vector<uint32_t> tri_face_map(plc.numTriangles(), UINT32_MAX); 
+    for(uint32_t i=0; i<plc.numTriangles(); i++) 
+        if(!plc.is_tri_ignored(i)){ 
+            tri_face_map[i] = fi;
+            faces[fi++].triangle = i;
+        }
 
-    // associate to each face (input triangle) its edges
+    assert(fi == num_triangles);
+
+    // associate to each face (triangle) its edges
+    for(uint32_t ei=0; ei<edges.size(); ei++) 
+        for(uint32_t& t : edges[ei].inc_face) t = tri_face_map[t];
     for(uint32_t ei=0; ei<edges.size(); ei++)
-        for(uint32_t& t : edges[ei].inc_face) 
+        for(uint32_t t : edges[ei].inc_face) 
             faces[t].bounding_edges.push_back(ei);
 
     for(CHAMface& f : faces) orient_initial_triface_bnd(f);
@@ -266,7 +279,7 @@ void PLCc::initialize(){
 // Assumes that the PLCedge 'e' is one of the sides of the input-triangle 'ti'.
 // Returns the index of the vertex of 'ti' different from 'e' endpoints.
 uint32_t PLCc::inTri_opp_vrt(const CHAMedge& e, const uint32_t ti) const {
-  const uint32_t* tv = plc.triangle_vertices.data() + (3*ti);
+  const uint32_t* tv = plc.get_triangle_vertices().data() + (3*ti);
 
   assert((e.hasVertex(*tv) || e.hasVertex(*(tv+1))) && "assumption violated\n");
   
@@ -284,7 +297,7 @@ uint32_t PLCc::inTri_opp_vrt(const CHAMedge& e, const uint32_t ti) const {
 void PLCc::inTri_opp_edge(const uint32_t v, const uint32_t ti, 
                                         uint32_t& u1, uint32_t& u2) const{
 
-    const uint32_t* tv = plc.triangle_vertices.data() + (3*ti);
+    const uint32_t* tv = plc.get_triangle_vertices().data() + (3*ti);
 
     assert((v == tv[0] || v == tv[1] || v == tv[2]) && "assumption violated\n");
 
@@ -308,6 +321,8 @@ bool PLCc::findIF_acute_edge(const CHAMedge& e) const {
     const pointType* e1_pt = vertices[ e.ep[1] ];
     for(size_t i=1; i<e.inc_face.size(); i++){
         for(size_t j=0; j<i; j++){
+            assert( !plc.is_tri_ignored( faces[ e.inc_face[i] ].triangle ) );
+            assert( !plc.is_tri_ignored( faces[ e.inc_face[j] ].triangle ) );
             u = inTri_opp_vrt(e, faces[ e.inc_face[i] ].triangle);
             v = inTri_opp_vrt(e, faces[ e.inc_face[j] ].triangle);
             if( isAcuteDihedral_exact(e0_pt, e1_pt, 
@@ -342,7 +357,7 @@ bool PLCc::findIF_acute_vrt(uint32_t vi,
         ep = vv_i[j];
         const pointType* epp = vertices[ vv_i[j] ];
         for(uint32_t k = 0; k < vt_i.size(); k++){
-            const uint32_t* tv = plc.triangle_vertices.data() + vt_i[k] * 3 ;
+            const uint32_t* tv = plc.get_triangle_vertices().data() + vt_i[k]*3;
             t0 = tv[0];  t1 = tv[1];  t2 = tv[2];
 
             // vi is a vertex of vt_i[k], 
@@ -750,14 +765,20 @@ bool correct_coeff(double& xi, double& eta,
                     double t0, double t1,
                     const vector3d& OP, const vector3d& OQ, const vector3d& OR,
                     bool relative_to_Q) {
-    
+    // return true; // DEBUG TMP
+
     const pointType* P = new explicitPoint3D(OP.c[0],OP.c[1],OP.c[2]);
     const pointType* Q = new explicitPoint3D(OQ.c[0],OQ.c[1],OQ.c[2]);
     const pointType* R = new explicitPoint3D(OR.c[0],OR.c[1],OR.c[2]);
     const pointType* L = relative_to_Q ? 
             new implicitPoint3D_LNC(R->toExplicit3D(), Q->toExplicit3D(), t1) :
             new implicitPoint3D_LNC(R->toExplicit3D(), P->toExplicit3D(), t0);
-    return correct_coeff(xi,eta, P,Q,R, L);
+    bool corrected = correct_coeff(xi,eta, P,Q,R, L);
+    delete P;
+    delete Q;
+    delete R;
+    delete L;
+    return corrected;
 }
 
 bool get_bpt_coeff_precise(double& xi0, double& eta0, double& xi1, double& eta1, 
@@ -833,7 +854,7 @@ bool PLCc::get_bpt_coeff(double& xi0, double& eta0, double& xi1, double& eta1,
 
         if(p_2a <= 0.0 || p_2b <= 0.0 || p_2c <= 0.0){ 
             need_precision = true;
-            std::cout<<"need precision tri ineq"<<endl; // DEBUG
+            // std::cout<<"need precision tri ineq"<<endl; // DEBUG
             break;
         }
 
@@ -863,7 +884,7 @@ bool PLCc::get_bpt_coeff(double& xi0, double& eta0, double& xi1, double& eta1,
 
         if(teta_num <= 0.0 || teta_den <= 0.0) {
             need_precision = true;
-            std::cout<<"need precision teta"<<endl; // DEBUG
+            // std::cout<<"need precision teta"<<endl; // DEBUG
             break;
         }
         
@@ -878,7 +899,7 @@ bool PLCc::get_bpt_coeff(double& xi0, double& eta0, double& xi1, double& eta1,
 
         if (psi_num <= 0.0 || psi_num >= psi_den) {
             need_precision = true;
-            std::cout<<"need precision psi"<<endl; // DEBUG
+            // std::cout<<"need precision psi"<<endl; // DEBUG
             break;
         }
         
@@ -901,7 +922,7 @@ bool PLCc::get_bpt_coeff(double& xi0, double& eta0, double& xi1, double& eta1,
 
         if(!is_BPT_representable(xi0, eta0) || !is_BPT_representable(xi1, eta1)){
             need_precision = true;
-            std::cout<<"need precision coeff"<<endl; // DEBUG
+            // std::cout<<"need precision coeff"<<endl; // DEBUG
         }
 
         break;
@@ -1112,6 +1133,8 @@ implicitPoint3D_BPT* move_BPT_toward_LNC(
 
     assert( check_notAcuteAngle(&lnc->toLNC().Q(), lnc, new_bpt) );
 
+    delete lnc;
+
     return &new_bpt->toBPT();
 }
 
@@ -1257,6 +1280,37 @@ void PLCc::add_SteinerPts_onFace(uint32_t fi) {
 }
 
 void PLCc::update_lfs_before_edge_chamfering() {
+
+    double min_dist_sq = DBL_MAX;
+    double loc_min_dist_sq;
+
+    // Compute the distance between BPT and LNC facing the same acute vertex to 
+    // estimate the size of the "hole" created by removing the acute vertex.
+    // This will contribute to determinate the LFS of the chamfered PLC.
+    std::vector< std::vector<uint32_t> > lnc_facing_v(n_in_vrts);
+    for(size_t impl_vrt = n_in_vrts; impl_vrt < vertices.size(); impl_vrt++) 
+        if(vertices[ impl_vrt ]->isLNC()) 
+            lnc_facing_v[ ref_exp3D_vrt[impl_vrt] ].push_back(impl_vrt);
+     
+    for(size_t v = 0; v < n_in_vrts; v++) if(!lnc_facing_v[v].empty()) {
+        assert( is_acute_vrt(v) );
+
+        loc_min_dist_sq = DBL_MAX;
+        for(size_t i = 0; i < lnc_facing_v[v].size()-1; i++){
+            vector3d Oli( vertices[ lnc_facing_v[v][i] ] );
+            for(size_t j = i+1; j < lnc_facing_v[v].size(); j++) {
+                vector3d Olj( vertices[ lnc_facing_v[v][j] ] );
+                loc_min_dist_sq = std::min(loc_min_dist_sq, Oli.dist_sq(Olj)); 
+            }
+        }
+
+        if(iterative && loc_min_dist_sq < lfs_toll * lfs_toll) { 
+            for(uint32_t ti : input_vt[v]) plc.ignore_tri(ti);
+        }
+
+        min_dist_sq = std::min(min_dist_sq, loc_min_dist_sq);
+    }
+
     // Compute the distance between BPT facing the same acute edge to 
     // estimate the size of the "hole" created by removing the acute edge.
     // This will contribute to determinate the LFS of the chamfered PLC.
@@ -1273,14 +1327,20 @@ void PLCc::update_lfs_before_edge_chamfering() {
             for(uint32_t v : fv) if(vertices[v]->isBPT()) bpt_f[i].push_back(v);
         }
 
-        double min_dist_sq = DBL_MAX;
+        loc_min_dist_sq = DBL_MAX;
         for(size_t i = 0; i < e.inc_face.size()-1; i++)
             for(size_t j = i+1; j < e.inc_face.size(); j++) 
                 for(uint32_t v : bpt_f[i]) for(uint32_t u : bpt_f[j])
-                    min_dist_sq = min(min_dist_sq, vPtsSqDist(u, v));
+                    loc_min_dist_sq = min(loc_min_dist_sq, vPtsSqDist(u, v));
         
-        lfs = min(lfs, sqrt(min_dist_sq));
+        if(iterative && loc_min_dist_sq < lfs_toll * lfs_toll) { 
+            for(uint32_t fi : e.inc_face) plc.ignore_tri(faces[fi].triangle);
+        }
+
+        min_dist_sq = std::min(min_dist_sq, loc_min_dist_sq);
     }
+
+    lfs = min(lfs, sqrt(min_dist_sq));
 }
 
 void PLCc::chamfering_face(uint32_t fi){
@@ -1468,6 +1528,9 @@ uint32_t PLCc::get_cons_edge_on_adj_face(uint32_t ei){
     const std::vector<uint32_t>& fbnd = faces[fi].bounding_edges;
     conn_edge = fbnd[1];
     if(edges[conn_edge].inc_face.size() == 1) conn_edge = fbnd.back();
+    // If conn_edge has a unique incident face the bridge can be simplified on
+    // its side. Set 'cos_edge' to 'ei' to distingush this case.
+    if(edges[conn_edge].inc_face.size() == 1) return ei;
     if(edges[conn_edge].inc_face.size() != 2) return UINT32_MAX;
     // conn_edge found!
     uint32_t fj = edges[conn_edge].inc_face[0];
@@ -1487,24 +1550,32 @@ PLCc::bridge_simpl_t PLCc::is_3bridge_simplifiable( uint32_t next_bel,
                                 uint32_t bel, uint32_t bec, uint32_t ber, 
                                 uint32_t next_ber) const {
     
-    bridge_simpl_t simpl = bridge_simpl_type::no;
+    bridge_simpl_t SL = bridge_simpl_type::no;
+    bridge_simpl_t SR = bridge_simpl_type::no;
     const CHAMedge& el = edges[bel];
     const CHAMedge& ec = edges[bec];
     const CHAMedge& er = edges[ber];
     const pointType* p1 = vertices[ el.notCommonVertex(ec) ];
     const pointType* p2 = vertices[ er.notCommonVertex(ec) ];
-    if(next_bel != UINT32_MAX) {
+    if(next_bel == bel) SL = bridge_simpl_type::left;
+    else if(next_bel != UINT32_MAX) {
         const pointType* p0 = vertices[ edges[next_bel].notCommonVertex(el) ];
-        if(!isAcuteAngle(p0, p1, p2)) simpl = bridge_simpl_type::left;
+        if(!isAcuteAngle(p0, p1, p2)) SL = bridge_simpl_type::left;
     }
-    if(next_ber != UINT32_MAX) {
+    if(next_bel == bel) SR = bridge_simpl_type::right;
+    else if(next_ber != UINT32_MAX) {
         const pointType* p3 = vertices[ edges[next_ber].notCommonVertex(er) ];
-        if(!isAcuteAngle(p1, p2, p3)){ 
-            if(simpl == bridge_simpl_type::no) simpl = bridge_simpl_type::right;
-            else simpl = bridge_simpl_type::both;
-        }
+        if(!isAcuteAngle(p1, p2, p3)) SR = bridge_simpl_type::right;
     }
-    return simpl;
+
+    if(SL == bridge_simpl_type::no && SR == bridge_simpl_type::no) 
+        return bridge_simpl_type::no;
+    if(SL == bridge_simpl_type::left && SR == bridge_simpl_type::no) 
+        return bridge_simpl_type::left;
+    if(SL == bridge_simpl_type::no && SR == bridge_simpl_type::right) 
+        return bridge_simpl_type::right;
+    assert(SL == bridge_simpl_type::left && SR == bridge_simpl_type::right);
+        return bridge_simpl_type::both;
 }
 
 void PLCc::simplify_3bridge(uint32_t bel, uint32_t bec, uint32_t ber) {
@@ -1520,16 +1591,21 @@ void PLCc::simplify_3bridge(uint32_t bel, uint32_t bec, uint32_t ber) {
         is_3bridge_simplifiable(next_bel, bel, bec, ber, next_ber);
 
     if(simpl == bridge_simpl_type::no) return;
+    
+    assert(next_bel < edges.size());
+    assert(bel < edges.size());
+    assert(bec < edges.size());
+    assert(ber < edges.size());
+    assert(next_ber < edges.size());
 
-    uint32_t v0 =  edges[next_bel].notCommonVertex(edges[bel]);
+    if(next_ber == ber) return;  // TMP: case of non incident face to be checked
+    if(next_bel == bel) return;  // TMP: case of non incident face to be checked
+
     uint32_t v1 =  edges[bel].notCommonVertex(edges[bec]);
     uint32_t v2 =  edges[ber].notCommonVertex(edges[bec]);
-    uint32_t v3 =  edges[next_ber].notCommonVertex(edges[ber]);
     
     uint32_t fi = edges[bec].inc_face[0];
-
     if(simpl == bridge_simpl_type::both) {
-
         // Replace 'bel', 'bec' and 'ber' with a unique new edge <'v1','v2'>.
         edges.push_back( CHAMedge(v1,v2,fi) ); mark_edges.push_back(0);
         size_t new_fbnd_size = faces[fi].bounding_edges.size()-2 ;
@@ -1546,17 +1622,27 @@ void PLCc::simplify_3bridge(uint32_t bel, uint32_t bec, uint32_t ber) {
 
     assert(simpl==bridge_simpl_type::left || simpl==bridge_simpl_type::right);
 
-    // Initialize for 'left' simplification, if 'right' correct.
-    uint32_t be_rem = bel, new_ep = v1, ext_ep = v0;  
-    if(simpl==bridge_simpl_type::right){ be_rem = ber; new_ep = v2; ext_ep = v3;}
+    uint32_t be_rem, new_ep, ext_ep;  
+    if(simpl==bridge_simpl_type::left){ 
+        be_rem = bel; 
+        new_ep = v1; 
+        if(bel == next_bel) ext_ep = UINT32_MAX; // No left incident face 
+        else ext_ep = edges[next_bel].notCommonVertex(edges[bel]);
+    }
+    else if(simpl==bridge_simpl_type::right){ 
+        be_rem = ber; 
+        new_ep = v2; 
+        if(ber == next_ber) ext_ep = UINT32_MAX; // No right incident face 
+        else ext_ep = edges[next_ber].notCommonVertex(edges[ber]);
+    }
 
     uint32_t c = edges[bec].notCommonVertex(edges[be_rem]);
 
     // Replace 'bel' and 'bec' with a unique new edge <'new_ep', 'c'> if no
-    // acute angles are introduced at 'new_ep' or 'c'.
-                            
+    // acute angles are introduced at 'new_ep' or 'c'.                          
     if(!isAcuteAngle(vertices[v1],vertices[c],vertices[v2]) &&
-        !isAcuteAngle(vertices[ext_ep],vertices[new_ep],vertices[c]) ){
+        ( ext_ep == UINT32_MAX || 
+            !isAcuteAngle(vertices[ext_ep],vertices[new_ep],vertices[c]) ) ){
 
         edges.push_back( CHAMedge(new_ep,c,fi) ); mark_edges.push_back(0);
         faces[ fi ].make_last(be_rem);
@@ -1570,7 +1656,6 @@ void PLCc::simplify_3bridge(uint32_t bel, uint32_t bec, uint32_t ber) {
         edges[bec].isolate();
         edges[be_rem].isolate();
     }
-
 }
 
 void PLCc::simplify_2bridge(uint32_t bes, uint32_t bec) {
@@ -1580,13 +1665,16 @@ void PLCc::simplify_2bridge(uint32_t bes, uint32_t bec) {
 
     // print_2bridge_details(bec, bes, next_bes, false); // DEBUG
     
-    if(next_bes == UINT32_MAX) return;
+    if(next_bes == UINT32_MAX) return; // TMP: case of non incident face to be checked
 
-    uint32_t v0 = edges[next_bes].notCommonVertex(edges[bes]);
-    uint32_t v1 = edges[next_bes].commonVertex(edges[bes]);
+    uint32_t v0;
+    if(next_bes == bes) v0 = UINT32_MAX;
+    else v0 = edges[next_bes].notCommonVertex(edges[bes]);
+    uint32_t v1 = edges[bes].notCommonVertex(edges[bec]);
     uint32_t v2 = edges[bec].notCommonVertex(edges[bes]);
 
-    if(!isAcuteAngle(vertices[v0], vertices[v1], vertices[v2])) {
+    if( v0 == UINT32_MAX || 
+        !isAcuteAngle(vertices[v0], vertices[v1], vertices[v2])) {
         uint32_t fi = edges[bec].inc_face[0];
         edges.push_back( CHAMedge(v1,v2,fi) ); mark_edges.push_back(0);
         faces[ fi ].make_last(bes);
@@ -1651,7 +1739,7 @@ void PLCc::chamfered_plc_simplification(){
     #ifdef PLCC_VERBOSE_DEBUG
     print_all_bridge_edges();
     #endif 
-    
+
     assert( check_bridge_edges() );
 
     // Order bridges by increasing shortest length
@@ -1714,7 +1802,7 @@ void PLCc::hear_clipping(uint32_t fi, std::vector<uint32_t>& out_tri_fv_list) co
 
     // std::cout<<"HEAR CLIPPING\n"; // DEBUG
 
-    const uint32_t* in_tri = plc.triangle_vertices.data() + (faces[fi].triangle*3);
+    const uint32_t* in_tri = plc.get_triangle_vertices().data() + (faces[fi].triangle*3);
     const pointType* ov0 = vertices[*in_tri];
     const pointType* ov1 = vertices[*(in_tri+1)];
     const pointType* ov2 = vertices[*(in_tri+2)];
@@ -1829,7 +1917,8 @@ void PLCc::get_complementar_tri(const std::vector<uint32_t>& out_tri, std::vecto
         e0 = v2; e1 = v0; if(v2 > v0) {e0 = v0; e1 = v2;} he.push_back({e0,e1,i,1});
     }
     sort(he.begin(), he.end(),
-        [](const std::vector<uint32_t> &a, const std::vector<uint32_t> &b){ return (a[0] < b[0] || (a[0]==b[0] && a[1]<b[1])); } );
+        [](const std::vector<uint32_t> &a, const std::vector<uint32_t> &b){ 
+                        return (a[0] < b[0] || (a[0]==b[0] && a[1]<b[1])); } );
 
     for(size_t i=0; i<he.size()-1; i++){
         if(he[i][0] == he[i+1][0] && he[i][1] == he[i+1][1]){
@@ -1855,6 +1944,77 @@ void PLCc::get_complementar_tri(const std::vector<uint32_t>& out_tri, std::vecto
             compl_tri.insert( compl_tri.end(), {e0, e1, r0} );
             compl_tri.insert( compl_tri.end(), {r0, r1, e1} );
             // orientation maybe have to be changed
+        }
+    }
+}
+
+// -------------------- //
+// ITERATIVE CHAMFERING //
+// -------------------- //
+
+// Assumes that acute vertices have been marked, but not chamfered
+void PLCc::chamfering_size_predictor(double toll_sq) {
+
+    double d, cos_a, k;
+    vector3d Ov0, Ov1, Ov2;
+    for(uint32_t fi=0; fi<faces.size(); fi++) {
+        assert(faces[fi].bounding_edges.size() == 3);
+        std::vector<uint32_t> v;  get_face_vertices(faces[fi], v);
+
+        Ov0 = vertices[v[0]]; 
+        Ov1 = vertices[v[1]];
+        Ov2 = vertices[v[2]];
+
+        // At an acute vertex 'v' 2 LNC will be placed on incident triangle edges 
+        // at same distance 'd' (vrt_ch_dist) from 'v'. The distance 'k' between 
+        // these two LNC is an upper bound for the bridge length. 
+        // 'k' can be estimated indirectly by:
+        // 2 * d * sin(alpha / 2), with 'alpha' angle at 'v',
+        // being sin(alpha / 2) = sqrt( (1 - cos(alpha)) / 2 ),
+        // k^2 = 2.0 * d * d * (1.0 - cosOfAngle_at(Ov0, Ov1, Ov2)
+
+        if( is_acute_vrt( v[0] ) ) {
+            d = vrt_ch_dist[ v[0] ];
+            if(2.0 * d * d * (1.0 - cosOfAngle_at(Ov0, Ov1, Ov2)) < toll_sq) {
+                plc.ignore_tri(faces[fi].triangle);
+                continue;
+            }
+        }
+
+        if( is_acute_vrt( v[1] ) ) {
+            d = vrt_ch_dist[ v[1] ];
+            if(2.0 * d * d * (1.0 - cosOfAngle_at(Ov1, Ov2, Ov0)) < toll_sq) {
+                plc.ignore_tri(faces[fi].triangle);
+                continue;
+            }
+        }
+
+        if( is_acute_vrt( v[2] ) ) {
+            d = vrt_ch_dist[ v[2] ];
+            if(2.0 * d * d * (1.0 - cosOfAngle_at(Ov2, Ov0, Ov1)) < toll_sq) {
+                plc.ignore_tri(faces[fi].triangle);
+            }
+        }
+    }
+}
+
+void PLCc::ignore_chamferedtriangles_with_samll_edges(double toll_sq){
+    double e_len_sq;
+    // for(const CHAMedge& e : edges){ 
+    //     e_len_sq = eEdgeSqLen(e); 
+    //     if(e_len_sq >= toll_sq) continue;
+    //     for(uint32_t fi : e.inc_face) 
+    //         plc.ignore_tri( faces[fi].triangle );
+    // }
+
+    for(const CHAMface& f : faces) if(!plc.is_tri_ignored(f.triangle)){
+        for(uint32_t bei : f.bounding_edges) {
+            const CHAMedge& e = edges[ bei ];
+            e_len_sq = eEdgeSqLen(e); 
+            if(e_len_sq < toll_sq){ 
+                plc.ignore_tri( f.triangle );
+                break;
+            }
         }
     }
 }

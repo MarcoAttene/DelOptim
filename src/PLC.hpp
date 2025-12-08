@@ -403,18 +403,25 @@ void PLCx::mergePreEdges(){
 
 // Assumes that the PLCedge e is one of the sides of the input-triangle ti.
 // Returns the index of the vertex of ti different from e endpoints.
-uint32_t PLCx::opposite_vrt(const PLCedge& e, const uint32_t ti) const {
-  uint32_t v = input_tv[3*ti];
-  if(v != e.ep[0]  &&  v != e.ep[1] ) return v;
+uint32_t PLCx::opposite_vrt(uint32_t e0, uint32_t e1, const uint32_t ti) const {
+    uint32_t ti3 = ti * 3;
+    uint32_t v = *(input_tv + ti3);
+    if(v != e0  &&  v != e1 ) return v;
 
-  v = input_tv[3*ti + 1];
-  if(v != e.ep[0]  &&  v != e.ep[1] ) return v;
+    v = *(input_tv + (++ti3));
+    if(v != e0  &&  v != e1 ) return v;
 
-  v = input_tv[3*ti + 2];
-  if(v != e.ep[0]  &&  v != e.ep[1] ) return v;
+    v = *(input_tv + (++ti3));
+    if(v != e0  &&  v != e1 ) return v;
 
-  return UINT32_MAX;
+    return UINT32_MAX;
 }
+
+uint32_t PLCx::opposite_vrt(const PLCedge& e, const uint32_t ti) const {
+    return opposite_vrt(e.ep[0], e.ep[1], ti);
+}
+
+
 
 // Returns true if at least a couple of non-flat edges incident at the vertex
 // indexed as vi forms an acute angle, i.e. the scalar produc between these two
@@ -1200,35 +1207,47 @@ inline void pushAndMark(uint64_t t, TetMesh& m, std::vector<uint64_t>& B) {
 }
 
 // This function has two usages:
-// if cornerMask is NULL, fills i_tets with tetrahedra that intersect or overlap the face 'fi'.
-// if cornerMask is not NULL, marks 'true' mesh triangles that overlap with 'fi'.
-void PLCx::getTetsIntersectingFace(uint32_t fi, std::vector<uint64_t> *i_tets, std::vector<bool>* cornerMask) {
+// 1) if cornerMask is NULL, fills 'i_tets' with tetrahedra that intersect or 
+//    overlaps the PLCface 'fi'.
+// 2) if cornerMask is not NULL, marks 'true' input triangles that overlap 
+//    PLCface with 'fi'.
+void PLCx::getTetsIntersectingFace(uint32_t fi, std::vector<uint64_t> *i_tets, 
+                                    std::vector<bool>* cornerMask,
+                                std::vector<uint32_t>* corner_PLCface_map) {
     const PLCface& f = faces[fi];
 
-    // Let e=(v1, v2) be a nonflat edge in f
-    uint32_t v_t[4];
+    uint32_t v_t[4]; // Container for tetrahedron vertices
+
+    // Let e = (v_t[0], v_t[1]) be a nonflat edge in f
     const PLCedge* e0 = f.bounding_edges.front();
     v_t[0] = e0->ep[0]; v_t[1] = e0->ep[1];
 
     std::vector<uint64_t> et;
     delmesh.ET(v_t[0], v_t[1], et);
 
-    const uint32_t *tv = input_tv + f.triangles[0] * 3; // Vertices of one face triangle for orientation
+    // Vertices of one input triangle for orientation
+    uint32_t ft0 = f.triangles[0];
+    const uint32_t *tv = input_tv + ft0 * 3;
 
-    // If face has only three vertices, just check whether they are in one tet of the ET
+    // If face has only 3 vertices, just check whether they are in one ET tet
     if (f.vertices.size() == 3 && f.flat_vertices.empty()) {
-        const uint32_t ov = (tv[0] != v_t[0] && tv[0] != v_t[1]) ? (tv[0]) : ((tv[1] != v_t[0] && tv[1] != v_t[1]) ? (tv[1]) : (tv[2]));
+        const uint32_t ov = opposite_vrt(v_t[0], v_t[1], ft0);
+        assert(ov != UINT32_MAX);
         for (uint64_t t : et) if (delmesh.tetHasVertex(t, ov)) {
-            if (cornerMask) {
-                const uint64_t c = delmesh.tetOppositeCorner(t, v_t[0], v_t[1], ov);
-                (*cornerMask)[c] = (*cornerMask)[delmesh.tet_neigh[c]] = true;
+            if (cornerMask != nullptr) {
+                uint64_t c = delmesh.tetOppositeCorner(t, v_t[0], v_t[1], ov);
+                uint64_t nc = delmesh.tet_neigh[c];
+                (*cornerMask)[c] = (*cornerMask)[nc] = true;
+
+                if (corner_PLCface_map != nullptr)
+                    (*corner_PLCface_map)[c] = (*corner_PLCface_map)[nc] = fi;
             }
             return;
         }
         // Might be worth optimizing for this particular case here.
         // If face has only three vertices and no overlapping triangle exists,
-        // then the edge opposite to e0 in one of the tets in et must intersect fi
-        // and i_tets can be filled with the et of such an edge.
+        // then the edge opposite to e0 in one of the tets in et must intersect
+        // fi and i_tets can be filled with the et of such an edge.
     }
 
     // Mark f vertices and init orientations
@@ -1241,88 +1260,80 @@ void PLCx::getTetsIntersectingFace(uint32_t fi, std::vector<uint64_t> *i_tets, s
         v_orient[v] = 0;
     }
 
-    // init v_reindex with f 
-
+    // init v_reindex with local face vertex indexing
     for (uint32_t i = 0; i < (uint32_t)f.vertices.size(); i++) {
         const uint32_t v = f.vertices[i];
-        // if (delmesh.marked_vertex[v] == 3)
-        //     singular_v.push_back(std::pair<uint32_t, uint32_t>(v, i));
         v_reindex[v] = i;
     }
 
     // Flat orig edges in f
-    const std::vector<std::pair<uint32_t, uint32_t>>& orig_flat_edges = f.orig_flat_edges;
+    const std::vector<std::pair<uint32_t, uint32_t>>& flat_edges = f.orig_flat_edges;
 
     std::vector<uint32_t> to_unorient;
 
-    //  Find a tet t0 in ET(e) intersecting the face interior [NOT EXACTLY...]
-    // t0 is a tetrahedron in ET(e) we use as seed to explore the mesh around the face.
+    // Find a tet t0 in ET(e) intersecting the face interior [NOT EXACTLY...]
+    // t0 is a tetrahedron in ET(e) we use as seed to explore the mesh around 
+    // the face.
     uint64_t t0 = UINT64_MAX;
     for (uint64_t t : et) {
-        //    - let v3 and v4 be the vertices of t0 opposite wrt e (oppositeTetEdge)
+        // v_t[2] and v_t[3] are the vertices opposite to e = <v_t[0], v_t[1]>
         delmesh.oppositeTetEdge(t<<2, v_t, v_t + 2);
 
-        // If we are using cornerMask to mark constrained faces we need three vertices on the plane
-        if (cornerMask) {
-            if (v_orient[v_t[2]] == 0 && isTriangleOnFace(v_t, fi, orig_flat_edges)) { t0 = t; break; }
+        // If we are using cornerMask we need three vertices on the plane
+        if (cornerMask != nullptr) {
+            if (v_orient[v_t[2]] == 0 && isTriangleOnFace(v_t, fi, flat_edges)){ 
+                t0 = t; 
+                break; 
+            }
             std::swap(v_t[2], v_t[3]);
-            if (v_orient[v_t[2]] == 0 && isTriangleOnFace(v_t, fi, orig_flat_edges)) { t0 = t; break; }
+            if (v_orient[v_t[2]] == 0 && isTriangleOnFace(v_t, fi, flat_edges)){ 
+                t0 = t; 
+                break; 
+            }
             continue;
         }
 
-        //    - if v_orient[v3]!=0 e v_orient[v3]==v_orient[v4] -> skip (no intersection)
+        // - if v_t[2] and v_t[3] have same (non zero) orient -> no intersection
         const int ov3 = localOrient3d(v_t[2], tv[0], tv[1], tv[2], to_unorient);
         const int ov4 = localOrient3d(v_t[3], tv[0], tv[1], tv[2], to_unorient);
         if (ov3 != 0 && ov3 == ov4) continue;
 
-        //const uint64_t tb = t << 2;
-        //const uint32_t* n = delmesh.tet_node.data() + tb;
-
-        //    - if v_orient[v3]*v_orient[v4]<0 e lineIntersectsFace(v3,v4,f) -> intersection
-        if (ov3 * ov4 < 0 && lineIntersectsFace(v_t[2], v_t[3], f)) { t0 = t; break; }
-        //    - if v_orient[v3]==0
-        if (ov3 == 0) {
-            //      - if v3 not marked -> skip (WRONG v3 could be a flat vertex)
-            // if (!delmesh.marked_vertex[v_t[2]]) continue;
-            //      - if v1,v2,v3 part of f
-            if (isTriangleOnFace(v_t, fi, orig_flat_edges)) { t0 = t; break; }
+        // - if v_t[2] and v_t[3] have different (non zero) orient and 
+        //   segment <v_t[2], v_t[3]> intersects 'f' -> intersection
+        if (ov3 * ov4 < 0 && lineIntersectsFace(v_t[2], v_t[3], f)) { 
+            t0 = t; 
+            break; 
         }
 
-        //    - if v_orient[v4]==0
+        // - if v_t[2] is on the face plane.. v_t[2] could be a flat vertex, 
+        // check if triangle <v_t[0], v_t[1], v_t[2]> is part of 'f'
+        if (ov3 == 0 && isTriangleOnFace(v_t, fi, flat_edges)) { 
+            t0 = t; 
+            break; 
+        }
+
+        // - if v_t[3] is on the face plane.. v_t[3] could be a flat vertex, 
+        // check if triangle <v_t[0], v_t[1], v_t[3]> is part of 'f'
         if (ov4 == 0) {
-            //      - if v4 not marked -> skip (WRONG v4 could be a flat vertex)
-            // if (!delmesh.marked_vertex[v_t[3]]) continue;
-            //      - if v1,v2,v4 part of f
             std::swap(v_t[2], v_t[3]);
-            if (isTriangleOnFace(v_t, fi, orig_flat_edges)) { t0 = t; break; }
+            if (isTriangleOnFace(v_t, fi, flat_edges)) { 
+                t0 = t; 
+                break; 
+            }
         }
     }
 
     // Reset marker for flat vertices
     for (uint32_t w : f.flat_vertices) delmesh.marked_vertex[w] = 0;
 
-    // Progressive boundary vertices marking for non-simpliconnected face vertices
+    // Progressive boundary vertices marking for non-simply connected face
     for (uint32_t w : f.vertices) delmesh.marked_vertex[w] = 0;
     for (uint32_t w : f.vertices) delmesh.marked_vertex[w]++;
 
     // "Explore" the face by adjacently moving from t0
-    assert(t0!=UINT64_MAX); 
+    assert(t0 != UINT64_MAX); 
 
-    // B = empty
     std::vector<uint64_t> B;
-
-    // Mark t0 and insert in B
-
-    // OLD WRONG CODE SNIPPET
-    // if (t0!=UINT64_MAX) B.push_back(t0);
-    // if (f.flat_vertices.size()) {
-    //     for (uint32_t v : f.flat_vertices) delmesh.VT(v, B);
-    //     B.erase(std::unique(B.begin(), B.end()), B.end());
-    //     for (uint64_t t : B) delmesh.mark_Tet_1(t);
-    // }
-    // else delmesh.mark_Tet_1(t0);
-
-    // NEW AND RVISED ONE
     pushAndMark(t0, delmesh, B);
     if (f.flat_vertices.size()) {
         std::vector<uint64_t> fv_vt;
@@ -1343,52 +1354,31 @@ void PLCx::getTetsIntersectingFace(uint32_t fi, std::vector<uint64_t> *i_tets, s
         // for each of the four neighbors n of t
         for (int i = 0; i < 4; i++) {
             const uint64_t n = nn[i] >> 2;
-            //   if n is not a ghost and is not marked
+            // if n is not a ghost and is not marked
             if (!delmesh.isGhost(n) && !delmesh.is_marked_Tet_1(n)) {
-                //      let cv be the three common vertices of t and n
-                const uint32_t cv[3] = { tn[(i + 1) & 3], tn[(i + 2) & 3], tn[(i + 3) & 3] };
-                const unsigned char mv[3] = { delmesh.marked_vertex[cv[0]], delmesh.marked_vertex[cv[1]], delmesh.marked_vertex[cv[2]] };
+                // let cv be the three common vertices of t and n
+                const uint32_t cv[3] = {tn[(i+1)&3], tn[(i+2)&3], tn[(i+3)&3]};
+                const unsigned char mv[3] = { delmesh.marked_vertex[cv[0]], 
+                                              delmesh.marked_vertex[cv[1]], 
+                                              delmesh.marked_vertex[cv[2]] };
                 const int o3d[3] = {
                     localOrient3d(cv[0], tv[0], tv[1], tv[2], to_unorient),
                     localOrient3d(cv[1], tv[0], tv[1], tv[2], to_unorient),
                     localOrient3d(cv[2], tv[0], tv[1], tv[2], to_unorient)
                 };
 
-                if (     mv[0] && mv[1] && mv[2]){                                  pushAndMark(n, delmesh, B); }
+                bool opp_01ori = (o3d[0] * o3d[1] < 0);
+                bool opp_12ori = (o3d[1] * o3d[2] < 0);
+                bool opp_20ori = (o3d[2] * o3d[0] < 0);
+                if (     mv[0] && mv[1] && mv[2]){ pushAndMark(n, delmesh, B); }
                 else if (mv[0] && mv[1] && !adjacentFaceVertices(cv[0], cv[1], f)){ pushAndMark(n, delmesh, B); }
                 else if (mv[1] && mv[2] && !adjacentFaceVertices(cv[1], cv[2], f)){ pushAndMark(n, delmesh, B); }
                 else if (mv[2] && mv[0] && !adjacentFaceVertices(cv[2], cv[0], f)){ pushAndMark(n, delmesh, B); }
-                else if (mv[0] && (o3d[1] * o3d[2] < 0) ){                          pushAndMark(n, delmesh, B); }
-                else if (mv[1] && (o3d[2] * o3d[0] < 0) ){                          pushAndMark(n, delmesh, B); }
-                else if (mv[2] && (o3d[0] * o3d[1] < 0) ){                          pushAndMark(n, delmesh, B); }   
+                else if (mv[0] && opp_12ori){ pushAndMark(n, delmesh, B); }
+                else if (mv[1] && opp_20ori){ pushAndMark(n, delmesh, B); }
+                else if (mv[2] && opp_01ori){ pushAndMark(n, delmesh, B); }   
                 // The common face has no f-boundary vertices
-                else if (o3d[1] * o3d[2] < 0 || o3d[2] * o3d[0] < 0 || o3d[0] * o3d[1] < 0){ pushAndMark(n, delmesh, B); }
-
-                // The same ase above but spreaded
-                // if (mv[0] && mv[1] && mv[2]) pushAndMark(n, delmesh, B);
-                // else if (mv[0] && mv[1]) {
-                //     if (!adjacentFaceVertices(cv[0], cv[1], f)) pushAndMark(n, delmesh, B);
-                // }
-                // else if (mv[1] && mv[2]) {
-                //     if (!adjacentFaceVertices(cv[1], cv[2], f)) pushAndMark(n, delmesh, B);
-                // }
-                // else if (mv[2] && mv[0]) {
-                //     if (!adjacentFaceVertices(cv[2], cv[0], f)) pushAndMark(n, delmesh, B);
-                // }
-                // else if (mv[0]) {
-                //     if (o3d[1] * o3d[2] < 0) pushAndMark(n, delmesh, B);
-                // }
-                // else if (mv[1]) {
-                //     if (o3d[2] * o3d[0] < 0) pushAndMark(n, delmesh, B);
-                // }
-                // else if (mv[2]) {
-                //     if (o3d[0] * o3d[1] < 0) pushAndMark(n, delmesh, B);
-                // }
-                // else {
-                //     if (o3d[1] * o3d[2] < 0 ||
-                //         o3d[2] * o3d[0] < 0 ||
-                //         o3d[0] * o3d[1] < 0) pushAndMark(n, delmesh, B);
-                // }
+                else if (opp_12ori || opp_20ori || opp_01ori){ pushAndMark(n, delmesh, B); }
             }
         }
     }
@@ -1401,15 +1391,20 @@ void PLCx::getTetsIntersectingFace(uint32_t fi, std::vector<uint64_t> *i_tets, s
                             localOrient3d(n[2], tv[0], tv[1], tv[2], to_unorient),
                             localOrient3d(n[3], tv[0], tv[1], tv[2], to_unorient) };
 
-        if (cornerMask) {
+        if (cornerMask != nullptr) {
             int j = 0, nj;
             for (int i = 0; i < 4; i++) if (uv[i] == 0) j++; else nj = i;
             if (j == 3) {
                 const uint64_t c = (t << 2) + nj;
-                (*cornerMask)[c] = (*cornerMask)[delmesh.tet_neigh[c]] = true;
+                const uint64_t nc = delmesh.tet_neigh[c];
+                (*cornerMask)[c] = (*cornerMask)[nc] = true;
+
+                if(corner_PLCface_map != nullptr)
+                    (*corner_PLCface_map)[c] = (*corner_PLCface_map)[nc] = fi;
             }
         }
-        else if (!((uv[0] >= 0 && uv[1] >= 0 && uv[2] >= 0 && uv[3] >= 0) || (uv[0] <= 0 && uv[1] <= 0 && uv[2] <= 0 && uv[3] <= 0))) {
+        else if (!((uv[0] >= 0 && uv[1] >= 0 && uv[2] >= 0 && uv[3] >= 0) || 
+                    (uv[0] <= 0 && uv[1] <= 0 && uv[2] <= 0 && uv[3] <= 0))) {
             assert(tetIntersectsFace(t, f));
             i_tets->push_back(t);
         }
@@ -1594,43 +1589,20 @@ void PLCx::initFaceFlatEdges(PLCface& f) {
 // Mark internal tetrahedra
 size_t PLCx::markInnerTets_andGetConstrFaces(std::vector<bool>& cornerMask) {
 
-    // If the PLC does not define a valid polyhedron, just tag every tet as IN but the ghosts
-    // if (!is_polyhedron) {
-    //     size_t ng = 0;
-    //     for (size_t i = 0; i < delmesh.numTets(); i++) 
-    //         if (delmesh.isGhost(i)) delmesh.mark_tetrahedra[i] = DT_OUT;
-    //         else {
-    //             delmesh.mark_tetrahedra[i] = DT_IN;
-    //             ng++;
-    //         }
-    //     return ng;
-    // }
-
-    // 1) Mark constraint corners
-    //std::vector<bool> cornerMask(delmesh.tet_node.size(), false);
     cornerMask.resize(delmesh.tet_node.size(), false);
 
-
-    // Crea relazione VF
-    //   per ogni faccia f aggiungi f alla VF di tutti i suoi bounding e internal vertices
-    // Per ogni triangolo in delmesh, cerca la(le) faccia comune f in VF(v1), VF(v2) e VF(v3)
-    //   se c'� pi� di una faccia comune marca immediatamente il triangolo e passa oltre
-    //   altrimenti
-    // scopri se il triangolo sta dentro o fuori dalla faccia comune f (orient2d?)
-    //   1) se f � convessa
-    //   2) se v1 � interno a f (o v2, o v3)
-    //   3) se il baricentro del triangolo � interno a uno dei triangoli di f e al triangolo stesso (check per possibile errore numerico)
-    // Se la faccia comune esiste e il triangolo ci sta dentro allora marcala, altrimenti no
-
-
-    for (size_t fi = 0; fi < faces.size(); fi++)
-        getTetsIntersectingFace((uint32_t)fi, NULL, &cornerMask);
+    // Marks (true) tet-corners overlapping PLCfaces
+    uint32_t nf = (uint32_t)faces.size();
+    for(uint32_t fi=0; fi<nf; fi++) 
+        getTetsIntersectingFace(fi, nullptr, &cornerMask);
 
     // --- DEBUG
     //int num_constrained_faces = 0;
     //for (uint64_t t = 0; t < delmesh.tet_node.size(); t++) 
-    //    if (!delmesh.isGhost(t>>2) && cornerMask[t] && 
-    //        (delmesh.isGhost(delmesh.tet_neigh[t]>>2) || t>delmesh.tet_neigh[t])) num_constrained_faces++;
+    //    if (!delmesh.isGhost(t>>2) && 
+    //         cornerMask[t] && 
+    //         ( delmesh.isGhost(delmesh.tet_neigh[t] >> 2) || 
+    //           t > delmesh.tet_neigh[t] )           ) num_constrained_faces++;
 
     //ofstream f("constraints.off");
     //if (!f) ip_error("PLCx::savePLC: Cannot open file.\n");
@@ -1643,7 +1615,8 @@ size_t PLCx::markInnerTets_andGetConstrFaces(std::vector<bool>& cornerMask) {
 
     //for (uint64_t t = 0; t < delmesh.tet_node.size(); t++) 
     //    if (!delmesh.isGhost(t >> 2) && cornerMask[t] &&
-    //        (delmesh.isGhost(delmesh.tet_neigh[t]>>2) || t > delmesh.tet_neigh[t])) {
+    //        (delmesh.isGhost(delmesh.tet_neigh[t] >> 2) || 
+    //          t > delmesh.tet_neigh[t] )                  ) {
     //    uint32_t v[3];
     //    delmesh.getFaceVertices(t, v);
     //    f << "3 " << v[0] << " " << v[1] << " " << v[2] << "\n";
@@ -1651,6 +1624,20 @@ size_t PLCx::markInnerTets_andGetConstrFaces(std::vector<bool>& cornerMask) {
 
     //f.close();
     // --------
+
+    return delmesh.markInnerTets(cornerMask);
+}
+
+size_t PLCx::markInnerTets_andGetConstrFaces(std::vector<bool>& cornerMask,
+                                    std::vector<uint32_t>& corner_PLCface_map) {
+
+    cornerMask.resize(delmesh.tet_node.size(), false);
+    corner_PLCface_map.resize(delmesh.tet_node.size(), UINT32_MAX);
+
+    // Marks (true) tet-corners overlapping PLCfaces
+    uint32_t nf = (uint32_t)faces.size();
+    for(uint32_t fi=0; fi<nf; fi++) 
+        getTetsIntersectingFace(fi, nullptr, &cornerMask, &corner_PLCface_map);
 
     return delmesh.markInnerTets(cornerMask);
 }
@@ -1671,7 +1658,7 @@ bool PLCx::faceRecovery(bool quiet) {
             const PLCface& f = faces[i];
             const uint32_t* tv = input_tv + f.triangles[0] * 3; // The vertices of f for orientation
             std::vector<uint64_t> i_tets;
-            getTetsIntersectingFace((uint32_t)i, &i_tets);
+            getTetsIntersectingFace((uint32_t)i, &i_tets, nullptr);
 
             if (i_tets.size()) {
                 if (!quiet) printf("\rRecovering face: %zu                  ", i); fflush(stdout);

@@ -1,5 +1,11 @@
+#ifndef _INPUT_PLC_
+#define _INPUT_PLC_
+
 #include <iostream>
 #include <fstream>
+#include <vector>
+#include <algorithm>
+#include "outputMesh.h"
 
 using namespace std;
 
@@ -278,17 +284,53 @@ void read_nodes_and_constraints(double* coords_A, uint32_t npts_A,
 
 class inputPLC {
 private:
+    const char* input_file_name;
+
+    std::vector<double> coordinates; // x1,y1,z1,x2,y2,z2, ..., xn,yn,zn
+    std::vector<uint32_t> triangle_vertices; // t1_v1,t1_v2,t1_v3, t2_v1,t2_v2, 
+
+    // The minimal bounding box is the smallest box that contains all the 
+    // inputPLC vertices. 
+    // 'min_boundingBox_diag' is the minimal bounding box diagonal length and it
+    // is given by:  dist((x_min, y_min, z_min), (x_max, y_max, z_max)).
+    // A bounding box is a box containing all the inputPLC vertices. It can be
+    // set by the user, by extending 'min_boundingBox_diag' of a given positive 
+    // factor 'ampl_factor' at both its extermals.
+    // 'boundingBox_diag' is the length of the extended bounding box diagonal,
+    // while 'boundingBox_vrts' are the coordinates of the eigth bounding box 
+    // endpoints.
     double min_boundingBox_diag;
     double boundingBox_diag;
     std::vector<double> boundingBox_vrts;
+    
+    std::vector<bool> ignored; // marks input triangles that have to be ignored
+
+    std::vector<std::vector<uint32_t>> vt_rel; // vertex -> inicident triangles
 
 public:
-    std::vector<double> coordinates; // x1,y1,z1,x2,y2,z2, ..., xn,yn,zn
-    std::vector<uint32_t> triangle_vertices; // t1_v1,t1_v2,t1_v3, t2_v1,t2_v2, 
-    const char* input_file_name;
-
+    
+    const char* get_input_file_name() const { return input_file_name; }
     uint32_t numVertices() const { return (uint32_t)coordinates.size() / 3; }
     uint32_t numTriangles() const {return (uint32_t)triangle_vertices.size()/3;}
+
+    const std::vector<double>& get_coordinates() const { return coordinates; }
+    const double* ptr_to_coordinates() const { return coordinates.data(); }
+    const std::vector<uint32_t>& get_triangle_vertices() const {
+                                                    return triangle_vertices; }
+    const uint32_t* ptr_to_tri_vrts() const { return triangle_vertices.data(); }
+
+    bool is_tri_ignored(uint32_t t) const { 
+        assert(t < ignored.size()); 
+        return ignored[t]; 
+    }
+    void ignore_tri(uint32_t t) { 
+        assert(t < ignored.size()); 
+        ignored[t] = true; 
+    }
+    void restore_tri(uint32_t t) { 
+        assert(t < ignored.size()); 
+        ignored[t] = false; 
+    }
 
     inputPLC() : min_boundingBox_diag(DBL_MAX), boundingBox_diag(DBL_MAX) {}
 
@@ -299,69 +341,99 @@ public:
 
         // Read OFF file (only triangles supported)
         uint32_t npts, ntri;
-        double* vertex_p;
-        uint32_t* tri_vertices_p;
-        read_OFF_file( filename, 
-                        &vertex_p, &npts, &tri_vertices_p, &ntri, verbose );
+        double* vrt_p;
+        uint32_t* tri_vrt_p;
+        read_OFF_file(filename, &vrt_p, &npts, &tri_vrt_p, &ntri, verbose);
         if (verbose) printf("File read\n");
         else printf("input file %s read.\n", filename);
-        if (npts == 0) 
-            report_input_error_and_exit("Input file has no vertices\n");
-        if (ntri == 0) 
-            report_input_error_and_exit("Input file has no triangles\n");
+        if(npts == 0) report_error_and_exit("Input has no vertices\n");
+        if(ntri == 0) report_error_and_exit("Input has no triangles\n");
 
-        postProcess(vertex_p, npts, tri_vertices_p, ntri, verbose);
+        postProcess(vrt_p, npts, tri_vrt_p, ntri, verbose);
+        ignored.resize((size_t)numTriangles(), false);
 
-        free(vertex_p);
-        free(tri_vertices_p);
+        free(vrt_p);
+        free(tri_vrt_p);
 
         return true;
     }
 
-    bool initFromVectors(double* vertex_p, uint32_t npts, 
-                        uint32_t* tri_vertices_p, uint32_t ntri, bool verbose) {
+    bool initFromVectors(double* vrt_p, uint32_t npts, 
+                        uint32_t* tri_vrt_p, uint32_t ntri, bool verbose) {
         input_file_name = "";
-
-        postProcess(vertex_p, npts, tri_vertices_p, ntri, verbose);
+        postProcess(vrt_p, npts, tri_vrt_p, ntri, verbose);
+        ignored.resize((size_t)numTriangles(), false);
 
         return true;
     }
 
-    void postProcess(double* vertices_p, uint32_t npts, 
-                        uint32_t* tri_vertices_p, uint32_t ntri, bool verbose) {
+    void postProcess(double* vrt_p, uint32_t npts, 
+                        uint32_t* tri_vrt_p, uint32_t ntri, bool verbose) {
         // Convert to valid set of vertices (no duplications) 
         // and constraints (no duplications, no degeneracies)
-        uint32_t* valid_tri_vertices_p;
+        uint32_t* valid_tri_vrt_p;
         uint32_t num_valid_tris;
-        input_vertex_t* tmp_vertices; // These have floating point coordinates
-        uint32_t num_vertices;
-        read_nodes_and_constraints(vertices_p, npts, 
-                                tri_vertices_p, ntri, 
-                                &tmp_vertices, &num_vertices, 
-                            &valid_tri_vertices_p, &num_valid_tris, verbose);
+        input_vertex_t* tmp_vrts; // These have floating point coordinates
+        uint32_t num_vrts;
+        read_nodes_and_constraints(vrt_p, npts, tri_vrt_p, ntri, 
+                                &tmp_vrts, &num_vrts, 
+                            &valid_tri_vrt_p, &num_valid_tris, verbose);
         if(verbose) printf("Valid input built\n");
-        if(num_vertices == 0) 
-            report_input_error_and_exit("Input file has no valid vertices\n");
-        if(num_valid_tris == 0) 
-            report_input_error_and_exit("Input file has no valid triangles\n");
+        if(num_vrts==0) report_error_and_exit("Input has no valid vertices\n");
+        if(num_valid_tris==0) 
+            report_error_and_exit("Input has no valid triangles\n");
 
-        coordinates.resize(3 * num_vertices);
-        for (uint32_t i = 0; i < num_vertices; i++) {
-            coordinates[i * 3] = tmp_vertices[i].coord[0];
-            coordinates[i * 3 + 1] = tmp_vertices[i].coord[1];
-            coordinates[i * 3 + 2] = tmp_vertices[i].coord[2];
+        coordinates.resize(3 * num_vrts);
+        size_t i, i3;
+        for (; i < num_vrts; i++) {
+            i3 = i*3;
+            coordinates[i3    ] = tmp_vrts[i].coord[0];
+            coordinates[i3 + 1] = tmp_vrts[i].coord[1];
+            coordinates[i3 + 2] = tmp_vrts[i].coord[2];
         }
 
-        triangle_vertices.assign(valid_tri_vertices_p, 
-                                    valid_tri_vertices_p + (num_valid_tris*3));
+        triangle_vertices.assign(valid_tri_vrt_p, 
+                                    valid_tri_vrt_p + (num_valid_tris*3));
 
-        free(tmp_vertices);
-        free(valid_tri_vertices_p);
+        free(tmp_vrts);
+        free(valid_tri_vrt_p);
 
         reorderVertices(coordinates.data(), 
                         (uint32_t)coordinates.size() / 3, 
                         triangle_vertices.data(), 
                         (uint32_t)triangle_vertices.size() / 3);
+    }
+
+    bool triangle_has_vertex(uint32_t t, uint32_t v) const {
+        assert(t < numTriangles());
+        const uint32_t* tv = triangle_vertices.data() + t*3;
+        return( (*tv) == v || (*(tv+1)) == v || (*(tv+2)) == v);
+    }
+
+    void init_vt_rel() {
+        vt_rel.resize( (size_t)numVertices() );
+        for(size_t t=0; t<numTriangles(); t++) {
+            const uint32_t* tv = triangle_vertices.data() + t*3;
+            vt_rel[ *tv ].push_back(t);
+            vt_rel[ *(tv+1) ].push_back(t);
+            vt_rel[ *(tv+2) ].push_back(t);
+        }
+    }
+
+    void clear_vt_rel() { vt_rel.clear(); }
+
+    const std::vector<uint32_t>& inc_tris_at(uint32_t v) const {
+        assert(!vt_rel.empty() && v < vt_rel.size());
+        return vt_rel[v];
+    }
+
+    bool are_vertices_connected(uint32_t v, uint32_t w) const {
+        assert(!vt_rel.empty() && v < vt_rel.size());
+        const std::vector<uint32_t>& tris_at_v = vt_rel[v];
+        for(size_t i = 0; i < tris_at_v.size(); i++) {
+            if( triangle_has_vertex(tris_at_v[i], w) ) return true;
+        }
+        return false;
     }
 
     // Fills 'bbv_coords' with eight vertices (24 coordinates) to enclose the 
@@ -410,8 +482,66 @@ public:
         return boundingBox_vrts; 
     }
 
-    void report_input_error_and_exit(const char* msg) {
+    size_t count_ignored_tris() const { 
+        size_t count_ignored = 0;
+		for(size_t i=0; i<ignored.size(); i++) if(ignored[i]) count_ignored++;
+        return count_ignored;
+    }
+
+    void ignore_all_tris_at(uint32_t v) {
+        assert(!vt_rel.empty() && v < vt_rel.size());
+        for(uint32_t t : vt_rel[v]) ignore_tri(t);
+    }
+
+    void ignore_all_tris_at(uint32_t v, uint32_t w) {
+        assert(!vt_rel.empty() && v < vt_rel.size());
+        for(uint32_t t : vt_rel[v]) if(triangle_has_vertex(t, w)) ignore_tri(t);
+    }
+
+    void get_ignored_tri_vrts(std::vector<uint32_t>& ign_tris) {
+		for(size_t i=0; i<numTriangles(); i++) if(ignored[i]) {
+            const uint32_t* t = triangle_vertices.data() + i*3;
+			ign_tris.insert(ign_tris.end(), {*t, *(++t), *(++t) } );
+		}
+	}
+
+    void save_all_triangles(const char* filename) const {
+		output_mesh out( coordinates.data(), numVertices(),
+						 triangle_vertices.data(), numTriangles(), filename );
+		out.save_minimal_triangle_mesh();
+    }
+
+    void save_triangles(const char* filename, uint32_t type = 0) const {
+        // type = 0 -> saves all triangles
+        // type = 1 -> save only not ignored triangles
+        // type = 2 -> save only ignored triangles
+
+        if(type == 0) { 
+            save_all_triangles(filename);
+            return;
+        }
+
+        std::vector<bool> save(numTriangles(), true);
+        size_t i;
+        if(type == 1) for(i=0; i<numTriangles(); i++) save[i] = !(ignored[i]);
+        else if(type == 2) for(i=0; i<numTriangles(); i++) save[i] = ignored[i];
+
+        const uint32_t* tv = triangle_vertices.data();
+        std::vector<uint32_t> t;
+		uint32_t i3;
+        for(i = 0; i < numTriangles(); i++) {
+            i3 = i * 3;
+			if(save[i]) t.insert(t.end(), {tv[i3], tv[i3+1], tv[i3+2]});
+		}
+		output_mesh out( coordinates.data(), numVertices(),
+						 t.data(), t.size()/3, filename);
+		out.save_minimal_triangle_mesh();
+    }
+
+    void report_error_and_exit(const char* msg) {
         printf("%s", msg);
         exit(1);
     }
 };
+
+#endif // _INPUT_PLC_
