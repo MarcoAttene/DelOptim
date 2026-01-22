@@ -30,9 +30,10 @@ void Tetrahedrization::initWithTetgen(int num_vertices, double vertices[], int n
 	/* Run TetGen to create Delaunay tetrahedrization of vertices */
 	tetgenbehavior b;
 	char cmdline[24];
-	strcpy(cmdline, "zpv");
+	strcpy(cmdline, "zpV");
 	if (quality) strcat(cmdline, "q");
 	if (no_erosion) strcat(cmdline, "c");
+	//strcat(cmdline, "T0");
 	b.parse_commandline(cmdline);
 	tetrahedralize(&b, &in, &out, NULL, NULL);
 

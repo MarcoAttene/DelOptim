@@ -3,12 +3,9 @@
 #endif
  
 // #define USE_TETGEN // If uncommented, tetgen is used instead of our
-					  // refinement algorithm. Works only with MSVC and CLang
+					  // refinement algorithm. Works only with MSVC and Clang
 
-// #define ONLY_LFS // If uncomment, computes the local feature size of the 
-					// input triangulation (using a CDT algorithm) and exit.
-
-#define DISP_PROGRESS // If uncommented, progress during Delaunay Refinement
+// #define DISP_PROGRESS // If uncommented, progress during Delaunay Refinement
 					  	 // segment recovery, face recovery and optimization
 					  	 // phases are displaied on standard output. It is
 					  	 // suggested to use -v (verbose) command line option.
@@ -30,20 +27,21 @@ using namespace std;
 #endif
 
 void  printUsageAndExit() {
-	cout << "Creates a well-shaped tetrahedral mesh out of a triangulated "
-			"closed surface.\n"
+	cout << "Creates a well-shaped and conformal tetrahedral mesh out of a "
+			"triangulated, input surface.\n"
 		 << "The input is required to be manifold, oriented and with no "
 			"degenerate\nor self-intersecting triangles.\n"
-		 << "The mesh is produced by Delaunay-refining a box around the "
-			"chamfered input.\n"
-		 << "INPUT: an OFF file (filename.off) containing a closed triangulated"
+		 << "The mesh is produced by Delaunay-refining a bounding box around "
+			"the chamfered input.\n"
+		 << "INPUT: an OFF file (filename.off) containing a triangulated"
 			" surface.\n"
 		 << "USAGE: ./delmesher [-v][-l][-e 8] filename.off\n"
 		 << "OPTIONS:\n"
-		 << "[-a]\tcreate an enriched CDT out of the Delaunay-refined mesh to "
-			"produce\n\tan exactly conformal volume mesh.\n"
-		 << "[-b]\tuse the Delaunay-refined mesh to produce an OFF file which "
-			"can be\n\tused as input for a CDT algorithm (see OUTPUT).\n"
+		 << "[-a]\tavoid to perform last phase of the algorithm called "
+		 	"'enriched CDT';\n\t the output Delaunay-refined mesh will have "
+			"quality guarantees (min face angle > 14 deg),\n\t but the "
+			"constrained face will not be conformal to input surface.\n"
+		 << "[-b]\tsaves the input to the e'enriched CDT' phase.\n"
 		 << "[-c]\tcomputes the minimum LFS of the input triangulation.\n"
 		 << "[-d]\tenables sliver removal during Delaunay refinement.\n"
 		 << "[-e ex]\t(ex positive integer) set a lower bound on LFS of the "
@@ -58,42 +56,38 @@ void  printUsageAndExit() {
 		 << "[-l]\tlogging mode (append a line to 'delOpt_log.csv').\n"
 		 << "[-v]\tverbose mode.\n"
 		 << "[-u]\tsaves the input after chamfering (see OUTPUT).\n"
-		 << "[-w]\tsaves the outer boundary of the Delaunay-refined mesh "
+		 << "[-w]\tsaves the outer boundary of the intermesiate "
+			"Delaunay-refined mesh (see OUTPUT).\n"
+		 << "[-x]\tsaves the intermediate Delaunay-refined mesh (see OUTPUT).\n"
+		 << "[-y]\t(needs [-a]) saves the outer boundary of output mesh "
 			"(see OUTPUT).\n"
-		 << "[-x]\tsaves the Delaunay-refined mesh (see OUTPUT).\n"
-		 << "[-y]\t(needs [-a]) saves the outer boundary of the enriched CDT "
-			"(see OUTPUT).\n"
-		 << "[-z]\t(needs [-a]) saves the enriched CDT (see OUTPUT).\n"
+		 << "[-z]\t(needs [-a]) saves the output (see OUTPUT).\n"
 		 << "OUTPUT:\n"
 		 << "\tuse [-b] to produce a surface mesh. ('filename'_rebuilt.off)\n"
 		 << "\tuse [-u] to produce a surface mesh. (chamfered_plc.off)\n"
 		 << "\tuse [-w] to produce a surface mesh. (DR_interface.off)\n"
-		 << "\tuse [-y] to produce a surface mesh. "
-			"(DRCDT_constrainedFaces.off)\n"
+		 << "\tuse [-y] to produce a surface mesh. (constrainedFaces.off)\n"
 		 << "\tuse [-x] to produce a volumetric mesh. (DR_mesh.tet)\n"
-		 << "\tuse [-z] to produce a volumetric mesh. (DRCDT_mesh.tet)\n"
+		 << "\tuse [-z] to produce a volumetric mesh. (out_mesh.tet)\n"
 		 << "RETURNS:\n"
 		 << "\t0 when the whole execution terminates correctly.\n"
 		 << "\n";
 	exit(0);
 }
 
-
-#ifdef ONLY_LFS
-void comp_bboxdiag_and_lfs(inputPLC& plc, bool verbose, bool log){
-	// Compute the minum distance between any two mesh elements (vertices, 
-	// edges, triangles): a cdt is needed to make this computation efficient.
-	cdt_interface input_cdt;
-	input_cdt.createSteinerCDT(plc, true, false);
-	double l = input_cdt.inputPLC_LFS() / plc.get_BBox_diag();
-	if (verbose) cout << "input PLC LFS relative to bb diagonal: " << l << "\n";
-	if (log){ 
-		logDouble("lfs", l);
-		logTimeChunk("T_inPLC_lfs(ms)"); 
-		advance_ProcessLogging("lfs");
-	}
-}
-#endif
+// void comp_bboxdiag_and_lfs(inputPLC& plc, bool verbose, bool log){
+// 	// Compute the minum distance between any two mesh elements (vertices, 
+// 	// edges, triangles): a cdt is needed to make this computation efficient.
+// 	cdt_interface input_cdt;
+// 	input_cdt.createSteinerCDT(plc, true, false);
+// 	double l = input_cdt.inputPLC_LFS() / plc.get_BBox_diag();
+// 	if (verbose) cout << "input PLC LFS relative to bb diagonal: " << l << "\n";
+// 	if (log){ 
+// 		logDouble("lfs", l);
+// 		logTimeChunk("T_inPLC_lfs(ms)"); 
+// 		advance_ProcessLogging("lfs");
+// 	}
+// }
 
 void preparing_to_return(uint64_t time, uint64_t mem, bool log, bool verbose) {
 	if(log){ 
@@ -141,24 +135,24 @@ int main(int argc, char* argv[])
 	if (strlen(filename) == 0) printUsageAndExit();
 
 	if(options.find('b') != string::npos) strcpy(out4CDT_name, filename);
-	bool comp_DelRef_CDT = (options.find('a') != string::npos);
-	bool comp_inLFS = 	   (options.find('c') != string::npos);
-	bool remove_slivers =  (options.find('d') != string::npos);
-	bool histo = 		   (options.find('h') != string::npos);
-	bool log_mode = 	   (options.find('l') != string::npos);
-	bool verbose_mode =    (options.find('v') != string::npos);
-	bool cham_out = 	   (options.find('u') != string::npos);
-	bool DR_skin = 		   (options.find('w') != string::npos);
-	bool DR_outmesh = 	   (options.find('x') != string::npos);
-	bool DRCDT_skin = 	   (options.find('y') != string::npos);
-	bool DRCDT_outmesh =   (options.find('z') != string::npos);
+	bool enriched_CDT =   		(options.find('a') == string::npos);
+	bool comp_inLFS = 	  		(options.find('c') != string::npos);
+	bool remove_slivers = 		(options.find('d') != string::npos);
+	bool histo = 		  		(options.find('h') != string::npos);
+	bool log_mode = 	  		(options.find('l') != string::npos);
+	bool verbose_mode =   		(options.find('v') != string::npos);
+	bool cham_out = 	  		(options.find('u') != string::npos);
+	bool DR_skin = 		  		(options.find('w') != string::npos);
+	bool DR_outmesh = 	  		(options.find('x') != string::npos);
+	bool enriched_CDT_skin = 	(options.find('y') != string::npos);
+	bool enriched_CDT_outmesh = (options.find('z') != string::npos);
 
 	// Internal parameters ----------------------------------------------------
 	double bbox_factor = 1.0; // Bounding box diagonal elongation factor.
 	double epsilon; // Chamfering distance; depends on bounding box diagonal.
 	bool cham_simpl = true; // DEFAULT: true. Try to remove uncessary edges 
 							// while keeping non-acute angles.
-	bool cham_safe = true; // DEFAULT: false. If true uses "safe" chamfering
+	bool cham_safe = false; // DEFAULT: false. If true uses "safe" chamfering
 						   // algorithm (with theoretical guarantees of removig
 						   // all acute angles, but creates shorter edges).
 	double optim_ratio = 2.0; // DEFAULT: 2.0. Affects Delaunay Refinement 
@@ -175,19 +169,25 @@ int main(int argc, char* argv[])
 	inputPLC plc;
 	plc.initFromFile(filename, verbose_mode);
 	plc.setBoundingBox(bbox_factor);
+
 	if (log_mode) log_inputPLC_stats(plc);
 
-#ifdef ONLY_LFS
-	
-	comp_bboxdiag_and_lfs(plc, verbose_mode, log_mode); 
-
-#elif USE_TETGEN
-	
+#ifdef USE_TETGEN
 	Tetrahedrization mesh;
-	mesh.initWithTetgen(plc.numVertices(), plc.coordinates.data(), 
-				plc.numTriangles(), plc.triangle_vertices.data(), true, false);
-	cout << "\n";
-
+	mesh.initWithTetgen( plc.numVertices(), (double*)plc.ptr_to_coordinates(), 
+	 					 plc.numTriangles(), (uint32_t*)plc.ptr_to_tri_vrts(), true, true);
+	for(Tetrahedron* t : mesh.tets()) t->is_internal = true;
+	mesh.saveOFFInterface("tetgen_interface.off");
+	
+	if (log_mode){
+		logInteger("tetgen_nVrts", (uint64_t)mesh.num_vertices() );
+		logInteger("tetgen_nTets", (uint64_t)mesh.num_tetrahedra() );
+		logDouble("tetgen_Short_Edge", mesh.minEdgeLength() );
+		logAngleStats(mesh, "tetgen", false);
+		advance_ProcessLogging("tetgen");
+	}
+	else mesh.printReport(false, "tetgen Mesh");
+	if(histo) make_histogram(mesh, "tetgen");
 #else
 
 	cdt_interface input_cdt;
@@ -203,41 +203,24 @@ int main(int argc, char* argv[])
 			
 		if(verbose_mode) std::cout<< plc.count_ignored_tris() << " input "
 							<< "triangles ignored (LFS/BB_DIG < "<<toll<<").\n";
-
-		// TMP
-		// plc.save_triangles("used_constraints_before_chamfering.off", 1);
-		// plc.save_triangles("unused_constraints_befor_chamfering.off", 2);
 	}
 
 	// Chamfering of the input PLC (epsilon controls the chamfering distance)
 	// epsilon = plc.bbDiag() / 1000.0;	
 	epsilon = DBL_MAX; // use the as great as possible epsilon
-
-	// take_time(main_time); // DEBUG
-
 	chamfering_interface cham(cham_safe, cham_simpl, cham_out, empty_plc);
 	cham.perform_chamfering(plc, epsilon, toll, verbose_mode);
 	if (log_mode) log_chamferPLC_stats(cham, plc);
 
-	// std::cout<<"\nCHAMFERING TIME: "<<take_time(main_time)<<"\n\n";// DEBUG
-
 	if(min_dist_exp!=UINT32_MAX) {
-			
 		if(verbose_mode) std::cout<< plc.count_ignored_tris() << " input "
 						<< "triangles ignored (LFS/BB_DIG < "<<toll<<").\n";
 
-		// TMP
-		// 	plc.save_triangles("used_constraints.off", 1);
-		// 	plc.save_triangles("unused_constraints.off", 2);
+		// plc.save_triangles("used_constraints.off", 1);
+		// plc.save_triangles("unused_constraints.off", 2);
 	}
 	if(log_mode) logInteger("Used Input tris", 
 					(uint64_t)(plc.numTriangles() - plc.count_ignored_tris()));
-
-	// // TMP start -- for chamfering test --------
-	// uint64_t bmem_1 = (uint64_t)getPeakRSS();
-	// preparing_to_return( take_time(main_time), bmem_1, log_mode, verbose_mode);
-	// return 0;
-	// // TMP end -- for chamfering test --------
 
 	// Delaunay Refinement of the chamfered PLC
 	delRef_interface DR(plc, cham, input_cdt, verbose_mode, log_mode);
@@ -248,16 +231,11 @@ int main(int argc, char* argv[])
 	DR.intExt_classification();
 	DR.get_mesh_statistics(log_mode, histo, DR_skin, DR_outmesh);
 
-	// TMP start -- for DelRef test --------
-	// uint64_t bmem_2 = (uint64_t)getPeakRSS();
-	// preparing_to_return( take_time(main_time), bmem_2, log_mode, verbose_mode);
-	// return 0;
-	// TMP end -- for DelRef test --------
-
-	// Delaunay Refinement + CDT
-	if( comp_DelRef_CDT || strlen(out4CDT_name) != 0 )
-		get_CDT_of_DRmesh(DR, cham, plc, toll, out4CDT_name, histo, DRCDT_skin, 
-						DRCDT_outmesh, comp_DelRef_CDT, verbose_mode, log_mode);
+	// Enriched CDT
+	if( enriched_CDT || strlen(out4CDT_name) != 0 )
+		get_enriched_CDT(DR, cham, plc, toll, out4CDT_name, histo, 
+						 enriched_CDT_skin, enriched_CDT_outmesh, enriched_CDT, 
+						 verbose_mode, log_mode);
 
 	// Get statistics or angles histogram of the input-CDT
 	DR.get_inputCDT_statistics(histo, log_inputCDT_stats);

@@ -888,6 +888,8 @@ public:
 		for(size_t i=0; i<n_optimMesh_vrts; i++) 
 			cdt_vrts[i] = mesh.vrts()[i]->getPoint();
 
+		// save_valid_cdt_input("constrained_DR_faces"); // DEBUG
+
 		// To create triangles filling holes created by chamfering we need to 
 		// connect Steiner points to an appropriate input plc vertex.
 		// 'ref_vrts' carries connecting info only for chamfering Stainer pts,

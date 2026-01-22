@@ -1214,6 +1214,7 @@ inline void pushAndMark(uint64_t t, TetMesh& m, std::vector<uint64_t>& B) {
 void PLCx::getTetsIntersectingFace(uint32_t fi, std::vector<uint64_t> *i_tets, 
                                     std::vector<bool>* cornerMask,
                                 std::vector<uint32_t>* corner_PLCface_map) {
+
     const PLCface& f = faces[fi];
 
     uint32_t v_t[4]; // Container for tetrahedron vertices
@@ -1250,7 +1251,6 @@ void PLCx::getTetsIntersectingFace(uint32_t fi, std::vector<uint64_t> *i_tets,
         // fi and i_tets can be filled with the et of such an edge.
     }
 
-    // Mark f vertices and init orientations
     for (uint32_t v : f.vertices) {
         delmesh.marked_vertex[v] = 1;
         v_orient[v] = 0;
@@ -1884,6 +1884,11 @@ uint64_t PLCx::missingFaceInCavity(const std::vector<uint64_t>& bnd, const std::
     for (uint64_t t : bnd) {
         uint32_t v[3];
         delmesh.getFaceVertices(t, v);
+
+        if(v_reindex[v[0]] >= vertices.size()) std::cout<<"[PLC.hpp - missingFaceInCavity()] possible v_reindex[v[0]] ERROR\n"; // DEBUG
+        if(v_reindex[v[1]] >= vertices.size()) std::cout<<"[PLC.hpp - missingFaceInCavity()] possible v_reindex[v[1]] ERROR\n"; // DEBUG
+        if(v_reindex[v[2]] >= vertices.size()) std::cout<<"[PLC.hpp - missingFaceInCavity()] possible v_reindex[v[2]] ERROR\n"; // DEBUG
+
         for (int i = 0; i < 3; i++) v[i] = v_reindex[v[i]];
 
         if (!dt.getTetsFromFaceVertices(v[0], v[1], v[2], nt)) {

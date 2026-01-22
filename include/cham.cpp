@@ -79,9 +79,9 @@ bool isAcuteAngle(const pointType* p, const pointType* q,
 bool check_notAcuteAngle(const pointType* p, 
                                 const pointType* q, const pointType* r) {
     if( !isAcuteAngle(p,q,r) ) return true;
-    if( is_almost_right_angle(p,q,r) ){ 
-        std::cout << "WARNING: this angle is acute, but |cos_alpha| < "
-                  << right_angle_cos_toll << "\n";
+    if( is_almost_right_angle(p,q,r)){ 
+    //     std::cout << "WARNING: this angle is acute, but |cos_alpha| < "
+    //               << right_angle_cos_toll << "\n";
         return true;
     }
     return false;
@@ -693,7 +693,7 @@ bool correct_coeff(double& xi, double& eta,
     double xi_init = xi, eta_init = eta;
 
     // vector3d B = P * xi + Q * eta + R * (1 - (xi+eta));
-    pointType* B = new implicitPoint3D_BPT(*P,*Q,*R,xi,eta);
+    implicitPoint3D_BPT* B = new implicitPoint3D_BPT(*P,*Q,*R,xi,eta);
 
     bool rel_to_P = (E->toExplicit3D() == P->toExplicit3D());
 
@@ -767,10 +767,10 @@ bool correct_coeff(double& xi, double& eta,
                     bool relative_to_Q) {
     // return true; // DEBUG TMP
 
-    const pointType* P = new explicitPoint3D(OP.c[0],OP.c[1],OP.c[2]);
-    const pointType* Q = new explicitPoint3D(OQ.c[0],OQ.c[1],OQ.c[2]);
-    const pointType* R = new explicitPoint3D(OR.c[0],OR.c[1],OR.c[2]);
-    const pointType* L = relative_to_Q ? 
+    const explicitPoint3D* P = new explicitPoint3D(OP.c[0],OP.c[1],OP.c[2]);
+    const explicitPoint3D* Q = new explicitPoint3D(OQ.c[0],OQ.c[1],OQ.c[2]);
+    const explicitPoint3D* R = new explicitPoint3D(OR.c[0],OR.c[1],OR.c[2]);
+    const implicitPoint3D_LNC* L = relative_to_Q ? 
             new implicitPoint3D_LNC(R->toExplicit3D(), Q->toExplicit3D(), t1) :
             new implicitPoint3D_LNC(R->toExplicit3D(), P->toExplicit3D(), t0);
     bool corrected = correct_coeff(xi,eta, P,Q,R, L);
@@ -1105,10 +1105,10 @@ implicitPoint3D_BPT* move_BPT_toward_LNC(
 
     // 'lnc' is an equivalent representation of 'lnc_in' with t < 0.5, 
     // and traveled from 'R' to 'P' (or 'Q') as 't' goes from 0 to 1.
-    const pointType* lnc = 
+    const implicitPoint3D_LNC* lnc = 
                         new implicitPoint3D_LNC(*R, common_is_P ? *P : *Q, t);
     
-    assert( check_notAcuteAngle(&lnc->toLNC().Q(), lnc, bpt) );
+    assert( check_notAcuteAngle(&lnc->Q(), lnc, bpt) );
 
     vector3d OP(P), OQ(Q), OR(R);
     double distsq_PR = OP.dist_sq(OR);
@@ -1131,7 +1131,7 @@ implicitPoint3D_BPT* move_BPT_toward_LNC(
 
     pointType* new_bpt = new implicitPoint3D_BPT(*P, *Q, *R, xi, eta);
 
-    assert( check_notAcuteAngle(&lnc->toLNC().Q(), lnc, new_bpt) );
+    assert( check_notAcuteAngle(&lnc->Q(), lnc, new_bpt) );
 
     delete lnc;
 

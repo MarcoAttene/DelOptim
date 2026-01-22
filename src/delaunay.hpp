@@ -915,6 +915,7 @@ void TetMesh::ETcorners(uint32_t v1, uint32_t v2, std::vector<uint64_t>& et) con
 }
 
 void TetMesh::VTfull(uint32_t v, std::vector<uint64_t>& vt) const {
+
     static std::vector<uint64_t> vt_queue; // Static to avoid reallocation at each call
     uint64_t s, t = inc_tet[v];
     vt_queue.push_back(t);

@@ -149,7 +149,7 @@ public:
     bool is_convex;
     bool is_simply_connected;
 
-    PLCface() {}
+    PLCface() : is_convex(true), is_simply_connected(true) {}
 
     void zip();
 

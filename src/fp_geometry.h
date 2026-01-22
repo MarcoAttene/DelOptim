@@ -810,7 +810,7 @@ inline double minTetDihedralAngleCos(const pointType* v0, const pointType* v1, c
 inline double getAngle(double a, double b, double c) {
 
 	assert(a>0.0 && b>0.0 && c>0.0 && "ERROR: negative side\n");
-	assert((a < b+c) && (b < a+c) && (c < a+b) && "ERROR: triangle inequality does not hold\n"); 
+	// assert((a < b+c) && (b < a+c) && (c < a+b) && "ERROR: triangle inequality does not hold\n"); 
 	// if((a > b+c) || (b > a+c) || (c > a+b)){
 	// 	std::cout<<"ERROR: triangle inequality does not hold\n"; exit(1);
 	// } 

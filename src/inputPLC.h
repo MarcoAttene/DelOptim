@@ -384,7 +384,7 @@ public:
             report_error_and_exit("Input has no valid triangles\n");
 
         coordinates.resize(3 * num_vrts);
-        size_t i, i3;
+        size_t i=0, i3;
         for (; i < num_vrts; i++) {
             i3 = i*3;
             coordinates[i3    ] = tmp_vrts[i].coord[0];

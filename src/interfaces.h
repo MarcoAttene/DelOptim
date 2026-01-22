@@ -29,16 +29,9 @@ uint64_t take_time(chrono_clock::time_point& time_point){
 // triangle. Output chamfered plc ('out_vertices' + 'out_faces') is then used 
 // as input for the Delaunay refinement algorithm.
 // 'out_conn_vertices' contains indices of input vertices that have become 
-// isolated during chamfering but that are necessery to close rebuilt the
-// input surface to compute the CDT of the refined mesh.
+// isolated during chamfering but that are necessery to rebuilt the
+// input surface to compute the enriched CDT of the refined mesh.
 
-// It is influenced by 3 command line OPTIONS (boolean):
-// - safe: enables the "theoretically safe" chamfering strategy, 
-//		   which in turn creates shorter edges.
-// - simplify: enables merging unnecessary output edges as long as 
-//			   no acute angles appear. 
-// - save_output: enables saving the triangulated output on the file 
-//				  'chamfered_plc.off'.
 class chamfering_interface{
 
 private:
@@ -49,7 +42,7 @@ private:
 	std::vector<uint32_t> uv; // Indices Used Vertices (wrt cut_plc->vertices),
 							  // those that are incident to at least an output
 							  // triangle.
-	double chamPLC_part_lfs = DBL_MAX;
+	double chamPLC_lfs = DBL_MAX;
 
 	// Command line options related parameters:
 	bool safe;
@@ -127,7 +120,7 @@ public:
 		if(save_output) cut_plc->saveTriangles(out_tri, "chamfered_plc.off"); 
 		// Save chamfered input + complementar triangles to rebuild input PLC
 		// cut_plc->save_rebuilded_input_after_chamfering(
-		//			out_tri, "all_tris_chamf.off"); 
+		// 			out_tri, "all_tris_chamf.off"); 
 		// cut_plc->saveFaces(); // Save polygonal faces
 		
 		input_is_manifold = cut_plc->input_plc_is_manifold();
@@ -139,15 +132,15 @@ public:
 	}
 	inline void mark_out_tri_vertices() { for(uint32_t vi : out_tri) uv[vi]=1; }
 
-	inline uint32_t get_num_out_vrts(){ return (uint32_t)out_vertices.size(); }
-	inline uint32_t get_num_out_faces(){ return (uint32_t)out_faces.size(); }
-	inline double get_chamPLC_part_lfs(){
-		if(chamPLC_part_lfs==DBL_MAX) chamPLC_part_lfs = cut_plc->get_part_lfs(); 
-		return chamPLC_part_lfs; 
+	inline uint32_t count_out_vrts(){ return (uint32_t)out_vertices.size(); }
+	inline uint32_t count_out_faces(){ return (uint32_t)out_faces.size(); }
+	inline double get_chamPLC_lfs(){
+		if(chamPLC_lfs==DBL_MAX) chamPLC_lfs = cut_plc->get_part_lfs(); 
+		return chamPLC_lfs; 
 	}
 
 	void empty_plc_case(inputPLC& plc) {
-		chamPLC_part_lfs = -DBL_MAX;
+		chamPLC_lfs = -DBL_MAX;
 		out_faces.clear();
 		for (size_t i = 0; i < plc.numVertices(); i++) {
 			const double* x = plc.get_coordinates().data() + i*3;
@@ -328,9 +321,9 @@ inline void log_inputPLC_stats(inputPLC& plc){
 inline void log_chamferPLC_stats(chamfering_interface& cham, inputPLC& plc){
 	logBoolean("manifold", cham.input_is_manifold);
 	logBoolean("open", !cham.input_has_interior);
-	logInteger("cham_nVrts", cham.get_num_out_vrts());
-	logInteger("cham_nTris", cham.get_num_out_faces());
-	logDouble("cham_part_LFS", cham.get_chamPLC_part_lfs() / plc.get_BBox_diag());
+	logInteger("cham_nVrts", cham.count_out_vrts());
+	logInteger("cham_nTris", cham.count_out_faces());
+	logDouble("cham_part_LFS", cham.get_chamPLC_lfs() / plc.get_BBox_diag());
 	logTimeChunk("T_cham(ms)");
 	advance_ProcessLogging("chamfering");
 }
@@ -448,7 +441,7 @@ class delRef_interface {
 							   << closest_dist / BBox_len << "\n";
 		if (verbose) std::cout << "Distance of chamfered closest points "
 								  "relative to bb diagonal: " 
-							<< cham.get_chamPLC_part_lfs() / BBox_len << "\n";
+							<< cham.get_chamPLC_lfs() / BBox_len << "\n";
 
         double min_PLC_dist = -1.0;
 		if (comp_inLFS) { 
@@ -565,7 +558,7 @@ class delRef_interface {
 			logAngleStats(mesh, "DR", input_enclose_vol);
 			advance_ProcessLogging("Optim");
 		}
-		else mesh.printReport(input_enclose_vol, "DelRef Mesh");
+		else if(verbose) mesh.printReport(input_enclose_vol, "DelRef Mesh");
 		if(histo) make_histogram(mesh, "DR");
 		if(DR_skin) mesh.saveOFFInterface("DR_interface.off");
 		if(DR_outmesh) mesh.saveTET("DR_mesh.tet");
@@ -585,16 +578,16 @@ class delRef_interface {
 	}
 };
 
-// ---------------------------- //
-// CDT of Delaunay refined mesh //
-// ---------------------------- //
+// ------------ //
+// Enriched CDT //
+// ------------ //
 
-void get_CDT_of_DRmesh( delRef_interface& DR, chamfering_interface& cham, 
+void get_enriched_CDT( delRef_interface& DR, chamfering_interface& cham, 
 						inputPLC& plc, double toll,
 						const char* out4CDT_name,
 						bool display_histogram, 
-						bool DRCDT_skin, bool DRCDT_outmesh,
-						bool computeCDT, bool verbose, bool log){
+						bool save_out_skin, bool save_out_mesh,
+						bool compute_enriched_CDT, bool verbose, bool log){
 
 	if (verbose) std::cout << "\nClosing chamfered PLC.\n";
 
@@ -605,32 +598,32 @@ void get_CDT_of_DRmesh( delRef_interface& DR, chamfering_interface& cham,
 	plc.get_ignored_tri_vrts(ign_tris);
 
 	// Collects all Delaunay Refinement vertices and 
-	// a Delaunay refined triangulation of the chamfered plc, 
-	// to be used as input for cdt
+	// a Delaunay Refined triangulation of the chamfered plc, 
+	// to be used as input for enrich CDT
 	recyled_surface_mesh cdt_input(DR.mesh, plc, verbose);
 	cdt_input.set_ref_vrts(cham.out_conn_vertices);
 	cdt_input.rebuild_surface(toll);
 	if(strlen(out4CDT_name) != 0) cdt_input.save_valid_cdt_input(out4CDT_name);
 
-	if( !computeCDT ) return;
+	if( !compute_enriched_CDT ) return;
 
-	if (verbose) std::cout << "\nComputing Delaunay Refined CDT.\n";
+	if (verbose) std::cout << "\nComputing enriched CDT.\n";
 
-	cdt_interface DR_cdt; 
-	DR_cdt.createSteinerCDT(cdt_input.cdt_vrts, cdt_input.cdt_tris, false);
+	cdt_interface e_cdt; 
+	e_cdt.createSteinerCDT(cdt_input.cdt_vrts, cdt_input.cdt_tris, false);
+
 	Tetrahedrization stat_mesh;
-	stat_mesh.initFromVerticesAndTets(DR_cdt.mesh->vertices, 
-										DR_cdt.mesh->tet_node);
+	stat_mesh.initFromVerticesAndTets(e_cdt.mesh->vertices, e_cdt.mesh->tet_node);
 	markAllTetAsInternal( stat_mesh );
 
 	if(log){
-		uint64_t drcdt_time = take_time(loc_time_point);
-		log_mesh_stats(stat_mesh, "DRCDT", drcdt_time, DR_cdt.num_constr_tris);
-		advance_ProcessLogging("final_CDT");
+		uint64_t ecdt_time = take_time(loc_time_point);
+		log_mesh_stats(stat_mesh, "enrCDT", ecdt_time, e_cdt.num_constr_tris);
+		advance_ProcessLogging("enrCDT");
 	}
-	else stat_mesh.printReport(false, "CDT of partially Delaunay refined mesh");
+	else if(verbose) stat_mesh.printReport(false, "enriched CDT");
 	
-	if(display_histogram) make_histogram(stat_mesh, "DR+CDT");
-	if(DRCDT_skin) DR_cdt.save_skin_toOFF("DRCDT");
-	if(DRCDT_outmesh) DR_cdt.save_mesh_toTET("DRCDT");
+	if(display_histogram) make_histogram(stat_mesh, "enriched_CDT");
+	if(save_out_skin) e_cdt.save_skin_toOFF("enrichedCDT");
+	if(save_out_mesh) e_cdt.save_mesh_toTET("enrichedCDT");
 }
