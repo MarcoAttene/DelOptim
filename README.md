@@ -27,6 +27,32 @@ Launch it with no command line parameters to have a list of supported options.
 We tested our code on MacOS (GCC-10) and Windows (MSVC 2019).
 It should work on Linux-GCC and MacOS-Clang too, but we have not tested it on these configurations.
 
+On Apple Silicon (arm64) and other ARM targets the x86 SIMD intrinsics used by
+the exact predicates are emulated on top of NEON via
+[SIMDe](https://github.com/simd-everywhere/simde), which CMake fetches
+automatically; no extra setup is required.
+
+| --- |
+
+## Testing
+A small [Catch2](https://github.com/catchorg/Catch2)-based test suite lives in
+`tests/`. It is built by default (CMake fetches Catch2 automatically) and runs
+``delmesher`` on every model in `input_models/`, switching on each accepted
+command-line flag one at a time and checking that the binary exits with code 0.
+Build and run it with:
+```
+cd build
+cmake ..
+cmake --build .
+ctest
+```
+A full meshing run is expensive, so by default each test run caps Delaunay
+refinement (`-m 2000`) to keep the suite to a few minutes; the cap still
+exercises every downstream phase and output writer. Use
+``-DDELMESHER_TEST_MAX_VERTICES=""`` for unbounded full runs, or
+``-DDELMESHER_BUILD_TESTS=OFF`` to skip the tests entirely (e.g. when building
+offline).
+
 | --- |
 
 ## Citing us
