@@ -56,17 +56,37 @@ else()
 # grant IEEE 754 compliance
 	target_compile_options(${PROJECT_NAME} PUBLIC -frounding-math)
 	# set target architecture
-	if(ENABLE_AVX2)
-		target_compile_options(${PROJECT_NAME} PUBLIC "-mavx2")
-		target_compile_options(${PROJECT_NAME} PUBLIC "-mfma")
-	elseif(ENABLE_SSE2)
-		target_compile_options(${PROJECT_NAME} PUBLIC "-msse2")
+	if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64|ARM64)$")
+		# ARM (e.g. Apple Silicon): the x86 -mavx2/-mfma/-msse2 flags are
+		# invalid here. The code emulates the x86 AVX2/FMA intrinsics on top
+		# of NEON via SIMDe, which is fetched below.
+	else()
+		if(ENABLE_AVX2)
+			target_compile_options(${PROJECT_NAME} PUBLIC "-mavx2")
+			target_compile_options(${PROJECT_NAME} PUBLIC "-mfma")
+		elseif(ENABLE_SSE2)
+			target_compile_options(${PROJECT_NAME} PUBLIC "-msse2")
+		endif()
 	endif()
-# reserve enough stack size	
-	target_compile_options(${PROJECT_NAME} PUBLIC -Wl,-z,stacksize=8421376)
+# reserve enough stack size (GNU ld only; the macOS linker uses the 8 MB default)
+	if(NOT APPLE)
+		target_compile_options(${PROJECT_NAME} PUBLIC -Wl,-z,stacksize=8421376)
+	endif()
 	if(NOT LGPL)
 		target_compile_options(${PROJECT_NAME} PUBLIC "-DUSE_MAROTS_METHOD")
 	endif()
+endif()
+
+# On ARM (e.g. Apple Silicon) the exact predicates rely on SIMDe to emulate the
+# x86 AVX2/FMA intrinsics (<x86/avx2.h>, <x86/fma.h>) on top of NEON.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64|ARM64)$")
+	include(FetchContent)
+	FetchContent_Declare(simde
+		GIT_REPOSITORY https://github.com/simd-everywhere/simde.git
+		GIT_TAG v0.8.2
+	)
+	FetchContent_MakeAvailable(simde)
+	target_include_directories(${PROJECT_NAME} PUBLIC ${simde_SOURCE_DIR}/simde)
 endif()
 
 # Public include directory
