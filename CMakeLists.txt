@@ -29,6 +29,16 @@ option(DELMESHER_BUILD_PYTHON "Build the delmesher Python bindings" OFF)
 # set the project name
 project(delmesher)
 
+# Default to a Release (optimized) build when the user hasn't asked for a
+# specific configuration. Only applies to single-config generators; multi-config
+# generators (Visual Studio, Ninja Multi-Config) select the config at build time.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+	set(CMAKE_BUILD_TYPE Release CACHE STRING
+		"Choose the type of build (Debug Release RelWithDebInfo MinSizeRel)" FORCE)
+	set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
+		Debug Release RelWithDebInfo MinSizeRel)
+endif()
+
 # specify the C++ standard
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
