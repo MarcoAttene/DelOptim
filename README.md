@@ -1,5 +1,7 @@
 # Surface chamfering for robust tetrahedral meshing
 
+[![CI](https://github.com/MarcoAttene/DelOptim/actions/workflows/ci.yml/badge.svg)](https://github.com/MarcoAttene/DelOptim/actions/workflows/ci.yml)
+
 This code implements our quality meshing algorithm described in "**Surface chamfering for robust tetrahedral meshing**" by L. Diazzi, J. Dai, D. Panozzo and <a href="http://saturno.ge.imati.cnr.it/ima/personal-old/attene/PersonalPage/attene.html">M. Attene</a> (ACM Trans Graphics Vol 45, N. 4, SIGGRAPH 2026).
 Please refer to our paper for details here: https://doi.org/10.1145/3811395
 

@@ -56,7 +56,15 @@ const std::vector<FlagCase>& flag_cases() {
         {"y-save-out-skin",  {"-a", "-y"}},
         {"z-save-out-mesh",  {"-a", "-z"}},
     };
+#if defined(DELMESHER_TEST_SMOKE)
+    // Smoke mode: a single capped run is enough to confirm the binary works end
+    // to end. Used for the slow unoptimized Debug CI builds; the Release builds
+    // run the full sweep above.
+    static const std::vector<FlagCase> smoke(cases.begin(), cases.begin() + 1);
+    return smoke;
+#else
     return cases;
+#endif
 }
 
 // Discover every .off model in the input directory, so dropping new models into
@@ -75,7 +83,14 @@ std::string quote(const std::string& s) { return "\"" + s + "\""; }
 
 // Run a shell command and return the process exit code (-1 if it never ran).
 int run(const std::string& cmd) {
-    const int raw = std::system(cmd.c_str());
+#ifdef _WIN32
+    // cmd.exe strips the outermost pair of quotes from its argument, so wrap the
+    // whole command to keep quoted paths (which may contain spaces) intact.
+    const std::string line = "\"" + cmd + "\"";
+#else
+    const std::string& line = cmd;
+#endif
+    const int raw = std::system(line.c_str());
     if (raw == -1) return -1;
 #ifdef _WIN32
     return raw;
@@ -94,6 +109,13 @@ TEST_CASE("delmesher exits 0 for each CLI flag", "[cli][integration]") {
     const auto& model = GENERATE_REF(from_range(models));
     const auto& flags = GENERATE_REF(from_range(flag_cases()));
 
+    // Run against a copy of the model placed in the (throwaway) working
+    // directory, so any artifact the binary derives from the input name -- e.g.
+    // <model>_rebuilt.off from -b -- lands here instead of polluting the source
+    // tree, where, ending in .off, it would be re-discovered as an input.
+    const fs::path local = fs::current_path() / model.filename();
+    fs::copy_file(model, local, fs::copy_options::overwrite_existing);
+
     // Build:  "<binary>" [-m <cap>] <flags...> "<model>"
     // The optional cap bounds Delaunay refinement so the suite stays fast; it
     // still drives every downstream phase the flags touch. See CMakeLists.txt.
@@ -104,7 +126,7 @@ TEST_CASE("delmesher exits 0 for each CLI flag", "[cli][integration]") {
     const std::string cap = DELMESHER_TEST_MAX_VERTICES;
     if (!cap.empty() && !sets_max_vertices) cmd += " -m " + cap;
     for (const auto& arg : flags.args) cmd += " " + arg;
-    cmd += " " + quote(model.string());
+    cmd += " " + quote(local.string());
 
     INFO("model : " << model.filename().string());
     INFO("flag  : " << flags.name);

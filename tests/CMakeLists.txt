@@ -26,11 +26,18 @@ file(MAKE_DIRECTORY "${DELMESHER_TEST_WORKDIR}")
 set(DELMESHER_TEST_MAX_VERTICES "2000" CACHE STRING
 	"Vertex cap (-m) applied to every CLI test run; empty for unbounded full runs")
 
+# Smoke mode runs a single capped invocation instead of the full per-flag sweep.
+# Intended for the slow unoptimized Debug builds in CI.
+option(DELMESHER_TEST_SMOKE "Run only one capped invocation instead of every CLI flag" OFF)
+
 target_compile_definitions(delmesher_tests PRIVATE
 	DELMESHER_BINARY="$<TARGET_FILE:delmesher>"
 	DELMESHER_INPUT_DIR="${CMAKE_SOURCE_DIR}/input_models"
 	DELMESHER_TEST_MAX_VERTICES="${DELMESHER_TEST_MAX_VERTICES}"
 )
+if(DELMESHER_TEST_SMOKE)
+	target_compile_definitions(delmesher_tests PRIVATE DELMESHER_TEST_SMOKE=1)
+endif()
 
 # The tests shell out to the binary, so make sure it is built first.
 add_dependencies(delmesher_tests delmesher)
