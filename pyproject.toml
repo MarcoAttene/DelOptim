@@ -33,6 +33,7 @@ Paper = "https://doi.org/10.1145/3811395"
 
 [project.optional-dependencies]
 test = ["pytest>=7.0"]
+notebook = ["pyvista>=0.43", "jupyterlab"]
 
 [tool.scikit-build]
 # Drive the existing top-level CMakeLists.txt: build only the Python module,

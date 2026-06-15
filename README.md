@@ -160,6 +160,10 @@ result.tetrahedra  # (T, 4) uint32   -- indices into result.vertices
 delmesher.write_tet("out_mesh.tet", result.vertices, result.tetrahedra)
 ```
 
+The notebook [`examples/delmesher_demo.ipynb`](examples/delmesher_demo.ipynb)
+walks through the whole pipeline and visualizes every output with
+[PyVista](https://pyvista.org/) (`pip install ".[notebook]"`).
+
 ### Options
 
 Every keyword argument of `tetrahedralize` maps to a CLI flag:
