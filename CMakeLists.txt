@@ -42,6 +42,9 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 	target_compile_options(${PROJECT_NAME} PUBLIC "/Oi")
 # turn off annoying warnings
 	target_compile_options(${PROJECT_NAME} PUBLIC "/D _CRT_SECURE_NO_WARNINGS")
+# stop <windows.h> (pulled in by logger.h / getRSS.c) from defining min/max
+# macros, which otherwise clash with std::min/std::max (e.g. in cham.cpp)
+	target_compile_options(${PROJECT_NAME} PUBLIC "/D NOMINMAX")
 	# set target architecture
 	if(ENABLE_AVX2)
 		target_compile_options(${PROJECT_NAME} PUBLIC "/arch:AVX2")
