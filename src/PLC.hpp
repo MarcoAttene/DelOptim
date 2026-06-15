@@ -651,10 +651,16 @@ bool PLCx::splitMissingEdge(uint32_t mei) {
     return true;
 }
 
+// Deterministic linear-congruential PRNG used to shuffle the missing-segment
+// recovery order. The state lives at namespace scope (rather than as a function
+// local static) so it can be reset between independent runs: a fresh process
+// always starts from h == 1, and reset_myrand() lets an in-process caller (e.g.
+// the Python bindings) reproduce that exact sequence on every invocation.
+static int delmesher_myrand_h = 1;
+inline void reset_myrand() { delmesher_myrand_h = 1; }
 int myrand(void)
 {
-    static int h = 1;
-    return(((h = h * 214013L + 2531011L) >> 16) & 0x7fff);
+    return(((delmesher_myrand_h = delmesher_myrand_h * 214013L + 2531011L) >> 16) & 0x7fff);
 }
 
 template< class T > void shuffle_vec(T first, T last)

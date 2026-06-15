@@ -1,0 +1,60 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "nanobind>=2.0.0"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "delmesher"
+version = "1.0.0"
+description = "Robust tetrahedral meshing via surface chamfering (SIGGRAPH 2026)"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "LGPL-3.0-or-later" }
+authors = [
+    { name = "Lorenzo Diazzi" },
+    { name = "Jiacheng Dai" },
+    { name = "Daniele Panozzo" },
+    { name = "Marco Attene" },
+]
+keywords = ["mesh", "tetrahedral", "meshing", "delaunay", "geometry", "CDT"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)",
+    "Programming Language :: C++",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Multimedia :: Graphics :: 3D Modeling",
+]
+dependencies = ["numpy>=1.21"]
+
+[project.urls]
+Homepage = "https://github.com/MarcoAttene/DelOptim"
+Paper = "https://doi.org/10.1145/3811395"
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+
+[tool.scikit-build]
+# Drive the existing top-level CMakeLists.txt: build only the Python module,
+# skipping the CLI executable and the Catch2 test suite (no network needed).
+minimum-version = "0.10"
+cmake.version = ">=3.18"
+cmake.build-type = "Release"
+build-dir = "build/skbuild/{wheel_tag}"
+wheel.packages = ["python/delmesher"]
+sdist.include = ["python/delmesher/_version.py"]
+
+[tool.scikit-build.cmake.define]
+DELMESHER_BUILD_PYTHON = "ON"
+DELMESHER_BUILD_CLI = "OFF"
+DELMESHER_BUILD_TESTS = "OFF"
+
+# Stamp the wheel/sdist version into the importable package.
+[[tool.scikit-build.generate]]
+path = "delmesher/_version.py"
+template = '''
+__version__ = "${version}"
+'''
+
+[tool.pytest.ini_options]
+testpaths = ["tests/python"]
