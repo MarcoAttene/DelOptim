@@ -48,6 +48,7 @@
 #include <stdint.h>
 #include <float.h>
 #include <math.h>
+#include <cmath>
 #include <fenv.h>
 #include <iostream>
 #include <climits>
@@ -1815,7 +1816,14 @@ inline void expansionObject::print(const int elen, const double* e) { for (int i
 
 inline void expansionObject::Two_Prod(const double a, const double b, double& x, double& y)
 {
-#ifdef USE_AVX2_INSTRUCTIONS
+#if defined(USE_AVX2_INSTRUCTIONS) && defined(__ARM_NEON)
+	// On ARM/NEON the SIMDe _mm_fmsub_sd is emulated as a separate multiply and
+	// subtract, so the error term collapses to 0 and the exact two-product
+	// silently degrades to plain double precision. std::fma is a genuine
+	// single-rounding FMA on AArch64, which is exactly what this needs.
+	x = a * b;
+	y = std::fma(a, b, -x);
+#elif defined(USE_AVX2_INSTRUCTIONS)
 	const __m128d av = _mm_load_sd(&a);
 	const __m128d bv = _mm_load_sd(&b);
 	const __m128d xv = _mm_mul_sd(av, bv);
@@ -1837,7 +1845,11 @@ inline void expansionObject::Two_Prod(const double a, const double b, double& x,
 
 inline void expansionObject::Square(const double a, double& x, double& y)
 {
-#ifdef USE_AVX2_INSTRUCTIONS
+#if defined(USE_AVX2_INSTRUCTIONS) && defined(__ARM_NEON)
+	// See Two_Prod: SIMDe's _mm_fmsub_sd is not a true fused op on NEON.
+	x = a * a;
+	y = std::fma(a, a, -x);
+#elif defined(USE_AVX2_INSTRUCTIONS)
 	const __m128d av = _mm_load_sd(&a);
 	const __m128d xv = _mm_mul_sd(av, av);
 	y = _mm_cvtsd_f64(_mm_fmsub_sd(av, av, xv));

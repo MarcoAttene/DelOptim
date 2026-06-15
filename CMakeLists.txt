@@ -17,6 +17,9 @@ set(ENABLE_AVX2 True)
 # Use CMake -DLGPL=ON if you opt for the LGPL license
 option(LGPL "LGPL" OFF)
 
+# Build the Catch2-based test suite (fetches Catch2 on first configure)
+option(DELMESHER_BUILD_TESTS "Build the delmesher test suite" ON)
+
 # set the project name
 project(delmesher)
 
@@ -39,6 +42,9 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 	target_compile_options(${PROJECT_NAME} PUBLIC "/Oi")
 # turn off annoying warnings
 	target_compile_options(${PROJECT_NAME} PUBLIC "/D _CRT_SECURE_NO_WARNINGS")
+# stop <windows.h> (pulled in by logger.h / getRSS.c) from defining min/max
+# macros, which otherwise clash with std::min/std::max (e.g. in cham.cpp)
+	target_compile_options(${PROJECT_NAME} PUBLIC "/D NOMINMAX")
 	# set target architecture
 	if(ENABLE_AVX2)
 		target_compile_options(${PROJECT_NAME} PUBLIC "/arch:AVX2")
@@ -55,6 +61,11 @@ else()
 	target_compile_options(${PROJECT_NAME} PUBLIC -O2)
 # grant IEEE 754 compliance
 	target_compile_options(${PROJECT_NAME} PUBLIC -frounding-math)
+# the exact predicates rely on error-free transformations (e.g. Dekker
+# two-product): forbid the compiler from contracting a*b+c into an FMA, which
+# rounds once instead of twice and silently breaks those identities. This
+# mirrors the /fp:strict used on the MSVC path.
+	target_compile_options(${PROJECT_NAME} PUBLIC -ffp-contract=off)
 	# set target architecture
 	if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64|ARM64)$")
 		# ARM (e.g. Apple Silicon): the x86 -mavx2/-mfma/-msse2 flags are
@@ -94,4 +105,10 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 	src
 	include
 )
+
+# Test suite
+if(DELMESHER_BUILD_TESTS)
+	enable_testing()
+	add_subdirectory(tests)
+endif()
 
