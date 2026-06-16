@@ -14,8 +14,9 @@ set(ENABLE_AVX2 True)
 #set(CMAKE_C_COMPILER "gcc-12")
 #set(CMAKE_CXX_COMPILER "g++-12")
 
-# Use CMake -DLGPL=ON if you opt for the LGPL license
-option(LGPL "LGPL" OFF)
+# Build the LGPL-only variant by default (disables the USE_MAROTS_METHOD code
+# path). Use CMake -DLGPL=OFF to opt back into USE_MAROTS_METHOD.
+option(LGPL "LGPL" ON)
 
 # Build the command-line executable (delmesher).
 option(DELMESHER_BUILD_CLI "Build the delmesher command-line executable" ON)

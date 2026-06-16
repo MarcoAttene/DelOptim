@@ -68,7 +68,7 @@ def tetrahedralize(
 ) -> Result:
     """Tetrahedralize a triangulated surface.
 
-    The input surface must be manifold, oriented and free of degenerate or
+    The input surface may be open or closed; it should be free of degenerate or
     self-intersecting triangles (duplicate vertices and triangles are removed
     automatically, matching the CLI). The pipeline runs
     *chamfering → Delaunay refinement → enriched CDT*.

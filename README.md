@@ -77,7 +77,7 @@ This produces the `delmesher` executable (`build/delmesher` on Linux/macOS,
 | --- | --- | --- |
 | `CMAKE_BUILD_TYPE` | *(unset)* | Set to `Release` for production runs (see above). |
 | `DELMESHER_BUILD_TESTS` | `ON` | Build the Catch2 test suite (fetches Catch2). Set `OFF` to build offline / skip tests. |
-| `LGPL` | `OFF` | Build the variant covered solely by the LGPL, disabling the default `USE_MAROTS_METHOD` code path. |
+| `LGPL` | `ON` | Build the variant covered solely by the LGPL (default). Set `OFF` to enable the `USE_MAROTS_METHOD` code path. |
 | `DELMESHER_TEST_MAX_VERTICES` | `2000` | Refinement cap (`-m`) applied to each test run; empty string for unbounded test runs. |
 
 On x86, AVX2 is enabled by default; for older CPUs flip `ENABLE_AVX2` /
@@ -247,6 +247,6 @@ without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 PURPOSE. See [`lgpl.txt`](lgpl.txt) and <https://www.gnu.org/licenses/lgpl.txt>
 for the full terms.
 
-Copyright © 2019–2026 IMATI-GE / CNR and the authors. By default the build uses
-the `USE_MAROTS_METHOD` code path; configure with `-DLGPL=ON` for a build
-covered solely by the LGPL.
+Copyright © 2019–2026 IMATI-GE / CNR and the authors. By default the build is
+covered solely by the LGPL; configure with `-DLGPL=OFF` to enable the
+`USE_MAROTS_METHOD` code path.

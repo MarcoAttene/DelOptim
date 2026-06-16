@@ -49,6 +49,8 @@ sdist.include = ["python/delmesher/_version.py"]
 DELMESHER_BUILD_PYTHON = "ON"
 DELMESHER_BUILD_CLI = "OFF"
 DELMESHER_BUILD_TESTS = "OFF"
+# Ship the LGPL-only variant in the wheels (disables USE_MAROTS_METHOD).
+LGPL = "ON"
 
 # Stamp the wheel/sdist version into the importable package.
 [[tool.scikit-build.generate]]
@@ -56,6 +58,32 @@ path = "delmesher/_version.py"
 template = '''
 __version__ = "${version}"
 '''
+
+# ---- Binary wheels (cibuildwheel) -------------------------------------------
+# Drives the per-platform wheel builds in .github/workflows/wheels.yml. The set
+# of Python versions is selected there (via CIBW_BUILD) so PRs can build a
+# single version while release builds cover the full range.
+[tool.cibuildwheel]
+build-frontend = "build"
+# nanobind has no PyPy support; musllinux (Alpine) is omitted to keep the matrix
+# small. Drop "*-musllinux*" here to add it.
+skip = ["pp*", "*-musllinux*"]
+# Run the smoke test against each built wheel in an isolated environment.
+test-requires = ["numpy"]
+test-command = "python {project}/scripts/smoke_test.py {project}/input_models/boeing_part.off"
+
+[tool.cibuildwheel.linux]
+archs = ["x86_64"]
+# The code is C++20; manylinux2014's GCC 10 is too old, so use the 2_28 image
+# (GCC 12+). x86_64 builds don't fetch SIMDe (that path is ARM-only).
+manylinux-x86-64-image = "manylinux_2_28"
+
+[tool.cibuildwheel.macos]
+# Build whatever the runner is: arm64 on macos-14, x86_64 on macos-13.
+archs = ["native"]
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests/python"]
