@@ -76,7 +76,7 @@ test-command = "python {project}/scripts/smoke_test.py {project}/input_models/bo
 archs = ["x86_64"]
 # The code is C++20; manylinux2014's GCC 10 is too old, so use the 2_28 image
 # (GCC 12+). x86_64 builds don't fetch SIMDe (that path is ARM-only).
-manylinux-x86-64-image = "manylinux_2_28"
+manylinux-x86_64-image = "manylinux_2_28"
 
 [tool.cibuildwheel.macos]
 # Build whatever the runner is: arm64 on macos-14, x86_64 on macos-13.
