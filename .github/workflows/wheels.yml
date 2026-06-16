@@ -1,0 +1,101 @@
+name: Wheels
+
+# Build binary wheels on Linux, macOS (Apple Silicon + Intel) and Windows for
+# every commit, and publish them to PyPI when a version tag (vX.Y.Z) is pushed.
+#
+# PyPI refuses to overwrite an existing version, so publishing is tag-gated
+# rather than per-commit: bump `version` in pyproject.toml, then push a matching
+# tag (e.g. `git tag v1.0.1 && git push origin v1.0.1`).
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build_wheels:
+    name: Wheels ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest            # Linux x86_64 (manylinux_2_28)
+          - os: macos-13                 # macOS Intel (x86_64)
+            macos_target: "10.15"
+          - os: macos-14                 # macOS Apple Silicon (arm64)
+            macos_target: "11.0"
+          - os: windows-latest           # Windows x86_64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.21.3
+        env:
+          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_target }}
+          # Full Python range on main/tags; a single version on PRs to keep them
+          # fast (the existing CI workflow already exercises the build per-PR).
+          CIBW_BUILD: >-
+            ${{ github.event_name == 'pull_request'
+              && 'cp312-*'
+              || 'cp38-* cp39-* cp310-* cp311-* cp312-* cp313-*' }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}
+          path: ./wheelhouse/*.whl
+
+  make_sdist:
+    name: Source distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build sdist
+        run: pipx run build --sdist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+
+  publish:
+    name: Publish to PyPI
+    needs: [build_wheels, make_sdist]
+    runs-on: ubuntu-latest
+    # Only on a pushed version tag, never on branch pushes or PRs.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    environment:
+      name: pypi
+      url: https://pypi.org/p/delmesher
+    permissions:
+      id-token: write   # OIDC token for PyPI Trusted Publishing (no API token)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify the tag matches the package version
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(grep -m1 -E '^version' pyproject.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          echo "tag=$tag  pyproject version=$version"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::Tag v$tag does not match pyproject version $version. Bump pyproject.toml before tagging."
+            exit 1
+          fi
+
+      - name: Collect all wheels and the sdist
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1

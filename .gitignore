@@ -1,3 +1,13 @@
 build
 .DS_Store
 settings.json
+
+# Python build artifacts
+*.so
+*.pyd
+__pycache__/
+*.egg-info/
+dist/
+wheelhouse/
+python/delmesher/_version.py
+.pytest_cache/
