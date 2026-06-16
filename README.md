@@ -77,7 +77,7 @@ This produces the `delmesher` executable (`build/delmesher` on Linux/macOS,
 | --- | --- | --- |
 | `CMAKE_BUILD_TYPE` | *(unset)* | Set to `Release` for production runs (see above). |
 | `DELMESHER_BUILD_TESTS` | `ON` | Build the Catch2 test suite (fetches Catch2). Set `OFF` to build offline / skip tests. |
-| `LGPL` | `OFF` | Build the variant covered solely by the LGPL, disabling the default `USE_MAROTS_METHOD` code path. |
+| `LGPL` | `ON` | Build the variant covered solely by the LGPL (default). Set `OFF` to enable the `USE_MAROTS_METHOD` code path. |
 | `DELMESHER_TEST_MAX_VERTICES` | `2000` | Refinement cap (`-m`) applied to each test run; empty string for unbounded test runs. |
 
 On x86, AVX2 is enabled by default; for older CPUs flip `ENABLE_AVX2` /
@@ -128,6 +128,77 @@ Output flags (each writes into the current directory):
 | `-y` | `-a` | `constrainedFaces.off` | surface |
 | `-z` | `-a` | `out_mesh.tet` | volume |
 
+## Python bindings
+
+`delmesher` ships [nanobind](https://github.com/wjakob/nanobind) Python bindings
+that drive the exact same pipeline as the CLI, but take and return
+[NumPy](https://numpy.org/) arrays instead of OFF / `.tet` files.
+
+### Install
+
+```sh
+pip install .            # builds the extension via scikit-build-core
+```
+
+The build is self-contained (CMake + a C++20 compiler; nanobind and, on ARM,
+SIMDe are fetched automatically). The package follows the standard
+scikit-build-core layout, so `pip wheel .` / `python -m build` produce wheels
+ready to upload to PyPI.
+
+### Quick start
+
+```python
+import delmesher
+
+# vertices: (n, 3) float64;  triangles: (m, 3) integer indices
+vertices, triangles = delmesher.read_off("input_models/boeing_part.off")
+
+result = delmesher.tetrahedralize(vertices, triangles, max_vertices=2000)
+
+result.vertices    # (V, 3) float64  -- final output mesh
+result.tetrahedra  # (T, 4) uint32   -- indices into result.vertices
+delmesher.write_tet("out_mesh.tet", result.vertices, result.tetrahedra)
+```
+
+The notebook [`examples/delmesher_demo.ipynb`](examples/delmesher_demo.ipynb)
+walks through the whole pipeline and visualizes every output with
+[PyVista](https://pyvista.org/) (`pip install ".[notebook]"`).
+
+### Options
+
+Every keyword argument of `tetrahedralize` maps to a CLI flag:
+
+| Keyword | Default | CLI flag | Effect |
+| --- | --- | --- | --- |
+| `enriched_cdt` | `True` | `-a` ⇒ `False` | run the final enriched-CDT phase (exact conformance); `False` stops after Delaunay refinement |
+| `sliver_removal` | `False` | `-d` | enable sliver removal during refinement |
+| `lfs_exponent` | `None` | `-e` | ignore constraints with LFS below `10⁻ᵉ × bbox diagonal` |
+| `max_vertices` | `None` | `-m` | stop refinement after this many inserted vertices |
+| `compute_lfs` | `False` | `-c` | compute the input's minimum LFS (see `result.min_lfs`) |
+| `verbose` | `False` | `-v` | print progress to stdout |
+
+The returned `Result` exposes every mesh the CLI can write, as NumPy arrays:
+`vertices`/`tetrahedra` (the primary output — enriched CDT, or the
+Delaunay-refined mesh when `enriched_cdt=False`), `dr_vertices`/`dr_tetrahedra`
+(`-x`), `cdt_vertices`/`cdt_tetrahedra` (`-z`), `chamfered_vertices`/
+`chamfered_faces` (`-u`) and `dr_interface_vertices`/`dr_interface_faces` (`-w`),
+plus the scalars `input_is_manifold`, `input_has_interior` and `min_lfs`.
+
+Each call runs the pipeline in an isolated child process, so results are
+reproducible regardless of call history and invalid input raises a Python
+exception instead of terminating the interpreter.
+
+### Python tests
+
+`tests/python/` mirrors the C++ suite (it sweeps every option on every model in
+`input_models/`) and additionally checks that the bindings reproduce the CLI's
+`.tet` output bit-for-bit. The helper script builds everything into a virtual
+environment under `build/venv` and runs the suite:
+
+```sh
+scripts/build_python_venv.sh
+```
+
 ## Testing
 
 The [Catch2](https://github.com/catchorg/Catch2) suite in `tests/` runs
@@ -176,6 +247,6 @@ without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 PURPOSE. See [`lgpl.txt`](lgpl.txt) and <https://www.gnu.org/licenses/lgpl.txt>
 for the full terms.
 
-Copyright © 2019–2026 IMATI-GE / CNR and the authors. By default the build uses
-the `USE_MAROTS_METHOD` code path; configure with `-DLGPL=ON` for a build
-covered solely by the LGPL.
+Copyright © 2019–2026 IMATI-GE / CNR and the authors. By default the build is
+covered solely by the LGPL; configure with `-DLGPL=OFF` to enable the
+`USE_MAROTS_METHOD` code path.

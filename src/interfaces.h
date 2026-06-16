@@ -274,7 +274,14 @@ bool isTetInternal(Tetrahedron* t, TetMesh* cdt) {
 	getTetBarycenter(v, ccc);
 	explicitPoint3D p(ccc[0], ccc[1], ccc[2]);
 	cdt->vertices.push_back(&p);
+	// Warm-start the point location from the previously located tet (spatial
+	// locality keeps the walk short). The hint persists across calls, so reset
+	// it whenever it falls outside the current mesh -- otherwise a second run on
+	// a smaller CDT (e.g. via the Python bindings) would dereference past the
+	// end of tet_node. The located tet is independent of the start, so this only
+	// affects speed, never the classification result.
 	static uint64_t tet = 0;
+	if (tet + 3 >= cdt->tet_node.size()) tet = 0;
 	tet = cdt->searchTetrahedron(tet, cdt->numVertices() - 1);
 	cdt->vertices.pop_back();
 	return (cdt->mark_tetrahedra[tet>>2] == DT_IN);

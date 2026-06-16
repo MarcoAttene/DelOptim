@@ -44,3 +44,51 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build -C ${{ matrix.build_type }} --output-on-failure
+
+  python:
+    name: python ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux (x86_64) and macOS (Apple Silicon / arm64) run the full,
+        # process-isolated suite. Windows builds the wheel and runs a single
+        # in-process smoke (fork-based isolation is POSIX-only).
+        os: [ubuntu-latest, macos-14, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The parity tests compare the bindings against the CLI's .tet output, so
+      # build the executable first (POSIX, where the full suite runs).
+      - name: Build CLI (for parity tests)
+        if: runner.os != 'Windows'
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DDELMESHER_BUILD_TESTS=OFF
+          cmake --build build --config Release --target delmesher --parallel
+
+      # Compiles the nanobind extension via scikit-build-core (fetches nanobind
+      # and, on ARM, SIMDe automatically). Also exercises the PyPI wheel path.
+      - name: Install Python package
+        run: python -m pip install -v ".[test]"
+
+      - name: Test (Linux/macOS)
+        if: runner.os != 'Windows'
+        env:
+          DELMESHER_BINARY: ${{ github.workspace }}/build/delmesher
+          DELMESHER_TEST_MAX_VERTICES: "800"
+        run: python -m pytest tests/python -v
+
+      - name: Smoke test (Windows, single in-process run)
+        if: runner.os == 'Windows'
+        run: >
+          python -c "import numpy as np, delmesher;
+          v, f = delmesher.read_off('input_models/boeing_part.off');
+          r = delmesher.tetrahedralize(v, f, max_vertices=500);
+          assert r.tetrahedra.ndim == 2 and r.tetrahedra.shape[1] == 4 and len(r.tetrahedra) > 0;
+          print('windows ok', r.vertices.shape, r.tetrahedra.shape)"
