@@ -42,10 +42,12 @@ jobs:
           MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_target }}
           # Full Python range on main/tags; a single version on PRs to keep them
           # fast (the existing CI workflow already exercises the build per-PR).
+          # cp38 is excluded: current nanobind requires Python >= 3.9 (and 3.8
+          # is EOL). Keep this in sync with requires-python in pyproject.toml.
           CIBW_BUILD: >-
             ${{ github.event_name == 'pull_request'
               && 'cp312-*'
-              || 'cp38-* cp39-* cp310-* cp311-* cp312-* cp313-*' }}
+              || 'cp39-* cp310-* cp311-* cp312-* cp313-*' }}
 
       - uses: actions/upload-artifact@v4
         with:

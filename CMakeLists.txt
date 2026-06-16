@@ -138,7 +138,7 @@ endif()
 
 # ---- Python extension module ------------------------------------------------
 if(DELMESHER_BUILD_PYTHON)
-	find_package(Python 3.8
+	find_package(Python 3.9
 		COMPONENTS Interpreter Development.Module REQUIRED)
 
 	# Locate nanobind's CMake config via the active interpreter (works whether
