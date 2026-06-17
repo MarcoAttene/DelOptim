@@ -27,8 +27,6 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest            # Linux x86_64 (manylinux_2_28)
-          - os: macos-13                 # macOS Intel (x86_64)
-            macos_target: "10.15"
           - os: macos-14                 # macOS Apple Silicon (arm64)
             macos_target: "11.0"
           - os: windows-latest           # Windows x86_64
