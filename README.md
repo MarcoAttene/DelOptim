@@ -60,22 +60,26 @@ numerically robust regardless of how degenerate the input is.
 ```sh
 git clone https://github.com/MarcoAttene/DelOptim
 cd DelOptim
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release
+mkdir build && cd build
+cmake ..
+cmake --build . --config Release
 ```
 
-This produces the `delmesher` executable (`build/delmesher` on Linux/macOS,
-`build/Release/delmesher.exe` on Windows).
+The build defaults to an optimized `Release` configuration, so no
+`-DCMAKE_BUILD_TYPE` is needed (the `--config Release` above only matters for
+multi-config generators such as Visual Studio). This produces the `delmesher`
+executable (`build/delmesher` on Linux/macOS, `build/Release/delmesher.exe` on
+Windows).
 
-> **Build in Release.** A build without `NDEBUG` keeps the internal assertions
-> enabled and is several times slower; use `-DCMAKE_BUILD_TYPE=Release` for any
-> real run.
+> **Avoid Debug for real runs.** A `Debug` build (`-DCMAKE_BUILD_TYPE=Debug`)
+> leaves `NDEBUG` unset, so the internal assertions stay enabled and the binary
+> is several times slower.
 
 ### CMake options
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `CMAKE_BUILD_TYPE` | *(unset)* | Set to `Release` for production runs (see above). |
+| `CMAKE_BUILD_TYPE` | `Release` | Defaults to an optimized `Release` build; set `Debug` for assertions (much slower). |
 | `DELMESHER_BUILD_TESTS` | `ON` | Build the Catch2 test suite (fetches Catch2). Set `OFF` to build offline / skip tests. |
 | `LGPL` | `ON` | Build the variant covered solely by the LGPL (default). Set `OFF` to enable the `USE_MAROTS_METHOD` code path. |
 | `DELMESHER_TEST_MAX_VERTICES` | `2000` | Refinement cap (`-m`) applied to each test run; empty string for unbounded test runs. |
@@ -137,13 +141,14 @@ that drive the exact same pipeline as the CLI, but take and return
 ### Install
 
 ```sh
-pip install .            # builds the extension via scikit-build-core
+pip install delmesher
 ```
 
-The build is self-contained (CMake + a C++20 compiler; nanobind and, on ARM,
-SIMDe are fetched automatically). The package follows the standard
-scikit-build-core layout, so `pip wheel .` / `python -m build` produce wheels
-ready to upload to PyPI.
+Prebuilt binary wheels are published to
+[PyPI](https://pypi.org/project/delmesher/) for Linux, macOS (Apple Silicon) and
+Windows on CPython 3.9–3.13, so no compiler is required. To build from a source
+checkout instead, run `pip install .`; this needs CMake and a C++20 compiler
+(nanobind and, on ARM, SIMDe are fetched automatically).
 
 ### Quick start
 
