@@ -82,7 +82,7 @@ Windows).
 | `CMAKE_BUILD_TYPE` | `Release` | Defaults to an optimized `Release` build; set `Debug` for assertions (much slower). |
 | `DELMESHER_BUILD_TESTS` | `ON` | Build the Catch2 test suite (fetches Catch2). Set `OFF` to build offline / skip tests. |
 | `LGPL` | `ON` | Build the variant covered solely by the LGPL (default). Set `OFF` to enable the `USE_MAROTS_METHOD` code path. |
-| `DELMESHER_TEST_MAX_VERTICES` | `2000` | Refinement cap (`-m`) applied to each test run; empty string for unbounded test runs. |
+| `DELMESHER_TEST_MAX_VERTICES` | `2000` | Refinement cap (`-m`) for the `boeing_part.off` flag sweep (and all models in smoke mode); empty string for an unbounded sweep. |
 
 On x86, AVX2 is enabled by default; for older CPUs flip `ENABLE_AVX2` /
 `ENABLE_SSE2` at the top of `CMakeLists.txt`. On ARM (e.g. Apple Silicon) those
@@ -195,9 +195,10 @@ exception instead of terminating the interpreter.
 
 ### Python tests
 
-`tests/python/` mirrors the C++ suite (it sweeps every option on every model in
-`input_models/`) and additionally checks that the bindings reproduce the CLI's
-`.tet` output bit-for-bit. The helper script builds everything into a virtual
+`tests/python/` mirrors the C++ suite: it sweeps every option on the reference
+model `boeing_part.off` (capped), runs every other model in `input_models/` once
+uncapped, and additionally checks that the bindings reproduce the CLI's `.tet`
+output bit-for-bit. The helper script builds everything into a virtual
 environment under `build/venv` and runs the suite:
 
 ```sh
@@ -206,9 +207,16 @@ scripts/build_python_venv.sh
 
 ## Testing
 
-The [Catch2](https://github.com/catchorg/Catch2) suite in `tests/` runs
-`delmesher` on every model in `input_models/`, switching on each accepted
-command-line flag one at a time, and checks that the binary exits with code `0`:
+The [Catch2](https://github.com/catchorg/Catch2) suite in `tests/` checks that
+`delmesher` exits with code `0`, in two complementary ways:
+
+- **Reference model** (`boeing_part.off`): every accepted command-line flag is
+  switched on one at a time, with refinement capped
+  (`DELMESHER_TEST_MAX_VERTICES`, default `2000`) so the per-flag sweep stays
+  fast while still exercising every downstream phase.
+- **Every other model** in `input_models/`: a single run, no flags and no
+  vertex cap — a full-pipeline check that the mesher handles a variety of real
+  inputs end to end.
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -216,12 +224,46 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-Refinement is capped (`DELMESHER_TEST_MAX_VERTICES`, default `2000`) so the suite
-stays fast while still exercising every phase; configure with
-`-DDELMESHER_TEST_MAX_VERTICES=""` for unbounded runs, or
-`-DDELMESHER_BUILD_TESTS=OFF` to skip the tests. Continuous integration builds
-and runs the suite on Linux (x86-64), macOS (Apple Silicon) and Windows
-(x86-64), in both Debug and Release, on every push.
+Configure with `-DDELMESHER_TEST_MAX_VERTICES=""` for an unbounded boeing sweep,
+`-DDELMESHER_TEST_SMOKE=ON` to reduce the suite to the single capped boeing run
+(used for the slow unoptimized Debug builds, which skip the uncapped other-model
+runs entirely), or `-DDELMESHER_BUILD_TESTS=OFF` to skip the tests. Continuous
+integration builds and runs the suite on Linux (x86-64), macOS (Apple Silicon)
+and Windows (x86-64) in both Debug and Release on every push; the Debug builds
+run only the capped boeing sweep.
+
+### Test runtimes
+
+Wall-clock for one uncapped full run of each non-reference model in an optimized
+Release build (single core, Apple Silicon M-series):
+
+| model | input verts | Release (uncapped) |
+| --- | ---: | ---: |
+| `48416.off` | 268 | 0.3s |
+| `423818.off` | 125 | 0.6s |
+| `343542.off` | 433 | 1.7s |
+| `49529.off` | 840 | 2.5s |
+| `85110.off` | 1130 | 3.8s |
+| `56099.off` | 776 | 4.8s |
+| `227616.off` | 1498 | 7.4s |
+| `1558739.off` | 1026 | 8.0s |
+| `39641.off` | 540 | 9.1s |
+| `350273.off` | 2080 | 12.7s |
+| `110907.off` | 1702 | 14.3s |
+| `472100.off` | 152 | 15.3s |
+| `80363.off` | 827 | 17.5s |
+| `67924.off` | 13698 | 19.7s |
+| `1130082.off` | 2947 | 21.0s |
+| `72669.off` | 1131 | 27.9s |
+| `62572.off` | 1694 | 28.2s |
+| `58007.off` | 1136 | 30.8s |
+| `61242.off` | 3718 | 42.5s |
+| `1207651.off` | 360 | 152.8s |
+
+Runtime is driven by the refinement geometry, not the input size. These uncapped
+runs are unbearably slow in an unoptimized Debug build (minutes each, several
+exceeding five), which is why the Debug builds skip them and run only the capped
+`boeing_part.off` sweep — that stays well under a minute per flag even in Debug.
 
 ## Citation
 
