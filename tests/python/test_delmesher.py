@@ -1,14 +1,18 @@
 """Python test suite for the delmesher bindings.
 
-This mirrors the Catch2 CLI suite (tests/test_delmesher_cli.cpp): it runs the
-meshing pipeline on every model in input_models/, switching on each accepted
-option one at a time, and checks the run succeeds (the binding equivalent of
-"the binary exits 0"). It additionally verifies that the bindings produce the
-*same* mesh as the command-line tool, by comparing the returned NumPy arrays to
-the .tet files the CLI writes for the same input.
+This mirrors the Catch2 CLI suite (tests/test_delmesher_cli.cpp):
 
-Refinement is capped (DELMESHER_TEST_MAX_VERTICES, default 1000) so the suite
-stays fast while still exercising every phase, exactly like the C++ suite.
+* The reference model (boeing_part.off) gets the exhaustive treatment: the
+  meshing pipeline is run switching on each accepted option one at a time, with
+  refinement capped (DELMESHER_TEST_MAX_VERTICES, default 1000) so the sweep
+  stays fast while still exercising every phase. The parity and determinism
+  checks also run on this model.
+* Every other model in input_models/ is run exactly once, with default options
+  and no vertex cap, as a full-pipeline check that the bindings handle a variety
+  of real inputs end to end.
+
+A run "succeeds" when ``tetrahedralize`` returns a well-formed mesh -- the
+binding equivalent of "the binary exits 0".
 """
 
 from __future__ import annotations
@@ -26,7 +30,11 @@ import delmesher
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 INPUT_DIR = REPO_ROOT / "input_models"
 
-# Vertex cap (-m) applied to every run; "" means unbounded (very slow).
+# The reference model that gets the full option sweep + parity + determinism
+# checks (all capped). Every other model is run once and uncapped.
+PRIMARY_NAME = "boeing_part.off"
+
+# Vertex cap (-m) applied to the reference-model runs; "" means unbounded.
 _cap_env = os.environ.get("DELMESHER_TEST_MAX_VERTICES", "1000")
 CAP = int(_cap_env) if _cap_env.strip() else None
 
@@ -54,6 +62,13 @@ def find_cli():
 
 CLI = find_cli()
 MODELS = discover_models()
+PRIMARY_MODEL = next((m for m in MODELS if m.name == PRIMARY_NAME), None)
+OTHER_MODELS = [m for m in MODELS if m.name != PRIMARY_NAME]
+
+# Skip the reference-model tests when boeing_part.off is missing.
+requires_primary = pytest.mark.skipif(
+    PRIMARY_MODEL is None, reason=f"reference model {PRIMARY_NAME} not found"
+)
 
 # Option cases mirroring the C++ flag_cases(), restricted to flags that change
 # what is computed (the file-output / logging flags -b -u -w -x -y -z -h -l do
@@ -90,6 +105,24 @@ def assert_valid_tri_surface(vertices, faces):
     assert faces.ndim == 2 and faces.shape[1] == 3
     if len(faces):
         assert int(faces.max()) < len(vertices)
+
+
+def assert_full_pipeline_result(result, enriched_cdt=True):
+    """Common checks on a tetrahedralize() result."""
+    # The Delaunay-refined mesh is always produced and must be well-formed.
+    assert_valid_tet_mesh(result.dr_vertices, result.dr_tetrahedra)
+    assert_valid_tri_surface(result.dr_interface_vertices,
+                             result.dr_interface_faces)
+    assert_valid_tri_surface(result.chamfered_vertices, result.chamfered_faces)
+
+    if enriched_cdt:
+        assert result.enriched_cdt_computed
+        assert_valid_tet_mesh(result.cdt_vertices, result.cdt_tetrahedra)
+        # primary output aliases the enriched CDT
+        assert np.array_equal(result.vertices, result.cdt_vertices)
+    else:
+        assert not result.enriched_cdt_computed
+        assert np.array_equal(result.vertices, result.dr_vertices)
 
 
 def parse_tet_file(path):
@@ -173,43 +206,42 @@ def test_invalid_inputs():
 
 
 # --------------------------------------------------------------------------- #
-# the flag sweep (mirrors "delmesher exits 0 for each CLI flag")
+# the option sweep on the reference model (mirrors the C++ boeing_part sweep)
 # --------------------------------------------------------------------------- #
-@pytest.mark.parametrize("model", MODELS, ids=lambda p: p.name)
+@requires_primary
 @pytest.mark.parametrize("case_name", list(OPTION_CASES))
-def test_option_sweep(model, case_name):
+def test_option_sweep(case_name):
     opts = dict(OPTION_CASES[case_name])
     if CAP is not None and "max_vertices" not in opts:
         opts["max_vertices"] = CAP
 
-    v, f = delmesher.read_off(model)
+    v, f = delmesher.read_off(PRIMARY_MODEL)
     result = delmesher.tetrahedralize(v, f, **opts)
 
-    # The Delaunay-refined mesh is always produced and must be well-formed.
-    assert_valid_tet_mesh(result.dr_vertices, result.dr_tetrahedra)
-    assert_valid_tri_surface(result.dr_interface_vertices,
-                             result.dr_interface_faces)
-    assert_valid_tri_surface(result.chamfered_vertices, result.chamfered_faces)
-
-    if opts.get("enriched_cdt", True):
-        assert result.enriched_cdt_computed
-        assert_valid_tet_mesh(result.cdt_vertices, result.cdt_tetrahedra)
-        # primary output aliases the enriched CDT
-        assert np.array_equal(result.vertices, result.cdt_vertices)
-    else:
-        assert not result.enriched_cdt_computed
-        assert np.array_equal(result.vertices, result.dr_vertices)
+    assert_full_pipeline_result(result, enriched_cdt=opts.get("enriched_cdt", True))
 
     if case_name == "c-min-lfs":
         assert result.min_lfs > 0.0
 
 
 # --------------------------------------------------------------------------- #
-# parity with the command-line tool (the "same result" requirement)
+# every other model: a single full (uncapped) run
+# (mirrors the C++ "single uncapped run" case)
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("model", OTHER_MODELS, ids=lambda p: p.name)
+def test_other_models_uncapped(model):
+    v, f = delmesher.read_off(model)
+    result = delmesher.tetrahedralize(v, f)  # default options, no vertex cap
+    assert_full_pipeline_result(result, enriched_cdt=True)
+
+
+# --------------------------------------------------------------------------- #
+# parity with the command-line tool, on the reference model (capped)
 # --------------------------------------------------------------------------- #
 @pytest.mark.skipif(CLI is None, reason="delmesher CLI not built; set DELMESHER_BINARY")
-@pytest.mark.parametrize("model", MODELS, ids=lambda p: p.name)
-def test_matches_cli(model, tmp_path):
+@requires_primary
+def test_matches_cli(tmp_path):
+    model = PRIMARY_MODEL
     # One CLI run writes both meshes; one binding run produces both.
     rc, proc = run_cli(model, ["-x", "-z"], tmp_path)
     assert rc == 0, proc.stdout + proc.stderr
@@ -230,10 +262,13 @@ def test_matches_cli(model, tmp_path):
     assert np.allclose(r.cdt_vertices, cli_cdt_v, rtol=1e-4, atol=1e-5)
 
 
-@pytest.mark.parametrize("model", MODELS, ids=lambda p: p.name)
-def test_determinism(model):
+# --------------------------------------------------------------------------- #
+# determinism, on the reference model (capped)
+# --------------------------------------------------------------------------- #
+@requires_primary
+def test_determinism():
     """Repeated in-process calls must reproduce the same mesh bit-for-bit."""
-    v, f = delmesher.read_off(model)
+    v, f = delmesher.read_off(PRIMARY_MODEL)
     r1 = delmesher.tetrahedralize(v, f, max_vertices=CAP)
     r2 = delmesher.tetrahedralize(v, f, max_vertices=CAP)
     assert np.array_equal(r1.cdt_tetrahedra, r2.cdt_tetrahedra)

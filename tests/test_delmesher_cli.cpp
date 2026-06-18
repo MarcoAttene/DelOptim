@@ -1,10 +1,16 @@
 // Integration tests for the delmesher command-line interface.
 //
-// A single generic test case runs the compiled `delmesher` binary on every
-// input model found in the input_models/ directory, switching on each accepted
-// command-line flag one at a time. The binary documents that it "returns 0 when
-// the whole execution terminates correctly", so each invocation passes iff it
-// exits with code 0.
+// Two complementary test cases drive the compiled `delmesher` binary. The
+// binary documents that it "returns 0 when the whole execution terminates
+// correctly", so each invocation passes iff it exits with code 0.
+//
+//   1. The reference model (boeing_part.off) gets the exhaustive treatment:
+//      every accepted command-line flag is switched on one at a time, with a
+//      vertex cap (-m) so the sweep stays fast while still driving every
+//      downstream phase.
+//   2. Every other model in input_models/ is run exactly once, with no flags
+//      and -- in optimized builds -- no vertex cap, as a full-pipeline check
+//      that the mesher handles a variety of real inputs end to end.
 //
 // The binary path (DELMESHER_BINARY) and the input-model directory
 // (DELMESHER_INPUT_DIR) are injected by CMake as compile definitions.
@@ -26,6 +32,10 @@
 namespace fs = std::filesystem;
 
 namespace {
+
+// The reference model that gets the exhaustive per-flag, capped sweep. Every
+// other model is run once and uncapped (see the second test case below).
+constexpr const char* PRIMARY_MODEL = "boeing_part.off";
 
 // One CLI invocation: a human-readable name plus the argument list inserted
 // between the binary and the input filename.
@@ -79,6 +89,17 @@ std::vector<fs::path> discover_input_models() {
     return models;
 }
 
+// Every model except the reference model -- the ones run once and uncapped.
+std::vector<fs::path> other_models() {
+    std::vector<fs::path> models = discover_input_models();
+    models.erase(std::remove_if(models.begin(), models.end(),
+                                [](const fs::path& p) {
+                                    return p.filename() == PRIMARY_MODEL;
+                                }),
+                 models.end());
+    return models;
+}
+
 std::string quote(const std::string& s) { return "\"" + s + "\""; }
 
 // Run a shell command and return the process exit code (-1 if it never ran).
@@ -99,22 +120,25 @@ int run(const std::string& cmd) {
 #endif
 }
 
-}  // namespace
-
-TEST_CASE("delmesher exits 0 for each CLI flag", "[cli][integration]") {
-    const std::vector<fs::path> models = discover_input_models();
-    REQUIRE_FALSE(models.empty());  // there must be at least one input model
-
-    // Cartesian product: every model crossed with every flag case.
-    const auto& model = GENERATE_REF(from_range(models));
-    const auto& flags = GENERATE_REF(from_range(flag_cases()));
-
-    // Run against a copy of the model placed in the (throwaway) working
-    // directory, so any artifact the binary derives from the input name -- e.g.
-    // <model>_rebuilt.off from -b -- lands here instead of polluting the source
-    // tree, where, ending in .off, it would be re-discovered as an input.
+// Copy a model into the (throwaway) working directory and return the local
+// path. Running against a copy keeps any artifact the binary derives from the
+// input name -- e.g. <model>_rebuilt.off from -b -- out of the source tree,
+// where, ending in .off, it would be re-discovered as an input.
+fs::path stage_model(const fs::path& model) {
     const fs::path local = fs::current_path() / model.filename();
     fs::copy_file(model, local, fs::copy_options::overwrite_existing);
+    return local;
+}
+
+}  // namespace
+
+TEST_CASE("delmesher exits 0 for each CLI flag (boeing_part, capped)",
+          "[cli][integration]") {
+    const fs::path primary = fs::path(DELMESHER_INPUT_DIR) / PRIMARY_MODEL;
+    REQUIRE(fs::exists(primary));  // the reference model must be present
+
+    const auto& flags = GENERATE_REF(from_range(flag_cases()));
+    const fs::path local = stage_model(primary);
 
     // Build:  "<binary>" [-m <cap>] <flags...> "<model>"
     // The optional cap bounds Delaunay refinement so the suite stays fast; it
@@ -128,9 +152,35 @@ TEST_CASE("delmesher exits 0 for each CLI flag", "[cli][integration]") {
     for (const auto& arg : flags.args) cmd += " " + arg;
     cmd += " " + quote(local.string());
 
-    INFO("model : " << model.filename().string());
+    INFO("model : " << primary.filename().string());
     INFO("flag  : " << flags.name);
     INFO("command: " << cmd);
 
     CHECK(run(cmd) == 0);
+}
+
+TEST_CASE("delmesher exits 0 for each other model (single uncapped run)",
+          "[cli][integration]") {
+    // An uncapped full run of these models is expensive (minutes each), and
+    // unbearably so in an unoptimized Debug build. Smoke mode -- used for the
+    // slow Debug CI builds -- therefore skips them entirely: only the capped
+    // boeing_part sweep runs there. They run uncapped in the Release builds.
+#if defined(DELMESHER_TEST_SMOKE)
+    SKIP("smoke mode: only the reference model is exercised");
+#else
+    const std::vector<fs::path> models = other_models();
+    REQUIRE_FALSE(models.empty());  // there must be at least one other model
+
+    const auto& model = GENERATE_REF(from_range(models));
+    const fs::path local = stage_model(model);
+
+    // No flags and no vertex cap: a full meshing run of the real input.
+    const std::string cmd =
+        quote(DELMESHER_BINARY) + " " + quote(local.string());
+
+    INFO("model : " << model.filename().string());
+    INFO("command: " << cmd);
+
+    CHECK(run(cmd) == 0);
+#endif
 }

@@ -16,19 +16,21 @@ target_link_libraries(delmesher_tests PRIVATE Catch2::Catch2WithMain)
 set(DELMESHER_TEST_WORKDIR "${CMAKE_CURRENT_BINARY_DIR}/workdir")
 file(MAKE_DIRECTORY "${DELMESHER_TEST_WORKDIR}")
 
-# A full meshing run of the shipped model is expensive (tens of minutes), and
-# the test runs the binary once per accepted flag. By default we cap Delaunay
-# refinement with `-m <N>` so the suite stays in the minutes range while still
-# exercising every flag and every downstream phase (segment/face recovery,
-# enriched CDT, and all the output writers run regardless of the cap). Set to an
-# empty string for unbounded full runs:
+# The reference model (boeing_part.off) is run once per accepted flag, capped
+# with `-m <N>` so that sweep stays in the minutes range while still exercising
+# every flag and every downstream phase (segment/face recovery, enriched CDT,
+# and all the output writers run regardless of the cap). Every other model is
+# run once, uncapped, as a full-pipeline check. This cap applies only to the
+# boeing sweep; set it to an empty string for an unbounded sweep:
 #   cmake -DDELMESHER_TEST_MAX_VERTICES="" ..
 set(DELMESHER_TEST_MAX_VERTICES "2000" CACHE STRING
-	"Vertex cap (-m) applied to every CLI test run; empty for unbounded full runs")
+	"Vertex cap (-m) for the boeing_part flag sweep; empty for an unbounded sweep")
 
-# Smoke mode runs a single capped invocation instead of the full per-flag sweep.
-# Intended for the slow unoptimized Debug builds in CI.
-option(DELMESHER_TEST_SMOKE "Run only one capped invocation instead of every CLI flag" OFF)
+# Smoke mode reduces the boeing flag sweep to a single capped invocation and
+# skips the (uncapped, minutes-each) other-model runs entirely, so the slow
+# unoptimized Debug builds in CI stay fast. Release builds run the full per-flag
+# sweep and every other model uncapped.
+option(DELMESHER_TEST_SMOKE "Reduce the suite to the single capped boeing run (for slow Debug builds)" OFF)
 
 target_compile_definitions(delmesher_tests PRIVATE
 	DELMESHER_BINARY="$<TARGET_FILE:delmesher>"
