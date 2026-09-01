@@ -123,14 +123,14 @@ prints `Execution correctly COMPLETED.` and returns `0` on success.
 
 Output flags (each writes into the current directory):
 
-| Flag | Needs | Output file | Type |
-| --- | --- | --- | --- |
-| `-b` | | `<input>_rebuilt.off` | surface |
-| `-u` | | `chamfered_plc.off` | surface |
-| `-w` | | `DR_interface.off` | surface |
-| `-x` | | `DR_mesh.tet` | volume |
-| `-y` | `-a` | `constrainedFaces.off` | surface |
-| `-z` | `-a` | `out_mesh.tet` | volume |
+| Flag | Output file | Type |
+| --- | --- | --- |
+| `-b` | `<input>_rebuilt.off` | surface |
+| `-u` | `chamfered_plc.off` | surface |
+| `-w` | `DR_interface.off` | surface |
+| `-x` | `DR_mesh.tet` | volume |
+| `-y` | `constrainedFaces.off` | surface |
+| `-z` | `out_mesh.tet` | volume |
 
 ## Python bindings
 
